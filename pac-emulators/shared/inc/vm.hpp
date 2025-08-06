@@ -11,6 +11,8 @@
 
 #include <vector>
 
+#include <instypes.hpp>
+
 class XTENSA_VM {
 public:
   XTENSA_VM(std::size_t MemorySize, std::size_t RegisterCount);
@@ -25,15 +27,15 @@ private:
   std::vector<byte> memory;
   word pc;
 
-  void exec_inst(byte opcode);
+  int exec_inst(Instruction inst);
 
   // Instruction handlers
   void nop();
-  void add();
-  void sub();
-  void mov();
-  void l32r();
-  void s32i();
-  void spinst_regdump();
-  void spinst_memdump();
+  void add(Instruction inst);
+  void sub(Instruction inst);
+  void mov(Instruction inst);
+  void l32r(Instruction inst);
+  void s32i(Instruction inst);
+  void spinst_regdump(Instruction inst);
+  void spinst_memdump(Instruction inst);
 };

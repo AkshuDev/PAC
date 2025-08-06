@@ -4,20 +4,22 @@ ARCH := $(shell uname -m)
 OS := $(shell uname)
 
 srcdir := src
+sharedsrcdir := ../shared
+sharedincdir := ../shared/inc
 incdir := inc
 builddir := build
 bindir := bin
 
 # Compiler Settings
 CXX := g++
-CXXFLAGS := -Wall -Wextra -std=c++20 -I$(incdir)
+CXXFLAGS := -w -Wall -Wextra -std=c++20 -I$(incdir) -I$(sharedincdir)
 
 # Files
-SRCS := $(wildcard $(srcdir)/*.cpp)
-OBJS := $(patsubst $(srcdir)/%.cpp,$(builddir)/%.o,$(SRCS))
+SRCS := $(wildcard $(sharedsrcdir)/*.cpp)
+OBJS := $(patsubst $(sharedsrcdir)/%.cpp,$(builddir)/%.o,$(SRCS))
 
 # Target
-TARGET := pac-xtensa-emulator-$(ARCH)-$(OS)
+TARGET := pac-pscpusrch-emulator-$(ARCH)-$(OS)
 
 # Default target
 all: $(bindir)/$(TARGET)
