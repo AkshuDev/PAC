@@ -13,9 +13,9 @@
 
 #include <instypes.hpp>
 
-class XTENSA_VM {
+class VM {
 public:
-  XTENSA_VM(std::size_t MemorySize, std::size_t RegisterCount);
+  VM(std::size_t MemorySize, std::size_t RegisterCount);
 
   void load_program(const std::vector<byte> &program);
   void run();

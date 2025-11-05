@@ -2,7 +2,7 @@
 #include <iostream>
 #include <cstring>
 
-XTENSA_VM::XTENSA_VM(std::size_t MemorySize=DEF_MEM_SIZE, std::size_t RegisterCount=DEF_NUM_REGISTERS) : pc(0), MEM_SIZE(MemorySize), NUM_REGISTERS(RegisterCount)
+VM::VM(std::size_t MemorySize=DEF_MEM_SIZE, std::size_t RegisterCount=DEF_NUM_REGISTERS) : pc(0), MEM_SIZE(MemorySize), NUM_REGISTERS(RegisterCount)
 {
   memory.resize(MEM_SIZE, 0); // resize and cleanup
   registers.resize(NUM_REGISTERS, 0);
@@ -13,11 +13,11 @@ XTENSA_VM::XTENSA_VM(std::size_t MemorySize=DEF_MEM_SIZE, std::size_t RegisterCo
 
 // Memory management
 
-void XTENSA_VM::load_program(const std::vector<byte> &program) {
+void VM::load_program(const std::vector<byte> &program) {
   std::copy(program.begin(), program.end(), memory.begin()); // copy into ram
 }
 
-void XTENSA_VM::run() {
+void VM::run() {
   while (pc < MEM_SIZE) {
     std::vector<byte> inst_bytes = readMemoryBytes(memory, pc, sizeof(Instruction));
     Instruction inst;
@@ -49,7 +49,7 @@ void XTENSA_VM::run() {
   }
 }
 
-int XTENSA_VM::exec_inst(Instruction inst) {
+int VM::exec_inst(Instruction inst) {
   opcode _opcode = inst.op;
   
   switch (opcode_map[_opcode]) {
@@ -71,50 +71,39 @@ int XTENSA_VM::exec_inst(Instruction inst) {
 }
 
 // instruction parsing
-void XTENSA_VM::nop() {
+void VM::nop() {
   // Do nothing dude!
 }
 
-void XTENSA_VM::add(Instruction inst) {
+void VM::add(Instruction inst) {
   int d1 = readRegister(registers, inst.rs1);
   int d2 = readRegister(registers, inst.rs2);
   writeRegister(registers, inst.rd, d1 + d2);
 }
 
-void XTENSA_VM::sub(Instruction inst) {
+void VM::sub(Instruction inst) {
   int d1 = readRegister(registers, inst.rs1);
   int d2 = readRegister(registers, inst.rs2);
   writeRegister(registers, inst.rd, d1 - d2);
 }
 
-void XTENSA_VM::mov(Instruction inst) {
+void VM::mov(Instruction inst) {
   int d1 = readRegister(registers, inst.rs1);
   writeRegister(registers, inst.rd, d1);
 }
-
-void XTENSA_VM::movn(Instruction inst) {
-  int d1 = inst.imm;
-  writeRegister(registers, inst.rd, d1);
-}
-
-void XTENSA_VM::addi(Instruction inst) {
-  int d1 = inst.imm;
-  int d2 = readRegister(registers, inst.rs1);
-  writeRegister(registers, inst.rd, d1 + d2);
-}
   
-void XTENSA_VM::l32r(Instruction inst) {
+void VM::l32r(Instruction inst) {
   // TODO
 }
 
-void XTENSA_VM::s32i(Instruction inst) {
+void VM::s32i(Instruction inst) {
   // TODO
 }
 
-void XTENSA_VM::spinst_regdump(Instruction inst) {
+void VM::spinst_regdump(Instruction inst) {
   dumpStateRegisters(registers);
 }
 
-void XTENSA_VM::spinst_memdump(Instruction inst) {
+void VM::spinst_memdump(Instruction inst) {
   dumpStateMemory(memory);
 }

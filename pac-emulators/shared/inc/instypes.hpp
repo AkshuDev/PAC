@@ -44,6 +44,8 @@ enum class Opcode {
   TEST,
   IN,
   OUT,
+  L32R,
+  S32I,
   INVALID,
   SPINST_MEMDUMP,
   SPINST_REGDUMP
