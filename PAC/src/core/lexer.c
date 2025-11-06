@@ -5,23 +5,31 @@
 #include <ctype.h>
 
 #include <pac-lexer.h>
+#include <pac-err.h>
 
-Lexer init_lexer(const char* src) {
+Lexer init_lexer(const char* src, size_t len, const char* file) {
     Lexer lex;
     lex.src = src;
     lex.column = 1;
     lex.line = 1;
     lex.pos = 0;
+    lex.len = len;
+    lex.file = file;
     return lex;
 }
 
 // Utility
 char peek(Lexer* lex) {
+    if (lex->pos >= lex->len) // len = number of chars before '\0'
+        return '\0';
     return lex->src[lex->pos];
 }
 
 char advance(Lexer* lex) {
-    char c = lex->src[lex->pos++];
+    char c = peek(lex);
+    if (c == '\0') return '\0';
+    
+    lex->pos++;
     if (c == '\n') {
         lex->line++;
         lex->column = 1;
@@ -47,7 +55,7 @@ Token make_token(Lexer* lex, TokenType type, const char* start, size_t len) {
     strncpy(tk.lexeme, start, len);
     tk.lexeme[len] = '\0';
     tk.line = lex->line;
-    tk.column = lex->column - len;
+    tk.column = lex->column - (int)len + 1;
     return tk;
 }
 
@@ -134,73 +142,68 @@ Token lex_identifier(Lexer* lx) {
 
     // Check if keyword
     TokenType type = check_keyword(text);
-    if (type != SP_EOF) {
+    if ((int)type != -1) {
         Token tk = make_token(lx, type, &lx->src[start], length);
         free(text);
         return tk;
     }
 
-    Token tk = make_token(lx, LIT_STRING, &lx->src[start], length); // fallback
+    Token tk = make_token(lx, IDENTIFIER_TOK, &lx->src[start], length); // fallback
     free(text);
     return tk;
 }
 
 void skip_whitespace(Lexer* lx) {
-    while (isspace(peek(lx))) advance(lx);
+    while (isspace(peek(lx)) && peek(lx) != '\n') advance(lx);
 }
 
 Token next_token(Lexer* lx) {
     skip_whitespace(lx);
-    char c = advance(lx);
+    char c = peek(lx);
+
+    if (c == '\n') return make_token(lx, SP_EOL, "\n", 0);
 
     if (c == '\0') return make_token(lx, SP_EOF, "", 0); // EOF
 
-    // Preprocessor
-    if (c == '@') {
-        size_t start = lx->pos - 1;
-        while (isalnum(peek(lx))) advance(lx);
-        size_t length = lx->pos - start;
-        char* text = strndup(&lx->src[start], length);
-        TokenType typ = check_keyword(text);
-        Token tk = make_token(lx, typ, &lx->src[start], length);
-        free(text);
+    // Strings
+    if (c == '"') {
+        advance(lx); // consume opening "
+        size_t start = lx->pos;
+        bool multiline = false;
+        while (peek(lx) != '"' && peek(lx) != '\0'){ 
+            advance(lx);
+            if (peek(lx) == '\\') {
+                multiline = true;
+            }
+            if (peek(lx) == '\n' && !multiline) {
+                break;
+            } else if (peek(lx) == '\n' && multiline) multiline = false;
+        }
+        size_t len = lx->pos - start;
+        char* str = (char*)malloc(len + 1);
+        if (!str) {
+            perror("Memory Allocation on Heap failed");
+            exit(PAC_Error_MemoryAllocationFailed);
+        }
+        memcpy(str, &lx->src[start], len);
+        str[len] = '\0';
+
+        rmchr(str, '\\');
+
+        if (peek(lx) != '"') {
+            printf("%d\n", lx->line);
+            pac_diag(PAC_ERROR, lx->file, lx->line, lx->column, lx->src, lx->len, (char*)str, len, "Unterminated string literal\n");
+            free(str);
+            exit(PAC_Error_UnterminatedString);
+        }
+        advance(lx); // consume closing "
+        Token tk = make_token(lx, LIT_STRING, str, len);
+        free(str);
         return tk;
     }
 
-    // Comments
-    if (c == '/' && peek(lx) == '/') { // Line comment
-        size_t start = lx->pos - 1;
-        while (peek(lx) != '\n' && peek(lx) != '\0') advance(lx);
-        return make_token(lx, COMMENT_LINE, &lx->src[start], lx->pos - start);
-    }
-    if (c == '/' && peek(lx) == '*') { // Block comment
-        size_t start = lx->pos - 1;
-        advance(lx); // skip *
-        while (!(peek(lx) == '*' && lx->src[lx->pos + 1] == '/') && peek(lx) != '\0') advance(lx);
-        advance(lx); advance(lx); // skip */
-        return make_token(lx, COMMENT_BLOCK, &lx->src[start], lx->pos - start);
-    }
-
-    // Identifiers / Keywords / Labels
-    if (isalpha(c) || c == '_' || c == '$') {
-        Token id = lex_identifier(lx);
-        if (peek(lx) == ':') {
-            advance(lx);
-            id.type = LABEL_DEF;
-        }
-        return id;
-    }
-
-    // Strings
-    if (c == '"') {
-        size_t start = lx->pos;
-        while (peek(lx) != '"' && peek(lx) != '\0') advance(lx);
-        size_t len = lx->pos - start;
-        advance(lx); // consume closing "
-        return make_token(lx, LIT_STRING, &lx->src[start], len);
-    }
-
     if (c == '\'') {
+        advance(lx); // consume opening '
         char value[8] = {0}; // Temp buffer for safety
 
         if (peek(lx) == '\\') { // Handle escape sequence
@@ -232,12 +235,41 @@ Token next_token(Lexer* lx) {
 
         // Expect closing quote
         if (peek(lx) != '\'') {
-            fprintf(stderr, "Lexer error: Unterminated character literal at line %d\n", lx->line);
-            exit(EXIT_FAILURE);
+            char c = peek(lx);
+            pac_diag(PAC_ERROR, lx->file, lx->line, lx->column, lx->src, lx->len, &c, 1, "Unterminated character literal\n");
+            exit(PAC_Error_UnterminatedString);
         }
 
         advance(lx); // consume closing quote
         return make_token(lx, LIT_CHAR, value, strlen(value));
+    }
+
+    c = advance(lx); // normal
+
+    // Preprocessor
+    if (c == '@') {
+        size_t start = lx->pos - 1;
+        while (isalnum(peek(lx))) advance(lx);
+        size_t length = lx->pos - start;
+        char* text = strndup(&lx->src[start], length);
+        TokenType typ = check_keyword(text);
+        Token tk = make_token(lx, typ, &lx->src[start], length);
+        free(text);
+        return tk;
+    }
+
+    // Comments
+    if (c == '/' && peek(lx) == '/') { // Line comment
+        size_t start = lx->pos - 1;
+        while (peek(lx) != '\n' && peek(lx) != '\0') advance(lx);
+        return make_token(lx, COMMENT_LINE, &lx->src[start], lx->pos - start);
+    }
+    if (c == '/' && peek(lx) == '*') { // Block comment
+        size_t start = lx->pos - 1;
+        advance(lx); // skip *
+        while (!(peek(lx) == '*' && lx->src[lx->pos + 1] == '/') && peek(lx) != '\0') advance(lx);
+        advance(lx); advance(lx); // skip */
+        return make_token(lx, COMMENT_BLOCK, &lx->src[start], lx->pos - start);
     }
 
 
@@ -323,7 +355,17 @@ Token next_token(Lexer* lx) {
             return make_token(lx, SEMICOLON, ";", 1);
     }
 
-    return make_token(lx, -1, &c, 1); // Unknown/Fallback
+    // Identifiers / Keywords / Labels
+    if (isalpha(c) || c == '_' || c == '$' || c == '.') {
+        Token id = lex_identifier(lx);
+        if (peek(lx) == ':') {
+            advance(lx);
+            id.type = LABEL_DEF;
+        }
+        return id;
+    }   
+
+    return make_token(lx, UNKNOWN, &c, 1); // Unknown/Fallback
 }
 
 void free_token(Token* t) {
@@ -333,6 +375,8 @@ void free_token(Token* t) {
 
 const char* token_type_to_str(TokenType type) {
     switch(type) {
+        // Identifiers
+        case IDENTIFIER_TOK: return "IDENTIFIER";
         // Data types
         case T_BYTE: return "T_BYTE";
         case T_SHORT: return "T_SHORT";

@@ -1,6 +1,10 @@
 #pragma once
 
+#define PAC_LEXER
+
 typedef enum {
+    // Identifers
+    IDENTIFIER_TOK,
     // Data types
     T_BYTE,
     T_SHORT,
@@ -100,6 +104,8 @@ typedef enum {
     RBRACE, // }
     // Special
     SP_EOF,
+    SP_EOL,
+    UNKNOWN,
 } TokenType;
 
 typedef struct {
@@ -114,9 +120,11 @@ typedef struct {
     size_t pos;
     int line;
     int column;
+    size_t len;
+    const char* file;
 } Lexer;
 
-Lexer init_lexer(const char* src);
+Lexer init_lexer(const char* src, size_t len, const char* file);
 void free_token(Token* t);
 Token next_token(Lexer* lx);
 const char* token_type_to_str(TokenType type);

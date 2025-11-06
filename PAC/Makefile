@@ -34,6 +34,7 @@ endif
 
 # Find all C source files recursively
 SRC_FILES := $(shell find $(SRC_DIR) -type f -name '*.c')
+HEADER_FILES := $(shell find $(SRC_DIR) -type f -name '*.h')
 
 # Map source files to object files in BUILD_DIR
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
@@ -62,7 +63,7 @@ $(OUTPUT): $(OBJ_FILES)
 	@echo "$(GREEN)==> Linked $(OUTPUT)$(RESET)"
 
 # Compile source files to object files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(HEADER_FILES)
 	@mkdir -p $(dir $@)
 	@echo "$(CYAN)Compiling $<...$(RESET)"
 	@$(CC) $(CFLAGS) -c $< -o $@

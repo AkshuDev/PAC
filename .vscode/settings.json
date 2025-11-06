@@ -1,6 +1,9 @@
 {
     "files.associations": {
         "*.arr": "arris",
-        "getopt.h": "c"
+        "*.pasm": "asm-collection",
+        "getopt.h": "c",
+        "stdbool.h": "c",
+        "string.h": "c"
     }
 }

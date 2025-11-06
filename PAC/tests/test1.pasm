@@ -5,13 +5,14 @@
 // ==========================================================
 
 // --- Preprocessing ---
-@def MSG "Hello, PAC World!"
+@def MSG "Hello, PAC World \
+Hi!"
 @def COUNT 3
 
 // --- Data Section ---
 :section .data
-msg: ubyte[] = @MSG
-count: int = @COUNT
+msg: ubyte[] = MSG
+count: int = COUNT
 
 // --- Structure Definition ---
 .struct Point
@@ -49,7 +50,7 @@ end:
 .func print_msg
     // Imagine this calls a system-level write for now
     mov rdi, msg
-    mov rsi, @MSG
+    mov rsi, MSG
     // In PAC-VM or native mode, this will print msg
     ret
 .endfunc
