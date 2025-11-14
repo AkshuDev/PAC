@@ -63,7 +63,8 @@ static bool pac_link_elf64(char* outfile, char** input_files, size_t input_file_
         return false;
     }
 
-    size_t section_count = 0;
+    size_t total_section_count = 0;
+    size_t total_program_count = 0;
 
     Elf64_Ehdr* input_ehdr = (Elf64_Ehdr*)finput_file;
     if (memcmp(input_ehdr->e_ident, ELFMAG, SELFMAG) != 0) {
@@ -92,19 +93,38 @@ static bool pac_link_elf64(char* outfile, char** input_files, size_t input_file_
     ehdr.e_ident[EI_OSABI] = ELFOSABI_SYSV;
     ehdr.e_ident[EI_ABIVERSION] = 0;
     ehdr.e_machine = input_ehdr->e_machine;
+    
+    free(finput_file);
+
+    for (size_t i = 0; i < input_file_count; i++) {
+        size_t flen = 0;
+        char* file = linker_read_file(input_files[i], &flen);
+        if (file == NULL || flen == 0) {
+            perror("An Error Occured, Quitting...\n");
+            return false;
+        }
+
+        Elf64_Ehdr* input_ehdr = (Elf64_Ehdr*)finput_file;
+        if (memcmp(input_ehdr->e_ident, ELFMAG, SELFMAG) != 0) {
+            fprintf(stderr, COLOR_RED "Error: %s file has wrong ELF Magic\n" COLOR_CYAN "Tip: Even if the output format may be different, the encoders only output ELF64, the linker then produces the desired output format using that ELF format!\n" COLOR_RESET, input_files[0]);
+            free(finput_file);
+            return false;
+        }
+    }
+
     ehdr.e_phentsize = sizeof(Elf64_Phdr);
-    ehdr.e_phoff = sizeof(Elf64_Ehdr) + (section_count * sizeof(Elf64_Shdr));
-    ehdr.e_phnum = 0;
+    ehdr.e_phoff = sizeof(Elf64_Ehdr) + (total_section_count * sizeof(Elf64_Shdr));
+    ehdr.e_phnum = total_program_count;
     ehdr.e_shentsize = sizeof(Elf64_Shdr);
-    ehdr.e_shnum = 0;
+    ehdr.e_shnum = total_section_count;
     ehdr.e_shoff = sizeof(Elf64_Ehdr);
-    ehdr.e_shstrndx = 0;
+    ehdr.e_shstrndx = 1;
     ehdr.e_type = ET_EXEC;
     ehdr.e_version = EV_CURRENT;
 
+    fseek(out, 0, SEEK_SET);
     fwrite(&ehdr, sizeof(Elf64_Ehdr), 1, out);
 
-    free(finput_file);
     fclose(out);
 
     return true;

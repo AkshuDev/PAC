@@ -93,6 +93,7 @@ typedef enum {
     ASM_SHL,
     ASM_SHR,
     ASM_SYSCALL,
+    ASM_LEA,
     ASM_NOP,
     // Literals
     LIT_INT,

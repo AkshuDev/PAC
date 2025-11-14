@@ -171,7 +171,7 @@ static size_t operand_length_x86(ASTOperand *op, ASTInstruction *inst, enum Arch
         return 0; // No REX
     case OPERAND_LIT_INT:
         *index += 1;
-        if (prev && prev->type == OPERAND_REGISTER) {
+        if (prev && prev->type == OPERAND_REGISTER && inst->opcode != ASM_CMP) {
             if (prev->reg[0] == 'r' && arch == x86_64) return 8;
             else if (prev->reg[0] == 'e') return 4;
             else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
@@ -199,19 +199,6 @@ static size_t operand_length_x86(ASTOperand *op, ASTInstruction *inst, enum Arch
     case OPERAND_MEMORY:
         size_t len = 1; // ModR/M
         *index += 1;
-        if (op->mem_opr_count > 0 && op->mem_addr[0]->type == OPERAND_IDENTIFIER) {
-            // find it
-            Symbol out;
-            if (symtab_get(ctx->symbols, op->mem_addr[0]->identifier->identifier.name, &out)) {
-                if (strcmp(ctx->sections->sections[out.section_index].name, ".bss") != 0) {
-                    if (prev && prev->type == OPERAND_REGISTER) {
-                        if (prev->reg[0] == 'r' && arch == x86_64) return 8;
-                        else if (prev->reg[0] == 'e') return 4;
-                        else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
-                    }
-                }
-            }
-        }
         len += 4; // max displacement
         return len;
     case OPERAND_LABEL:
@@ -251,82 +238,44 @@ static uint64_t get_opcode_len_x86(TokenType opcode, bool* only_opcode)
     switch (opcode)
     {
     case ASM_MOV:
-        return 1;
-
     case ASM_ADD:
-        return 1;
-
     case ASM_SUB:
-        return 1;
-
     case ASM_MUL:
-        return 1;
-
     case ASM_DIV:
         return 1;
 
     case ASM_PUSH:
-        *only_opcode = true;
-        return 1;
-
     case ASM_POP:
         *only_opcode = true;
         return 1;
 
     case ASM_CALL:
-        return 1;
-
     case ASM_RET:
-        return 1;
-
     case ASM_JMP:
         return 1;
 
     case ASM_JE:
-        return 2;
-
     case ASM_JNE:
-        return 2;
-
     case ASM_JG:
-        return 2;
-
     case ASM_JGE:
-        return 2;
-
     case ASM_JL:
-        return 2;
-
     case ASM_JLE:
         return 2;
 
     case ASM_CMP:
-        return 1;
-
     case ASM_TEST:
-        return 1;
-
     case ASM_AND:
-        return 1;
-
     case ASM_OR:
-        return 1;
-
     case ASM_XOR:
-        return 1;
-
     case ASM_NOT:
-        return 1;
-
     case ASM_SHL:
-        return 1;
-
     case ASM_SHR:
         return 1;
 
     case ASM_SYSCALL:
         return 2;
-
+    
+    case ASM_LEA:
     case ASM_NOP:
         return 1;
 

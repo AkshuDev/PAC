@@ -23,13 +23,15 @@
 #define OPERAND_REG_TO_REG 0
 #define OPERAND_IMM_TO_REG 1
 #define OPERAND_IMM_TO_MEM 2
-#define OPERAND_MEM_DISP32_TO_REG 3
-#define OPERAND_MEM_DISP8_TO_REG 4
-#define OPERAND_MEM_DISP32 5
-#define OPERAND_REG_TO_MEM 6
-#define OPERAND_MEM_TO_REG 7
-#define OPERAND_MEM 8
-#define OPERAND_ONLY_OPCODE 9
+#define OPERAND_IMM32_TO_REG 3
+#define OPERAND_MEM_DISP32_TO_REG 4
+#define OPERAND_MEM_DISP8_TO_REG 5
+#define OPERAND_MEM_DISP32 6
+#define OPERAND_REG_TO_MEM 7
+#define OPERAND_MEM_TO_REG 8
+#define OPERAND_MEM 9
+#define OPERAND_ONLY_OPCODE 10
+#define OPERAND_MEM_TO_REG_WMODRM 11 // WMODRM stands for With ModR/M
 
 typedef struct {
     uint8_t code; // 3-bit ID
@@ -320,7 +322,7 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
             *no_bytes = 1;
             if (modrm == OPERAND_REG_TO_REG) return 0x39;
             if (modrm == OPERAND_REG_TO_MEM) return 0x3B;
-            if (modrm == OPERAND_IMM_TO_REG) return 0x3D;
+            if (modrm == OPERAND_IMM_TO_REG) { *operand_mod = OPERAND_IMM32_TO_REG; return 0x3D; }
             break;
 
         case ASM_TEST:
@@ -366,6 +368,10 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
         case ASM_SYSCALL:
             *no_bytes = 2;
             return 0x0F05;
+
+        case ASM_LEA:
+            *no_bytes = 1;
+            return 0x8D;
 
         case ASM_NOP:
             *no_bytes = 1;
@@ -669,26 +675,21 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     break;
                 case OPERAND_MEMORY:
                     parse_memory_operand(operand, &src, &dest, &imm, &modrm_mod, &operand_mod);
-                    if (operand_mod == OPERAND_MEM_TO_REG) {
-                        for (size_t k = 0; k < ctx->symbols->count; k++) {
-                            Symbol sym = ctx->symbols->symbols[k];
-                            if (sym.addr == imm && strcmp(ctx->sections->sections[sym.section_index].name, ".bss") != 0 && sym.value) {
-                                imm = sym.value[0];
-                                if (isdigit(imm)) imm = strtoul(&sym.value[0], NULL, 10);
-                                modrm_mod = MODRM_MOD_MEMORY;
-                                operand_mod = OPERAND_IMM_TO_REG;
-                                break;
-                            }
-                        }                       
+                    if (operand_mod == OPERAND_MEM_TO_REG) {                  
                         if (operand_mod == OPERAND_MEM_TO_REG) {
-                            if (dest.size == 8) modrm_mod = MODRM_MOD_MEM_PLUS_DISP8;
-                            else modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
+                            if (inst.opcode == ASM_LEA) {
+                                modrm_mod = MODRM_MOD_MEMORY;
+                                operand_mod = OPERAND_MEM_TO_REG_WMODRM;
+                            } else {
+                                if (dest.size == 8) { operand_mod = OPERAND_MEM_DISP8_TO_REG; modrm_mod = MODRM_MOD_MEM_PLUS_DISP8; }
+                                else { operand_mod = OPERAND_MEM_DISP32_TO_REG; modrm_mod = MODRM_MOD_MEM_PLUS_DISP32; }
+                            }
                         }
                     }
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
-                    if (inst.opcode >= ASM_CALL && inst.opcode <= ASM_JMP) {
+                    if (inst.opcode >= ASM_CALL && inst.opcode <= ASM_JLE) {
                         modrm_mod = MODRM_MOD_MEMORY; // relative disp handled later
                         operand_mod = OPERAND_MEM_DISP32;
                     } else {
@@ -758,6 +759,26 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 inst_written += 1;
             } else {
                 add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_32, 0);
+                emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                inst_written += 4;
+            }
+        } else if (operand_mod == OPERAND_IMM32_TO_REG) {
+            for (size_t i = 0; i < 4; i++) {
+                uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                emit_bytes(out, &imm_part, 1);
+                inst_written += 1;
+            }
+        } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM) {
+            uint8_t modrm_bytes = make_modrm(dest, (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
+            emit_bytes(out, &modrm_bytes, 1);
+            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+
+            if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
+                emit_bytes(out, (uint8_t*)"\0", 1);
+                inst_written += 1;
+            } else {
+                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, 0);
                 emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                 inst_written += 4;
             }

@@ -121,6 +121,7 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "shl") == 0) return ASM_SHL;
     if (strcmp(str, "shr") == 0) return ASM_SHR;
     if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
+    if (strcmp(str, "lea") == 0) return ASM_LEA;
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
     return -1; // Not a keyword
@@ -516,6 +517,7 @@ const char* token_type_to_str(TokenType type) {
         case ASM_SHL: return "ASM_SHL";
         case ASM_SHR: return "ASM_SHR";
         case ASM_SYSCALL: return "ASM_SYSCALL";
+        case ASM_LEA: return "ASM_LEA";
         case ASM_NOP: return "ASM_NOP";
 
         // Literals
@@ -630,6 +632,7 @@ const char* token_type_to_ogstr(TokenType type) {
         case ASM_SHL: return "shl";
         case ASM_SHR: return "shr";
         case ASM_SYSCALL: return "syscall";
+        case ASM_LEA: return "lea";
         case ASM_NOP: return "nop";
 
         // Punctuation

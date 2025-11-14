@@ -46,10 +46,11 @@ const_val!long = 0x1122334455667788
 :global main
 
 main:
-    mov %rax, [const_msg]
+    lea %rax, [const_msg]
     mov %rbx, 1
     call $print
     mov %rbx, 0 // Return code
+
     jmp exit
 
 exit:
