@@ -54,12 +54,12 @@ static inline void pac_diag(
             color = COLOR_RED;
             break;
         case PAC_NOTE:
-            snprintf(lvl, sizeof(lvl), COLOR_CYAN "note:");
-            color = COLOR_CYAN;
+            snprintf(lvl, sizeof(lvl), COLOR_BOLD COLOR_CYAN "note:");
+            color = COLOR_BOLD COLOR_CYAN;
             break;
         case PAC_TIP:
-            snprintf(lvl, sizeof(lvl), COLOR_BLUE "tip:");
-            color = COLOR_BLUE;
+            snprintf(lvl, sizeof(lvl), COLOR_CYAN "tip:");
+            color = COLOR_CYAN;
             break;
         case PAC_WARNING:
             snprintf(lvl, sizeof(lvl), COLOR_YELLOW "warning:");
@@ -97,9 +97,8 @@ static inline void pac_diag(
             snprintf(prefixstr, sizeof(prefixstr), "%s%c %d | ", line_color, prefix, ln);
 
             fprintf(stderr, "%s%s\n" COLOR_RESET, prefixstr, src_lines[ln - 1]);
-
             if (ln == line && column != 0) {
-                int caret_offset = strlen(prefixstr) + column;
+                int caret_offset = ((strlen(prefixstr) - strlen(line_color)) + column) - 1; // Arrays are 0 based
                 char output[MAX_LINE_WIDTH];
                 if (caret_offset > MAX_LINE_WIDTH - 1) return;
                 memset(output, ' ', caret_offset);
@@ -113,13 +112,13 @@ static inline void pac_diag(
     }
 }
 
-#define PAC_ERROR(file, line, col, src, src_len, lex, len, msg) pac_diag_ex(PAC_ERR_ERROR, file, line, col, src, src_len, lex, len, msg)
+#define PAC_ERRORF(file, line, col, src, src_len, lex, len, msg) pac_diag(PAC_ERROR, file, line, col, src, src_len, lex, len, msg)
 
-#define PAC_WARNING(file, line, col, src, src_len, lex, len, msg) pac_diag_ex(PAC_ERR_WARNING, file, line, col, src, src_len, lex, len, msg)
+#define PAC_WARNINGF(file, line, col, src, src_len, lex, len, msg) pac_diag(PAC_WARNING, file, line, col, src, src_len, lex, len, msg)
 
-#define PAC_NOTE(file, line, col, src, src_len, lex, len, msg) pac_diag_ex(PAC_ERR_NOTE, file, line, col, src, src_len, lex, len, msg)
+#define PAC_NOTEF(file, line, col, src, src_len, lex, len, msg) pac_diag(PAC_NOTE, file, line, col, src, src_len, lex, len, msg)
 
-#define PAC_TIP(file, line, col, src, src_len, lex, len, msg) pac_diag_ex(PAC_ERR_TIP, file, line, col, src, src_len, lex, len, msg)
+#define PAC_TIPF(file, line, col, src, src_len, lex, len, msg) pac_diag(PAC_TIP, file, line, col, src, src_len, lex, len, msg)
 
 typedef enum PAC_Errors
 {
@@ -601,7 +600,7 @@ typedef enum PAC_Errors
     PAC_InternalError_End = 0x0AFF           // Marker: End of Internal & System Errors
 } PAC_Errors;
 
-const char* PAC_ErrorString(PAC_Errors error)
+static inline const char* PAC_ErrorString(PAC_Errors error)
 {
     switch (error)
     {

@@ -3,7 +3,7 @@
 #define PAC_LEXER
 
 typedef enum {
-    // Identifers
+    // identifiers
     IDENTIFIER_TOK,
     // Data types
     T_BYTE,
@@ -16,6 +16,7 @@ typedef enum {
     T_ULONG,
     T_FLOAT,
     T_DOUBLE,
+    T_ARRAY,
     T_PTR,
     // Preprocessor
     PP_DEF, // @def
@@ -27,13 +28,20 @@ typedef enum {
     PP_UNDEF, // @undef
     // Labels, Functions, and Sections
     LABEL_DEF, // label:
-    LABEL_USE, // $label
+    FUNC_USE, // $func
     FUNC_DEF, // .func
     FUNC_END, // .endfunc
     STRUCT_DEF, // .struct
     STRUCT_END, // .endstruct
     SECTION, // :section
     GLOBAL, // :global
+    ALIGN, // :align
+    RESERVE, // :res (for bss section only)
+    START_SEC, // :start
+    SIZE_SEC, // :size
+    TYPEDEF, // .type
+    // Registers
+    REGISTER,
     // Comments
     COMMENT_LINE, // //
     COMMENT_BLOCK, // /**/
@@ -84,6 +92,7 @@ typedef enum {
     ASM_NOT,
     ASM_SHL,
     ASM_SHR,
+    ASM_SYSCALL,
     ASM_NOP,
     // Literals
     LIT_INT,
@@ -128,3 +137,4 @@ Lexer init_lexer(const char* src, size_t len, const char* file);
 void free_token(Token* t);
 Token next_token(Lexer* lx);
 const char* token_type_to_str(TokenType type);
+const char* token_type_to_ogstr(TokenType type);

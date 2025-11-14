@@ -15,13 +15,21 @@ typedef enum {
     AST_OPERAND,
     AST_LITERAL,
     AST_IDENTIFIER,
+    AST_COMMENT,
+    AST_DECLIDENTIFIER,
+    AST_RESERVE,
 } ASTNodeType;
 
 typedef enum {
     OPERAND_REGISTER,
-    OPERAND_LITERAL,
+    OPERAND_LIT_INT,
+    OPERAND_LIT_FLOAT,
+    OPERAND_LIT_DOUBLE,
+    OPERAND_LIT_CHAR,
     OPERAND_LABEL,
     OPERAND_MEMORY,
+    OPERAND_IDENTIFIER,
+    OPERAND_DISPLACEMENT,
 } OperandType;
 
 struct ASTNode;
@@ -32,8 +40,10 @@ typedef struct ASTOperand {
         int64_t int_val; // Literal integer value
         double float_val; // Literal float value
         char* label; // Label name
-        struct ASTNode* mem_addr; // Memory expression
+        struct ASTOperand** mem_addr; // Memory expression
+        struct ASTNode* identifier; // Identifier
     };
+    size_t mem_opr_count;
 } ASTOperand;
 
 typedef struct ASTInstruction {
@@ -49,6 +59,9 @@ typedef struct ASTLabel {
 typedef struct ASTDirective {
     TokenType type;
     char* arg;
+    size_t aligment;
+    int64_t start;
+    int64_t size;
 } ASTDirective;
 
 typedef struct ASTLiteral {
@@ -64,6 +77,21 @@ typedef struct ASTIdentifier {
     char* name;
 } ASTIdentifier;
 
+typedef struct ASTDeclIdentifier {
+    char* name;
+    TokenType type;
+    TokenType opt_specified_type;
+} ASTDeclIdentifier;
+
+typedef struct ASTComment {
+    char* value;
+} ASTComment;
+
+typedef struct ASTReserve {
+    char* name;
+    TokenType type;
+} ASTReserve;
+
 typedef struct ASTNode {
     ASTNodeType type;
     union {
@@ -72,8 +100,13 @@ typedef struct ASTNode {
         ASTDirective directive;
         ASTOperand operand;
         ASTLiteral literal;
-        ASTIdentifier identifer;
+        ASTIdentifier identifier;
+        ASTComment comment;
+        ASTDeclIdentifier decl_identifier;
+        ASTReserve reserve;
     };
+    int line; 
+    int col;
     struct ASTNode** children;
     size_t child_count;
 } ASTNode;
@@ -83,11 +116,14 @@ typedef struct {
     Token current;
     Token previous;
     bool had_error;
+    ASTNode* root;
 } Parser;
 
-ASTNode* create_node(ASTNodeType type);
+ASTNode* create_node(ASTNodeType type, Parser* p);
 void add_child(ASTNode* parent, ASTNode* child);
 void free_ast(ASTNode* node);
 
+void parse_symbols(Parser* p);
 ASTNode* parse_program(Parser* p);
 Parser init_parser(Lexer* lex);
+void ast_to_str(ASTNode* node, char* out, size_t maxsize);

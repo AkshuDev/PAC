@@ -11,7 +11,7 @@ Hi!"
 
 // --- Data Section ---
 :section .data
-msg: ubyte[] = MSG
+msg!ubyte[22] = MSG + '\0' // Variable Arrays are not allowed, also 22 for NULL at end
 count: int = COUNT
 
 // --- Structure Definition ---
@@ -25,8 +25,8 @@ count: int = COUNT
 :global main
 
 .func main
-    // Create a structure instance
-    Point p1
+    // Type the point structure (Optional)
+    .type Point p1 // Function scoped
     p1.x = 10
     p1.y = 20
 
@@ -34,13 +34,13 @@ count: int = COUNT
 loop:
     mov rax, count
     cmp rax, 0
-    jle $end
+    jle end
 
     // Simulated print (architecture-specific later)
     call $print_msg
 
     sub count, 1
-    jmp $loop
+    jmp loop
 
 end:
     ret
@@ -51,6 +51,6 @@ end:
     // Imagine this calls a system-level write for now
     mov rdi, msg
     mov rsi, MSG
-    // In PAC-VM or native mode, this will print msg
+    // Later tests will have this, they will use macros <print placeholder>
     ret
 .endfunc

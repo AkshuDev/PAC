@@ -4,6 +4,8 @@
         "*.pasm": "asm-collection",
         "getopt.h": "c",
         "stdbool.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "ctype.h": "c",
+        "pac-lexer.h": "c"
     }
 }

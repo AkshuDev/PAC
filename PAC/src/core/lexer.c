@@ -85,10 +85,15 @@ TokenType check_keyword(const char* str) {
     // Labels, Functions, and more
     if (strcmp(str, ":section") == 0) return SECTION;
     if (strcmp(str, ":global") == 0) return GLOBAL;
+    if (strcmp(str, ":align") == 0) return ALIGN;
+    if (strcmp(str, ":res") == 0) return RESERVE;
+    if (strcmp(str, ":start") == 0) return START_SEC;
+    if (strcmp(str, ":size") == 0) return SIZE_SEC;
     if (strcmp(str, ".struct") == 0) return STRUCT_DEF;
     if (strcmp(str, ".endstruct") == 0) return STRUCT_END;
     if (strcmp(str, ".func") == 0) return FUNC_DEF;
     if (strcmp(str, ".endfunc") == 0) return FUNC_END;
+    if (strcmp(str, ".type") == 0) return TYPEDEF;
 
     // Assembly instructions
     if (strcmp(str, "mov") == 0) return ASM_MOV;
@@ -115,6 +120,7 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "not") == 0) return ASM_NOT;
     if (strcmp(str, "shl") == 0) return ASM_SHL;
     if (strcmp(str, "shr") == 0) return ASM_SHR;
+    if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
     return -1; // Not a keyword
@@ -122,7 +128,7 @@ TokenType check_keyword(const char* str) {
 
 Token lex_identifier(Lexer* lx) {
     size_t start = lx->pos - 1;
-    while (isalnum(peek(lx)) || peek(lx) == '_' || peek(lx) == '$') advance(lx);
+    while (isalnum(peek(lx)) || peek(lx) == '_' || peek(lx) == '$' || peek(lx) == '.') advance(lx);
     size_t length = lx->pos - start;
     char* text = (char*)malloc(length + 1);
     strncpy(text, &lx->src[start], length);
@@ -135,7 +141,7 @@ Token lex_identifier(Lexer* lx) {
         return tk;
     }
     if (text[0] == '$') {
-        Token tk = make_token(lx, LABEL_USE, &lx->src[start], length);
+        Token tk = make_token(lx, FUNC_USE, &lx->src[start], length);
         free(text);
         return tk;
     }
@@ -161,7 +167,7 @@ Token next_token(Lexer* lx) {
     skip_whitespace(lx);
     char c = peek(lx);
 
-    if (c == '\n') return make_token(lx, SP_EOL, "\n", 0);
+    if (c == '\n') {advance(lx); return make_token(lx, SP_EOL, "\n", 0);}
 
     if (c == '\0') return make_token(lx, SP_EOF, "", 0); // EOF
 
@@ -192,7 +198,7 @@ Token next_token(Lexer* lx) {
 
         if (peek(lx) != '"') {
             printf("%d\n", lx->line);
-            pac_diag(PAC_ERROR, lx->file, lx->line, lx->column, lx->src, lx->len, (char*)str, len, "Unterminated string literal\n");
+            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, (char*)str, len, "Unterminated string literal\n");
             free(str);
             exit(PAC_Error_UnterminatedString);
         }
@@ -236,7 +242,7 @@ Token next_token(Lexer* lx) {
         // Expect closing quote
         if (peek(lx) != '\'') {
             char c = peek(lx);
-            pac_diag(PAC_ERROR, lx->file, lx->line, lx->column, lx->src, lx->len, &c, 1, "Unterminated character literal\n");
+            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, &c, 1, "Unterminated character literal\n");
             exit(PAC_Error_UnterminatedString);
         }
 
@@ -254,6 +260,38 @@ Token next_token(Lexer* lx) {
         char* text = strndup(&lx->src[start], length);
         TokenType typ = check_keyword(text);
         Token tk = make_token(lx, typ, &lx->src[start], length);
+        free(text);
+        return tk;
+    }
+
+    if (c == '%') {
+        advance(lx); // consume '%'
+        size_t start = lx->pos - 1;
+        while (isalnum(peek(lx))) advance(lx);
+        size_t length = lx->pos - start;
+        char* text = strndup(&lx->src[start], length);
+        Token tk = make_token(lx, REGISTER, &lx->src[start], length);
+        free(text);
+        return tk;
+    }
+
+    if (c == ':') {
+        size_t start = lx->pos - 1;
+        int ogline = lx->line;
+        int ogcol = lx->column;
+        while (isalnum(peek(lx))) advance(lx);
+        size_t length = lx->pos - start;
+        char* text = strndup(&lx->src[start], length);
+        TokenType typ = check_keyword(text);
+        Token tk;
+        if ((int)typ != -1) {
+            tk = make_token(lx, typ, &lx->src[start], length);
+        } else {
+            lx->line = ogline;
+            lx->column = ogcol;
+            lx->pos = start + 1;
+            tk = make_token(lx, COLON, ";", 1);
+        }
         free(text);
         return tk;
     }
@@ -276,8 +314,21 @@ Token next_token(Lexer* lx) {
     // Numbers
     if (isdigit(c)) {
         size_t start = lx->pos - 1;
-        while (isdigit(peek(lx))) advance(lx);
-        return make_token(lx, LIT_INT, &lx->src[start], lx->pos - start);
+        if (c == '0' && (peek(lx) == 'x' || peek(lx) == 'X')) { 
+            // Hexadecimal literal
+            advance(lx); // consume 'x'
+            while (isxdigit(peek(lx))) advance(lx);
+            return make_token(lx, LIT_HEX, &lx->src[start], lx->pos - start);
+        } else if (c == '0' && (peek(lx) == 'b' || peek(lx) == 'B')) {
+            // Binary literal
+            advance(lx); // consume 'b'
+            while (peek(lx) == '0' || peek(lx) == '1') advance(lx);
+            return make_token(lx, LIT_BIN, &lx->src[start], lx->pos - start);
+        } else {
+            // Decimal literal
+            while (isdigit(peek(lx))) advance(lx);
+            return make_token(lx, LIT_INT, &lx->src[start], lx->pos - start);
+        }
     }
 
     // Operators and punctuation
@@ -302,11 +353,11 @@ Token next_token(Lexer* lx) {
 
         // Bitwise / logical
         case '&':
-            if (match(lx, '&')) return make_token(lx, OP_AND, "&&", 2); // optional logical AND
+            if (match(lx, '&')) return make_token(lx, OP_AND, "&&", 2); // logical AND
             return make_token(lx, OP_AND, "&", 1);
 
         case '|':
-            if (match(lx, '|')) return make_token(lx, OP_OR, "||", 2); // optional logical OR
+            if (match(lx, '|')) return make_token(lx, OP_OR, "||", 2); // logical OR
             return make_token(lx, OP_OR, "|", 1);
 
         case '^':
@@ -322,7 +373,7 @@ Token next_token(Lexer* lx) {
 
         case '!':
             if (match(lx, '=')) return make_token(lx, OP_NE, "!=", 2);
-            return make_token(lx, OP_NOT, "!", 1); // optional logical not
+            return make_token(lx, OP_NOT, "!", 1); // logical not
 
         case '<':
             if (match(lx, '<')) return make_token(lx, OP_SHL, "<<", 2);
@@ -349,8 +400,6 @@ Token next_token(Lexer* lx) {
             return make_token(lx, RBRACE, "}", 1);
         case ',':
             return make_token(lx, COMMA, ",", 1);
-        case ':':
-            return make_token(lx, COLON, ":", 1);
         case ';':
             return make_token(lx, SEMICOLON, ";", 1);
     }
@@ -401,17 +450,23 @@ const char* token_type_to_str(TokenType type) {
 
         // Labels, Functions, and Sections
         case LABEL_DEF: return "LABEL_DEF";
-        case LABEL_USE: return "LABEL_USE";
+        case FUNC_USE: return "FUNC_USE";
         case FUNC_DEF: return "FUNC_DEF";
         case FUNC_END: return "FUNC_END";
         case STRUCT_DEF: return "STRUCT_DEF";
         case STRUCT_END: return "STRUCT_END";
         case SECTION: return "SECTION";
         case GLOBAL: return "GLOBAL";
+        case ALIGN: return "ALIGN";
+        case RESERVE: return "RESERVE";
+        case TYPEDEF: return "TYPEDEF";
 
         // Comments
         case COMMENT_LINE: return "COMMENT_LINE";
         case COMMENT_BLOCK: return "COMMENT_BLOCK";
+
+        // Registers
+        case REGISTER: return "REGISTER";
 
         // Maths / Operators
         case OP_ADD: return "OP_ADD";
@@ -460,6 +515,7 @@ const char* token_type_to_str(TokenType type) {
         case ASM_NOT: return "ASM_NOT";
         case ASM_SHL: return "ASM_SHL";
         case ASM_SHR: return "ASM_SHR";
+        case ASM_SYSCALL: return "ASM_SYSCALL";
         case ASM_NOP: return "ASM_NOP";
 
         // Literals
@@ -483,7 +539,113 @@ const char* token_type_to_str(TokenType type) {
 
         // Special
         case SP_EOF: return "SP_EOF";
+        case SP_EOL: return "SP_EOL";
 
         default: return "UNKNOWN_TOKEN";
+    }
+}
+
+const char* token_type_to_ogstr(TokenType type) {
+    switch (type) {
+        case T_BYTE: return "byte";
+        case T_SHORT: return "short";
+        case T_INT: return "int";
+        case T_LONG: return "long";
+        case T_UBYTE: return "ubyte";
+        case T_USHORT: return "ushort";
+        case T_UINT: return "uint";
+        case T_ULONG: return "ulong";
+        case T_FLOAT: return "float";
+        case T_DOUBLE: return "double";
+        case T_PTR: return "ptr";
+        // Preprocessor
+        case PP_DEF: return "@def";
+        case PP_INC: return "@inc";
+        case PP_IF: return "@if";
+        case PP_ELSE: return "@else";
+        case PP_ELIF: return "@elif";
+        case PP_END: return "@end";
+        case PP_UNDEF: return "@undef";
+
+        // Labels, Functions, and Sections
+        case FUNC_DEF: return ".func";
+        case FUNC_END: return ".endfunc";
+        case STRUCT_DEF: return ".struct";
+        case STRUCT_END: return ".endstruct";
+        case SECTION: return ":section";
+        case GLOBAL: return ":global";
+        case ALIGN: return ":align";
+        case RESERVE: return ":res";
+        case TYPEDEF: return ".type";
+
+        // Comments
+        case COMMENT_LINE: return "//";
+        case COMMENT_BLOCK: return "/*";
+
+        // Maths / Operators
+        case OP_ADD: return "+";
+        case OP_SUB: return "-";
+        case OP_MUL: return "*";
+        case OP_DIV: return "/";
+        case OP_MOD: return "%";
+        case OP_INC: return "++";
+        case OP_DEC: return "--";
+        case OP_AND: return "&";
+        case OP_OR: return "|";
+        case OP_XOR: return "^";
+        case OP_NOT: return "!";
+        case OP_SHL: return "<<";
+        case OP_SHR: return ">>";
+        case OP_ASSIGN: return "=";
+        case OP_EQ: return "==";
+        case OP_NE: return "!=";
+        case OP_LT: return "<";
+        case OP_GT: return ">";
+        case OP_LE: return "<=";
+        case OP_GE: return ">=";
+
+        // Assembly / Backend
+        case ASM_MOV: return "mov";
+        case ASM_ADD: return "add";
+        case ASM_SUB: return "sub";
+        case ASM_MUL: return "mul";
+        case ASM_DIV: return "div";
+        case ASM_PUSH: return "push";
+        case ASM_POP: return "pop";
+        case ASM_CALL: return "call";
+        case ASM_RET: return "ret";
+        case ASM_JMP: return "jmp";
+        case ASM_JE: return "je";
+        case ASM_JNE: return "jne";
+        case ASM_JG: return "jg";
+        case ASM_JGE: return "jge";
+        case ASM_JL: return "jl";
+        case ASM_JLE: return "jle";
+        case ASM_CMP: return "cmp";
+        case ASM_TEST: return "test";
+        case ASM_AND: return "and";
+        case ASM_OR: return "or";
+        case ASM_XOR: return "xor";
+        case ASM_NOT: return "not";
+        case ASM_SHL: return "shl";
+        case ASM_SHR: return "shr";
+        case ASM_SYSCALL: return "syscall";
+        case ASM_NOP: return "nop";
+
+        // Punctuation
+        case COMMA: return ",";
+        case COLON: return ":";
+        case SEMICOLON: return ";";
+        case LPAREN: return "(";
+        case RPAREN: return ")";
+        case LBRACKET: return "[";
+        case RBRACKET: return "]";
+        case LBRACE: return "{";
+        case RBRACE: return "}";
+
+        // Special
+        case SP_EOF: return "SP_EOF";
+        case SP_EOL: return "SP_EOL";
+        default: return "unknown";
     }
 }

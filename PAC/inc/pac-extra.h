@@ -17,7 +17,10 @@
 enum Architecture {
     x86_64,
     ARM64,
+    ARM32,
     x86,
+    RISCV32,
+    RISCV64,
     PVCPU,
     UNKNOWN_ARCH,
 };
@@ -31,6 +34,12 @@ static inline enum Architecture archs_to_archenum(char* arch) {
         return x86_64;
     } else if (strcmp(arch, "arm64") == 0) {
         return ARM64;
+    } else if (strcmp(arch, "arm32") == 0) {
+        return ARM32;
+    } else if (strcmp(arch, "riscv32") == 0) {
+        return RISCV32;
+    } else if (strcmp(arch, "riscv64") == 0) {
+        return RISCV64;
     } else if (strcmp(arch, "x86") == 0) {
         return x86;
     } else if (strcmp(arch, "pvcpu") == 0) {
@@ -50,6 +59,15 @@ static inline void archenum_to_archs(enum Architecture arch, char* archs) {
             break;
         case ARM64:
             strcpy(archs, "arm64");
+            break;
+        case ARM32:
+            strcpy(archs, "arm32");
+            break;
+        case RISCV32:
+            strcpy(archs, "riscv32");
+            break;
+        case RISCV64:
+            strcpy(archs, "riscv64");
             break;
         case PVCPU:
             strcpy(archs, "pvcpu");
@@ -160,5 +178,23 @@ static inline void rmchr(char* str, char c) {
 
 static inline void pac_strdup(char* src, char* dest) {
     if (src == NULL || dest == NULL) return;
-    strcpy(src, dest);
+    strcpy(dest, src);
+}
+
+static inline size_t align_up(size_t val, size_t to) {
+    return (val + to - 1) & ~(to - 1);
+}
+
+static inline void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size) {
+    size_t old_size = old_count * size;
+    size_t new_size = new_count * size;
+
+    void* new_ptr = realloc(ptr, new_size);
+    if (!new_ptr) return NULL;
+
+    if (new_size > old_size) {
+        memset((char*)new_ptr + old_size, 0, new_size - old_size);
+    }
+
+    return new_ptr;
 }
