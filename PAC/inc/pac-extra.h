@@ -198,3 +198,7 @@ static inline void* recalloc(void* ptr, size_t old_count, size_t new_count, size
 
     return new_ptr;
 }
+
+static inline size_t max(size_t a, size_t b) {
+    return (a > b) ? a : b;
+}

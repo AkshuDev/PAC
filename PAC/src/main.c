@@ -50,7 +50,7 @@ void print_usage(const char* prog) {
     printf("\t--only-asm                Stop after encoding and do not link\n");
     printf("\t-a, --arch <architecture> Target architecture (default: x86_64)\n");
     printf("\t-b, --bits <16|32|64>     Target bits (default: 64)\n");
-    printf("\t-t, --base                Base Virtual Address (default: 0x0)\n");
+    printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
     printf("\t-f, --format <elf64/elf32/win64/win32> Target output format (default: elf64)\n");
 }
@@ -67,7 +67,11 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->lexout = false;
     args->parseout = false;
     args->asmout = false;
-    args->base = 0x0;
+    #ifdef __WIN32
+    args->base = 0x140000000;
+    #else
+    args->base = 0x400000;
+    #endif
     args->savetemps = false;
     args->entry_label = NULL;
     args->linkformat = ELF64;
