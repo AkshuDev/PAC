@@ -1,0 +1,626 @@
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <ctype.h>
+#include <elf.h>
+
+#include <pac-lexer.h>
+#include <pac-parser.h>
+#include <pac-extra.h>
+#include <pac-err.h>
+
+#include <pac-asm.h>
+#include <pac-pvpcu-encoder.h>
+
+#define OPCODE_BITS 12
+#define MODE_BITS    4
+#define RSRC_BITS    6
+#define RDEST_BITS   6
+#define FLAGS_BITS   4
+
+#define FLAGS_SHIFT   0
+#define RDEST_SHIFT   (FLAGS_SHIFT + FLAGS_BITS)
+#define RSRC_SHIFT    (RDEST_SHIFT + RDEST_BITS)
+#define MODE_SHIFT    (RSRC_SHIFT + RSRC_BITS)
+#define OPCODE_SHIFT  (MODE_SHIFT + MODE_BITS)
+
+typedef struct {
+    uint8_t code; // 6-bit ID
+    char name[8]; // Name of register
+    uint8_t size; // Operand size (8, 16, 32, 64)
+    bool valid;
+} RegInfo;
+
+static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
+    fwrite(bytes, 1, count, out);
+}
+
+static RegInfo encode_register(const char *reg) {
+    RegInfo r = {0};
+
+    r.valid = true;
+    strncpy(r.name, reg, sizeof(r.name));
+
+    // 64-bit (q<REG>)
+    if (strcmp(reg, "qnull") == 0) { r.code = 0x0; return r; }
+    else if (strcmp(reg, "qg0") == 0) { r.code = 0x1; r.size = 64; return r; }
+    else if (strcmp(reg, "qg1") == 0) { r.code = 0x2; r.size = 64; return r; }
+    else if (strcmp(reg, "qg2") == 0) { r.code = 0x3; r.size = 64; return r; }
+    else if (strcmp(reg, "qg3") == 0) { r.code = 0x4; r.size = 64; return r; }
+    else if (strcmp(reg, "qg4") == 0) { r.code = 0x5; r.size = 64; return r; }
+    else if (strcmp(reg, "qg5") == 0) { r.code = 0x6; r.size = 64; return r; }
+    else if (strcmp(reg, "qg6") == 0) { r.code = 0x7; r.size = 64; return r; }
+    else if (strcmp(reg, "qg7") == 0) { r.code = 0x8; r.size = 64; return r; }
+    else if (strcmp(reg, "qg8") == 0) { r.code = 0x9; r.size = 64; return r; }
+    else if (strcmp(reg, "qg9") == 0) { r.code = 0x10; r.size = 64; return r; }
+    else if (strcmp(reg, "qg10") == 0) { r.code = 0x11; r.size = 64; return r; }
+    else if (strcmp(reg, "qg11") == 0) { r.code = 0x12; r.size = 64; return r; }
+    else if (strcmp(reg, "qg12") == 0) { r.code = 0x13; r.size = 64; return r; }
+    else if (strcmp(reg, "qg13") == 0) { r.code = 0x14; r.size = 64; return r; }
+    else if (strcmp(reg, "qg14") == 0) { r.code = 0x15; r.size = 64; return r; }
+    else if (strcmp(reg, "qg15") == 0) { r.code = 0x16; r.size = 64; return r; }
+    else if (strcmp(reg, "qg16") == 0) { r.code = 0x17; r.size = 64; return r; }
+    else if (strcmp(reg, "qg17") == 0) { r.code = 0x18; r.size = 64; return r; }
+    else if (strcmp(reg, "qg18") == 0) { r.code = 0x19; r.size = 64; return r; }
+    else if (strcmp(reg, "qg19") == 0) { r.code = 0x20; r.size = 64; return r; }
+    else if (strcmp(reg, "qg20") == 0) { r.code = 0x21; r.size = 64; return r; }
+    else if (strcmp(reg, "qg21") == 0) { r.code = 0x22; r.size = 64; return r; }
+    else if (strcmp(reg, "qg22") == 0) { r.code = 0x23; r.size = 64; return r; }
+    else if (strcmp(reg, "qg23") == 0) { r.code = 0x24; r.size = 64; return r; }
+    else if (strcmp(reg, "qg24") == 0) { r.code = 0x25; r.size = 64; return r; }
+    else if (strcmp(reg, "qg25") == 0) { r.code = 0x26; r.size = 64; return r; }
+    else if (strcmp(reg, "qg26") == 0) { r.code = 0x27; r.size = 64; return r; }
+    else if (strcmp(reg, "qg27") == 0) { r.code = 0x28; r.size = 64; return r; }
+    else if (strcmp(reg, "qg28") == 0) { r.code = 0x29; r.size = 64; return r; }
+    else if (strcmp(reg, "qg29") == 0) { r.code = 0x30; r.size = 64; return r; }
+    else if (strcmp(reg, "qg30") == 0) { r.code = 0x31; r.size = 64; return r; }
+    else if (strcmp(reg, "qlr") == 0) { r.code = 0x32; r.size = 64; return r; }
+    else if (strcmp(reg, "qsf") == 0) { r.code = 0x33; r.size = 64; return r; }
+    else if (strcmp(reg, "qsp") == 0) { r.code = 0x34; r.size = 64; return r; }
+
+    // 32-bit
+    else if (strcmp(reg, "dg0") == 0) { r.code = 0x1; r.size = 32; return r; }
+    else if (strcmp(reg, "dg1") == 0) { r.code = 0x2; r.size = 32; return r; }
+    else if (strcmp(reg, "dg2") == 0) { r.code = 0x3; r.size = 32; return r; }
+    else if (strcmp(reg, "dg3") == 0) { r.code = 0x4; r.size = 32; return r; }
+    else if (strcmp(reg, "dg4") == 0) { r.code = 0x5; r.size = 32; return r; }
+    else if (strcmp(reg, "dg5") == 0) { r.code = 0x6; r.size = 32; return r; }
+    else if (strcmp(reg, "dg6") == 0) { r.code = 0x7; r.size = 32; return r; }
+    else if (strcmp(reg, "dg7") == 0) { r.code = 0x8; r.size = 32; return r; }
+    else if (strcmp(reg, "dg8") == 0) { r.code = 0x9; r.size = 32; return r; }
+    else if (strcmp(reg, "dg9") == 0) { r.code = 0x10; r.size = 32; return r; }
+    else if (strcmp(reg, "dg10") == 0) { r.code = 0x11; r.size = 32; return r; }
+    else if (strcmp(reg, "dg11") == 0) { r.code = 0x12; r.size = 32; return r; }
+    else if (strcmp(reg, "dg12") == 0) { r.code = 0x13; r.size = 32; return r; }
+    else if (strcmp(reg, "dg13") == 0) { r.code = 0x14; r.size = 32; return r; }
+    else if (strcmp(reg, "dg14") == 0) { r.code = 0x15; r.size = 32; return r; }
+    else if (strcmp(reg, "dg15") == 0) { r.code = 0x16; r.size = 32; return r; }
+    else if (strcmp(reg, "dg16") == 0) { r.code = 0x17; r.size = 32; return r; }
+    else if (strcmp(reg, "dg17") == 0) { r.code = 0x18; r.size = 32; return r; }
+    else if (strcmp(reg, "dg18") == 0) { r.code = 0x19; r.size = 32; return r; }
+    else if (strcmp(reg, "dg19") == 0) { r.code = 0x20; r.size = 32; return r; }
+    else if (strcmp(reg, "dg20") == 0) { r.code = 0x21; r.size = 32; return r; }
+    else if (strcmp(reg, "dg21") == 0) { r.code = 0x22; r.size = 32; return r; }
+    else if (strcmp(reg, "dg22") == 0) { r.code = 0x23; r.size = 32; return r; }
+    else if (strcmp(reg, "dg23") == 0) { r.code = 0x24; r.size = 32; return r; }
+    else if (strcmp(reg, "dg24") == 0) { r.code = 0x25; r.size = 32; return r; }
+    else if (strcmp(reg, "dg25") == 0) { r.code = 0x26; r.size = 32; return r; }
+    else if (strcmp(reg, "dg26") == 0) { r.code = 0x27; r.size = 32; return r; }
+    else if (strcmp(reg, "dg27") == 0) { r.code = 0x28; r.size = 32; return r; }
+    else if (strcmp(reg, "dg28") == 0) { r.code = 0x29; r.size = 32; return r; }
+    else if (strcmp(reg, "dg29") == 0) { r.code = 0x30; r.size = 32; return r; }
+    else if (strcmp(reg, "dg30") == 0) { r.code = 0x31; r.size = 32; return r; }
+    else if (strcmp(reg, "dlr") == 0) { r.code = 0x32; r.size = 32; return r; }
+    else if (strcmp(reg, "dsf") == 0) { r.code = 0x33; r.size = 32; return r; }
+    else if (strcmp(reg, "dsp") == 0) { r.code = 0x34; r.size = 32; return r; }
+
+    // 16-bit
+    else if (strcmp(reg, "wg0") == 0) { r.code = 0x1; r.size = 16; return r; }
+    else if (strcmp(reg, "wg1") == 0) { r.code = 0x2; r.size = 16; return r; }
+    else if (strcmp(reg, "wg2") == 0) { r.code = 0x3; r.size = 16; return r; }
+    else if (strcmp(reg, "wg3") == 0) { r.code = 0x4; r.size = 16; return r; }
+    else if (strcmp(reg, "wg4") == 0) { r.code = 0x5; r.size = 16; return r; }
+    else if (strcmp(reg, "wg5") == 0) { r.code = 0x6; r.size = 16; return r; }
+    else if (strcmp(reg, "wg6") == 0) { r.code = 0x7; r.size = 16; return r; }
+    else if (strcmp(reg, "wg7") == 0) { r.code = 0x8; r.size = 16; return r; }
+    else if (strcmp(reg, "wg8") == 0) { r.code = 0x9; r.size = 16; return r; }
+    else if (strcmp(reg, "wg9") == 0) { r.code = 0x10; r.size = 16; return r; }
+    else if (strcmp(reg, "wg10") == 0) { r.code = 0x11; r.size = 16; return r; }
+    else if (strcmp(reg, "wg11") == 0) { r.code = 0x12; r.size = 16; return r; }
+    else if (strcmp(reg, "wg12") == 0) { r.code = 0x13; r.size = 16; return r; }
+    else if (strcmp(reg, "wg13") == 0) { r.code = 0x14; r.size = 16; return r; }
+    else if (strcmp(reg, "wg14") == 0) { r.code = 0x15; r.size = 16; return r; }
+    else if (strcmp(reg, "wg15") == 0) { r.code = 0x16; r.size = 16; return r; }
+    else if (strcmp(reg, "wg16") == 0) { r.code = 0x17; r.size = 16; return r; }
+    else if (strcmp(reg, "wg17") == 0) { r.code = 0x18; r.size = 16; return r; }
+    else if (strcmp(reg, "wg18") == 0) { r.code = 0x19; r.size = 16; return r; }
+    else if (strcmp(reg, "wg19") == 0) { r.code = 0x20; r.size = 16; return r; }
+    else if (strcmp(reg, "wg20") == 0) { r.code = 0x21; r.size = 16; return r; }
+    else if (strcmp(reg, "wg21") == 0) { r.code = 0x22; r.size = 16; return r; }
+    else if (strcmp(reg, "wg22") == 0) { r.code = 0x23; r.size = 16; return r; }
+    else if (strcmp(reg, "wg23") == 0) { r.code = 0x24; r.size = 16; return r; }
+    else if (strcmp(reg, "wg24") == 0) { r.code = 0x25; r.size = 16; return r; }
+    else if (strcmp(reg, "wg25") == 0) { r.code = 0x26; r.size = 16; return r; }
+    else if (strcmp(reg, "wg26") == 0) { r.code = 0x27; r.size = 16; return r; }
+    else if (strcmp(reg, "wg27") == 0) { r.code = 0x28; r.size = 16; return r; }
+    else if (strcmp(reg, "wg28") == 0) { r.code = 0x29; r.size = 16; return r; }
+    else if (strcmp(reg, "wg29") == 0) { r.code = 0x30; r.size = 16; return r; }
+    else if (strcmp(reg, "wg30") == 0) { r.code = 0x31; r.size = 16; return r; }
+    else if (strcmp(reg, "wlr") == 0) { r.code = 0x32; r.size = 16; return r; }
+    else if (strcmp(reg, "wsf") == 0) { r.code = 0x33; r.size = 16; return r; }
+    else if (strcmp(reg, "wsp") == 0) { r.code = 0x34; r.size = 16; return r; }
+
+    // 8-bit
+    else if (strcmp(reg, "bg0") == 0) { r.code = 0x1; r.size = 8; return r; }
+    else if (strcmp(reg, "bg1") == 0) { r.code = 0x2; r.size = 8; return r; }
+    else if (strcmp(reg, "bg2") == 0) { r.code = 0x3; r.size = 8; return r; }
+    else if (strcmp(reg, "bg3") == 0) { r.code = 0x4; r.size = 8; return r; }
+    else if (strcmp(reg, "bg4") == 0) { r.code = 0x5; r.size = 8; return r; }
+    else if (strcmp(reg, "bg5") == 0) { r.code = 0x6; r.size = 8; return r; }
+    else if (strcmp(reg, "bg6") == 0) { r.code = 0x7; r.size = 8; return r; }
+    else if (strcmp(reg, "bg7") == 0) { r.code = 0x8; r.size = 8; return r; }
+    else if (strcmp(reg, "bg8") == 0) { r.code = 0x9; r.size = 8; return r; }
+    else if (strcmp(reg, "bg9") == 0) { r.code = 0x10; r.size = 8; return r; }
+    else if (strcmp(reg, "bg10") == 0) { r.code = 0x11; r.size = 8; return r; }
+    else if (strcmp(reg, "bg11") == 0) { r.code = 0x12; r.size = 8; return r; }
+    else if (strcmp(reg, "bg12") == 0) { r.code = 0x13; r.size = 8; return r; }
+    else if (strcmp(reg, "bg13") == 0) { r.code = 0x14; r.size = 8; return r; }
+    else if (strcmp(reg, "bg14") == 0) { r.code = 0x15; r.size = 8; return r; }
+    else if (strcmp(reg, "bg15") == 0) { r.code = 0x16; r.size = 8; return r; }
+    else if (strcmp(reg, "bg16") == 0) { r.code = 0x17; r.size = 8; return r; }
+    else if (strcmp(reg, "bg17") == 0) { r.code = 0x18; r.size = 8; return r; }
+    else if (strcmp(reg, "bg18") == 0) { r.code = 0x19; r.size = 8; return r; }
+    else if (strcmp(reg, "bg19") == 0) { r.code = 0x20; r.size = 8; return r; }
+    else if (strcmp(reg, "bg20") == 0) { r.code = 0x21; r.size = 8; return r; }
+    else if (strcmp(reg, "bg21") == 0) { r.code = 0x22; r.size = 8; return r; }
+    else if (strcmp(reg, "bg22") == 0) { r.code = 0x23; r.size = 8; return r; }
+    else if (strcmp(reg, "bg23") == 0) { r.code = 0x24; r.size = 8; return r; }
+    else if (strcmp(reg, "bg24") == 0) { r.code = 0x25; r.size = 8; return r; }
+    else if (strcmp(reg, "bg25") == 0) { r.code = 0x26; r.size = 8; return r; }
+    else if (strcmp(reg, "bg26") == 0) { r.code = 0x27; r.size = 8; return r; }
+    else if (strcmp(reg, "bg27") == 0) { r.code = 0x28; r.size = 8; return r; }
+    else if (strcmp(reg, "bg28") == 0) { r.code = 0x29; r.size = 8; return r; }
+    else if (strcmp(reg, "bg29") == 0) { r.code = 0x30; r.size = 8; return r; }
+    else if (strcmp(reg, "bg30") == 0) { r.code = 0x31; r.size = 8; return r; }
+    else if (strcmp(reg, "blr") == 0) { r.code = 0x32; r.size = 8; return r; }
+    else if (strcmp(reg, "bsf") == 0) { r.code = 0x33; r.size = 8; return r; }
+    else if (strcmp(reg, "bsp") == 0) { r.code = 0x34; r.size = 8; return r; }
+
+    fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
+    r.code = 0xFF;
+    r.valid = false;
+    return r;
+}
+
+static uint64_t get_opcode(TokenType opcode) {
+    switch (opcode) {
+        case ASM_ADD: return 0x1;
+        case ASM_SUB: return 0x2;
+        case ASM_MUL: return 0x3;
+        case ASM_DIV: return 0x4;
+        case ASM_CMP: return 0x5;
+        case ASM_SHL: return 0x6;
+        case ASM_SHR: return 0x7;
+        case ASM_AND: return 0x8;
+        case ASM_NOT: return 0x9;
+        case ASM_OR: return 0x10;
+        case ASM_XOR: return 0x11;
+        case ASM_MOV: return 0x12;
+        default: return 0x0;
+    }
+    return 0;
+}
+
+static OperandType classify_operand(const char* op) {
+    if (op[0] == '0' && op[1] == 'x') return OPERAND_LABEL; // print, exit
+    if (op[0] == '[') return OPERAND_MEMORY; // [0x1234], [var], [%qg0 + 0x1234], [%qg1 - 0x1234]
+    if (isdigit(op[0])) return OPERAND_LIT_INT; // 42, 0x1234
+    if (isalpha(op[0])) return OPERAND_REGISTER; // %qg0, %qg16
+    return (OperandType)-1;
+}
+
+static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm) {
+    // remove brackets
+    char buf[128]; 
+    strncpy(buf, op + 1, strlen(op) - 2);
+    buf[strlen(op) - 2] = '\0';
+
+    // check for displacement: [reg + 0x10] or [0x1234]
+    if (isdigit(buf[0])) {
+        *imm = strtoul(buf, NULL, 16);
+    } else {
+        // assume register base
+        *src = encode_register(buf);
+        *imm = 0;
+
+        if (buf[3] == '+') *imm = strtoul(buf + 2, NULL, 10); // check if displacement like -> [reg + 100]
+        else if (buf[4] == '+') *imm = strtoul(buf + 3, NULL, 10);
+        else if (buf[3] == '-') *imm = -strtoul(buf + 2, NULL, 10);
+        else if (buf[4] == '-') *imm = -strtoul(buf + 3, NULL, 10);
+    }
+}
+
+static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
+    for (size_t i = 0; i < symtab->count; i++) {
+        Symbol sym = symtab->symbols[i];
+        if (sym.addr == addr) { // match
+            // we found it
+            return i;
+        }
+    }
+    return 0;
+}
+
+bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int bits) {
+    FILE* out = fopen(output_file, "wb");
+    if (!out) {
+        printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
+        return false;
+    }
+
+    if (bits != 64) {
+        printf(COLOR_RED "Error: Cannot make a ELF Object file of architecture x86_64 with the specified bits [%d]\n" COLOR_RESET, bits);
+        return false;
+    }
+
+    // Header
+    Elf64_Ehdr eh = {0};
+    memcpy(eh.e_ident, ELFMAG, SELFMAG);
+    eh.e_ident[EI_CLASS] = ELFCLASS64;
+    eh.e_ident[EI_DATA] = ELFDATA2LSB; // Little Endian
+    eh.e_ident[EI_VERSION] = EV_CURRENT;
+    eh.e_ident[EI_OSABI] = ELFOSABI_SYSV;
+    eh.e_ident[EI_ABIVERSION] = 0;
+    eh.e_type = ET_REL;
+    eh.e_machine =  EM_PVCPU;
+    eh.e_version = EV_CURRENT;
+    eh.e_entry = (Elf64_Addr)(ctx->entry ? ctx->entry : 0);
+    eh.e_phoff = 0; // no program header
+    eh.e_shoff = 0;
+    eh.e_flags = 0;
+    eh.e_ehsize = sizeof(Elf64_Ehdr);
+    eh.e_phentsize = sizeof(Elf64_Phdr);
+    eh.e_phnum = 0;
+    eh.e_shentsize = sizeof(Elf64_Shdr);
+    eh.e_shnum = 0;
+    eh.e_shstrndx = 0;
+
+    size_t rsection_count = ctx->sections->count;
+    size_t section_count = rsection_count + 5; // +3 for null section, .symtab, .strtab, .shstrtab, .reloc.text
+    Elf64_Shdr* shdrs = calloc(section_count, sizeof(Elf64_Shdr));
+
+    // Section string table
+    char secname[64];
+    char* shstrtab = calloc(section_count, sizeof(secname));
+    size_t shstrtab_off = 0;
+    size_t shstrtab_size = section_count * sizeof(secname);
+
+    // Normal String table
+    char symname[128];
+    char* strtab = calloc(ctx->symbols->count + 1, sizeof(symname));
+    size_t strtab_off = 0;
+    size_t strtab_size = (ctx->symbols->count + 1) * sizeof(symname);
+    
+    size_t roffset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
+    size_t offset = roffset;
+    size_t text_off = offset;
+    Section text_sec;
+    size_t text_sec_idx = 0;
+
+    // Null section
+    shdrs[0].sh_type = SHT_NULL;
+
+    memcpy(shstrtab + shstrtab_off, ".null", 6);
+    shdrs[0].sh_name = shstrtab_off;
+    shstrtab_off += 6;
+
+    // Symbol Section
+    shdrs[1].sh_type = SHT_SYMTAB;
+    shdrs[1].sh_addralign = 8;
+    shdrs[1].sh_entsize = sizeof(Elf64_Sym);
+    shdrs[1].sh_size = (ctx->symbols->count + 1) * sizeof(Elf64_Sym);
+    shdrs[1].sh_link = 2;
+    shdrs[1].sh_info = ctx->symbols->count + 1;
+    shdrs[1].sh_offset = sizeof(Elf64_Ehdr) + (section_count * sizeof(Elf64_Shdr)) + shstrtab_size + strtab_size;
+
+    memcpy(shstrtab + shstrtab_off, ".symtab", 8);
+    shdrs[1].sh_name = shstrtab_off;
+    shstrtab_off += 8;
+
+    shdrs[2].sh_type = SHT_STRTAB;
+    shdrs[2].sh_addralign = 1;
+    shdrs[2].sh_entsize = 0;
+    shdrs[2].sh_size = strtab_size;
+    shdrs[2].sh_offset = sizeof(Elf64_Ehdr) + (section_count * sizeof(Elf64_Shdr)) + shstrtab_size;
+    
+    memcpy(shstrtab + shstrtab_off, ".strtab", 8);
+    shdrs[2].sh_name = shstrtab_off;
+    shstrtab_off += 8;
+
+    memcpy(shstrtab + shstrtab_off, ".shstrtab", 10);
+    shdrs[3].sh_name = shstrtab_off;
+    shstrtab_off += 10;
+    
+    shdrs[3].sh_type = SHT_STRTAB;
+    shdrs[3].sh_offset = (Elf64_Xword)(sizeof(Elf64_Ehdr) + (section_count * sizeof(Elf64_Shdr)));
+    shdrs[3].sh_size = (Elf64_Xword)shstrtab_size;
+    shdrs[3].sh_addralign = 1;
+
+    for (size_t i = 0; i < ctx->sections->count; i++) {
+        Section sec = ctx->sections->sections[i];
+        Elf64_Shdr* sh = &shdrs[i + 5];
+
+        size_t len = strlen(sec.name) + 1;
+        memcpy(shstrtab + shstrtab_off, sec.name, len);
+        sh->sh_name = shstrtab_off;
+        shstrtab_off += len;
+
+        if (strcmp(sec.name, ".text") == 0) {
+            sh->sh_type = SHT_PROGBITS;
+            sh->sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+            text_off = offset;
+            text_sec = ctx->sections->sections[i];
+            text_sec_idx = i + 5;
+        } else if (strcmp(sec.name, ".data") == 0) {
+            sh->sh_type = SHT_PROGBITS;
+            sh->sh_flags = SHF_ALLOC | SHF_WRITE;
+        } else if (strcmp(sec.name, ".bss") == 0) {
+            sh->sh_type = SHT_NOBITS;
+            sh->sh_flags = SHF_ALLOC | SHF_WRITE;
+            sh->sh_addr = (Elf64_Addr)sec.base;
+            sh->sh_addralign = (Elf64_Xword)sec.alignment;
+            continue;
+        } else if (strcmp(sec.name, ".rodata") == 0) {
+            sh->sh_type = SHT_PROGBITS;
+            sh->sh_flags = SHF_ALLOC;
+        } else {
+            sh->sh_type = SHT_NULL;
+            sh->sh_flags = 0;
+        }
+
+        sh->sh_addr = (Elf64_Addr)sec.base;
+        sh->sh_offset = (Elf64_Xword)offset;
+        sh->sh_size = (Elf64_Xword)sec.size;
+        sh->sh_link = 0;
+        sh->sh_info = 0;
+        sh->sh_addralign = (Elf64_Xword)sec.alignment;
+        sh->sh_entsize = 0;
+
+        offset += sec.size;
+    }
+
+    // Write data
+    for (size_t i = 0; i < ctx->sections->count; i++) {
+        Elf64_Shdr* sh = &shdrs[i + 5];
+
+        Section sec = ctx->sections->sections[i];
+        size_t written = 0;
+        
+        if (strcmp(sec.name, ".bss") == 0) {
+            continue;
+        }
+
+        fseek(out, sh->sh_offset, SEEK_SET);
+
+        for (size_t j = 0; j < ctx->symbols->count; j++) {
+            Symbol sym = ctx->symbols->symbols[j];
+            if (sym.section_index != i) continue;
+
+            if (sym.type == SYM_IDENTIFIER) { // Only for identifier/allocated stuff
+                int use = 0;
+                long long intval = 0;
+                double floatval = 0;
+                if (sym.type_of_data >= T_BYTE && sym.type_of_data <= T_ULONG) {
+                    intval = atoll(sym.value);
+                    use = 0;
+                } else if (sym.type_of_data >= T_FLOAT && sym.type_of_data <= T_DOUBLE) {
+                    floatval = atof(sym.value);
+                    use = 1;
+                } else if (sym.type_of_data == T_ARRAY) {
+
+                } else {
+                    // PTR
+                }
+
+                if (use == 0) {
+                    fwrite(&intval, sym.size, 1, out);
+                } else if (use == 1) {
+                    fwrite(&floatval, sym.size, 1, out);
+                }
+                written += sym.size;
+            }
+        }
+
+        if (written > sec.size) {
+            fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!" COLOR_RESET);
+            fclose(out);
+
+            if (remove(output_file) != 0) {
+                perror("Error deleting file");
+            }
+
+            free(shdrs);
+
+            return false;
+        } else if (written < sec.size) {
+            for (size_t i = 0; i < (sec.size - written); i++) {
+                fwrite("\0", 1, 1, out);
+            }
+        }
+    }
+
+    size_t inst_written = 0;
+
+    fseek(out, text_off, SEEK_SET);
+    for (size_t i = 0; i < irlist->count; i++) {
+        IRInstruction inst = irlist->instructions[i];
+
+        if (inst.arch != PVCPU) {
+            fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction!" COLOR_RESET);
+            fclose(out);
+
+            if (remove(output_file) != 0) {
+                perror("Error deleting file");
+            }
+
+            free(shdrs);
+
+            return false;
+        }
+
+        RegInfo src = {0};
+        RegInfo dest = {0};
+        uint64_t imm = 0;
+
+        uint32_t flags = 0;
+        uint32_t mode = 0;
+        uint32_t rsrc = src.valid ? src.code : 0;
+        uint32_t rdest = dest.valid ? dest.code : 0;
+
+        bool issrc = false;
+
+        for (size_t j = 0; j < inst.operand_count; j++) {
+            char* operand = inst.operands[j];
+            OperandType optype = classify_operand((const char*)operand);
+
+            switch (optype) {
+                case OPERAND_REGISTER:
+                    if (issrc) { src = encode_register(operand); issrc = false; }
+                    else {dest = encode_register(operand); issrc = true; }
+                    break;
+                case OPERAND_LIT_INT:
+                    imm = strtoul(operand, NULL, 10);
+                    break;
+                case OPERAND_MEMORY:
+                    parse_memory_operand(operand, &src, &dest, &imm);
+                    break;
+                case OPERAND_LABEL:
+                    imm = strtoul(operand, NULL, 16); // resolve symbol
+                    break;
+                default:
+                    fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
+                    return false;
+            }
+        }
+
+        uint64_t opcode_full = get_opcode(inst.opcode);
+
+        if (!opcode_full) {
+            fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\n" COLOR_RESET, token_type_to_ogstr(inst.opcode));
+            fclose(out);
+
+            if (remove(output_file) != 0) {
+                perror("Error deleting file");
+            }
+
+            free(shdrs);
+
+            return false;
+        } 
+        
+        uint32_t outbytes = 0x0;
+        outbytes |= ((uint32_t)(opcode_full & ((1 << OPCODE_BITS) - 1))) << OPCODE_SHIFT;
+        outbytes |= ((uint32_t)(mode   & ((1 << MODE_BITS)   - 1))) << MODE_SHIFT;
+        outbytes |= ((uint32_t)(rsrc   & ((1 << RSRC_BITS)   - 1))) << RSRC_SHIFT;
+        outbytes |= ((uint32_t)(rdest  & ((1 << RDEST_BITS)  - 1))) << RDEST_SHIFT;
+        outbytes |= ((uint32_t)(flags  & ((1 << FLAGS_BITS)  - 1))) << FLAGS_SHIFT;
+
+        emit_bytes(out, (uint8_t*)&outbytes, 4);
+    }
+
+    if (inst_written > text_sec.size) {
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec.size);
+        fclose(out);
+
+        if (remove(output_file) != 0) {
+            perror("Error deleting file");
+        }
+
+        free(shdrs);
+
+        return false;
+    } else if (inst_written < text_sec.size) {
+        for (size_t i = 0; i < (text_sec.size - inst_written); i++) {
+                fwrite("\0", 1, 1, out);
+            }
+    }
+
+    fseek(out, 0, SEEK_SET);
+    eh.e_shoff = sizeof(Elf64_Ehdr);
+    eh.e_shnum = section_count;
+    eh.e_shstrndx = 3;
+
+    memcpy(shstrtab + shstrtab_off, ".reloc.text", 12);
+    shdrs[4].sh_name = shstrtab_off;
+    shstrtab_off += 12;
+    
+    shdrs[4].sh_type = SHT_RELA;
+    shdrs[4].sh_flags = SHF_INFO_LINK;
+    shdrs[4].sh_link = 1;
+    shdrs[4].sh_info = text_sec_idx;
+    shdrs[4].sh_entsize = sizeof(Elf64_Rela);
+    Section last_sec = ctx->sections->sections[ctx->sections->count - 1];
+    shdrs[4].sh_offset = (Elf64_Xword)(roffset + last_sec.base + last_sec.size + 16); // +16 for safety
+    shdrs[4].sh_size = (Elf64_Xword)(text_sec.reloc_count * sizeof(Elf64_Rela));
+    shdrs[4].sh_addralign = 1;
+
+    fwrite(&eh, sizeof(eh), 1, out);
+    fwrite(shdrs, sizeof(Elf64_Shdr), section_count, out);
+
+    Elf64_Sym* elfsymtab = calloc(ctx->symbols->count + 1, sizeof(Elf64_Sym)); // +1 for Null
+
+    elfsymtab[0].st_name = 0;
+    elfsymtab[0].st_info = ELF64_ST_INFO(STB_LOCAL, STT_NOTYPE);
+    elfsymtab[0].st_shndx = SHN_UNDEF;
+    strtab_off += 1;
+
+    for (size_t i = 0; i < ctx->symbols->count; i++) {
+        Symbol sym = ctx->symbols->symbols[i];
+        Elf64_Sym* esym = &elfsymtab[i + 1];
+        
+        // Add name
+        esym->st_shndx = sym.section_index + 5;
+        if (sym.type == SYM_IDENTIFIER) esym->st_size = (Elf64_Xword)sym.size;
+        else esym->st_size = 0;
+        if (sym.type == SYM_LABEL) esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
+        else if (sym.type == SYM_FILE) esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
+        else esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
+        esym->st_other = 0;
+        esym->st_value = (Elf64_Addr)(sym.addr - ctx->sections->sections[sym.section_index].base);
+
+        size_t len = strlen(sym.name) + 1;
+        memcpy(strtab + strtab_off, sym.name, len);
+        esym->st_name = strtab_off; 
+        strtab_off += len;
+    }
+
+    fwrite(shstrtab, 1, shstrtab_size, out);
+    fwrite(strtab, 1, strtab_size, out);
+    fwrite(elfsymtab, sizeof(Elf64_Sym), ctx->symbols->count + 1, out);
+
+    free(shstrtab);
+    free(strtab);
+    free(elfsymtab);
+
+    fseek(out, shdrs[4].sh_offset, SEEK_SET);
+    
+    // add relocs of .text section
+    for (size_t i = 0; i < text_sec.reloc_count; i++) {
+        Relocation reloc = text_sec.relocs[i];
+        Elf64_Rela r = {0};
+
+        r.r_addend = reloc.addend;
+        r.r_offset = reloc.offset;
+        r.r_info = ELF64_R_INFO(reloc.symbol + 1, reloc.type);
+        
+        fwrite(&r, sizeof(r), 1, out);
+    }
+
+    free_reloc(&text_sec);
+    fclose(out);
+    free(shdrs);
+
+    return true;
+}

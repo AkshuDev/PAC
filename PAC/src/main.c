@@ -16,6 +16,7 @@
 
 // Encoders
 #include <pac-x86_64-encoder.h> // includes x86 also
+#include <pac-pvpcu-encoder.h>
 
 typedef struct {
     char* output_file;
@@ -403,6 +404,8 @@ int main(int argc, char** argv) {
             if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) break;
         } else if (args.arch == x86) {
             if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) break;
+        } else if (args.arch == PVCPU) {
+            if (!encode_pvcpu(&assembler, outfile, &irlist, args.bits)) break;
         } else {
             fprintf(stderr, COLOR_RED "Error: Unsupported Architecture\n" COLOR_RESET);
             return PAC_Error_ArchitectureNotSupported;
