@@ -334,8 +334,8 @@ static size_t instruction_length(ASTInstruction inst, enum Architecture arch, As
         break;
 
     case PVCPU:
-        // PVCpu is fixed at 12 bytes (little big don't you think? well it has a format like - [src:1b][dest:1b][imm:8b][mode:1b][extra:1b] (extra can be used for anything)
-        length = 12;
+        // PVCpu is fixed at 4 bytes (It has gone through many changes, finally 4 bytes seems best, Transistions: [16, 12, 8, 16, 8, 4])
+        length = 4;
         break;
 
     default:

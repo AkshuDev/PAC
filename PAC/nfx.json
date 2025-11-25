@@ -1,0 +1,11 @@
+{
+  "Name": "PAC",
+  "Binaries": [
+    {
+      "Os": ["linux"],
+      "Arch": ["x86_64"],
+      "Path": "bin/linux/x86_64/pac",
+      "Name": "pac"
+    }
+  ]
+}

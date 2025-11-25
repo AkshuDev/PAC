@@ -94,6 +94,14 @@ typedef enum {
     ASM_SHR,
     ASM_SYSCALL,
     ASM_LEA,
+    ASM_LOAD,
+    ASM_STORE,
+    ASM_SHIFTR,
+    ASM_SHIFTL,
+    ASM_ASHR, // Arithmetic Shift Right
+    ASM_ASHL,
+    ASM_ROTL, // Rotate Left
+    ASM_ROTR,
     ASM_NOP,
     // Literals
     LIT_INT,

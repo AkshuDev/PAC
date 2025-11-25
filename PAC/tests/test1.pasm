@@ -32,8 +32,8 @@ count: int = COUNT
 
     // Print loop
 loop:
-    mov rax, count
-    cmp rax, 0
+    mov %rax, count
+    cmp %rax, 0
     jle end
 
     // Simulated print (architecture-specific later)
@@ -49,8 +49,8 @@ end:
 // --- Print Routine ---
 .func print_msg
     // Imagine this calls a system-level write for now
-    mov rdi, msg
-    mov rsi, MSG
+    mov %rdi, msg
+    mov %rsi, MSG
     // Later tests will have this, they will use macros <print placeholder>
     ret
 .endfunc

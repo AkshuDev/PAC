@@ -20,6 +20,11 @@
 #define RDEST_BITS   6
 #define FLAGS_BITS   4
 
+#define FLAGS_VALID (1 << 0) // Is It Valid????
+#define FLAGS_IMM (1 << 1) // Used for memory and just numbers
+#define FLAGS_EXTFLAGS (1 << 2) // Extended Flags (8 byte)
+#define FLAGS_DISP (1 << 3) // 64-bit Displacement, using the registers
+
 #define FLAGS_SHIFT   0
 #define RDEST_SHIFT   (FLAGS_SHIFT + FLAGS_BITS)
 #define RSRC_SHIFT    (RDEST_SHIFT + RDEST_BITS)
@@ -194,22 +199,46 @@ static RegInfo encode_register(const char *reg) {
     return r;
 }
 
-static uint64_t get_opcode(TokenType opcode) {
+static uint64_t get_opcode(TokenType opcode, bool* valid) {
+    *valid = true;
     switch (opcode) {
-        case ASM_ADD: return 0x1;
-        case ASM_SUB: return 0x2;
-        case ASM_MUL: return 0x3;
-        case ASM_DIV: return 0x4;
-        case ASM_CMP: return 0x5;
-        case ASM_SHL: return 0x6;
-        case ASM_SHR: return 0x7;
-        case ASM_AND: return 0x8;
-        case ASM_NOT: return 0x9;
-        case ASM_OR: return 0x10;
-        case ASM_XOR: return 0x11;
-        case ASM_MOV: return 0x12;
-        default: return 0x0;
+        // Memory
+        case ASM_LOAD: return 0x100;
+        case ASM_STORE: return 0x101;
+        // Jumping & Calling
+        case ASM_JMP: return 0x180;
+        case ASM_JG: return 0x181;
+        case ASM_JL: return 0x182;
+        case ASM_JGE: return 0x183;
+        case ASM_JLE: return 0x184;
+        case ASM_JE: return 0x185;
+        case ASM_CALL: return 0x186;
+        case ASM_RET: return 0x187;
+        // Movement
+        case ASM_MOV: return 0x200;
+
+        // ALU
+        case ASM_ADD: return 0x0;
+        case ASM_SUB: return 0x1;
+        case ASM_MUL: return 0x2;
+        case ASM_DIV: return 0x3;
+        case ASM_CMP: return 0x4;
+        case ASM_AND: return 0x5;
+        case ASM_NOT: return 0x6;
+        case ASM_OR: return 0x7;
+        case ASM_XOR: return 0x8;
+        case ASM_SHIFTL: return 0x9;
+        case ASM_SHIFTR: return 0x10;
+        case ASM_ASHL: return 0x11;
+        case ASM_ASHR: return 0x12;
+        case ASM_ROTL: return 0x13;
+        case ASM_ROTR: return 0x14;
+        
+        default:
+            *valid = false;
+            return 0x0; // Default ASM_ADD but with valid flag off
     }
+    *valid = false;
     return 0;
 }
 
@@ -221,24 +250,32 @@ static OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
-static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm) {
+static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm, uint8_t* flags) {
+    (void)dest;
     // remove brackets
     char buf[128]; 
     strncpy(buf, op + 1, strlen(op) - 2);
     buf[strlen(op) - 2] = '\0';
 
+    *flags |= FLAGS_DISP;
+
     // check for displacement: [reg + 0x10] or [0x1234]
     if (isdigit(buf[0])) {
         *imm = strtoul(buf, NULL, 16);
+        *flags |= FLAGS_VALID;
     } else {
         // assume register base
         *src = encode_register(buf);
         *imm = 0;
+        bool disp = false;
+        (void)disp;
 
-        if (buf[3] == '+') *imm = strtoul(buf + 2, NULL, 10); // check if displacement like -> [reg + 100]
-        else if (buf[4] == '+') *imm = strtoul(buf + 3, NULL, 10);
-        else if (buf[3] == '-') *imm = -strtoul(buf + 2, NULL, 10);
-        else if (buf[4] == '-') *imm = -strtoul(buf + 3, NULL, 10);
+        if (buf[3] == '+') { *imm = strtoul(buf + 2, NULL, 10); disp = true; } // check if displacement like -> [reg + 100]
+        else if (buf[4] == '+') { *imm = strtoul(buf + 3, NULL, 10); disp = true; }
+        else if (buf[3] == '-') { *imm = -strtoul(buf + 2, NULL, 10); disp = true; }
+        else if (buf[4] == '-') { *imm = -strtoul(buf + 3, NULL, 10); disp = true; }
+    
+        *flags |= FLAGS_VALID;
     }
 }
 
@@ -253,7 +290,7 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
     return 0;
 }
 
-bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int bits) {
+bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int bits) {
     FILE* out = fopen(output_file, "wb");
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
@@ -474,12 +511,13 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         RegInfo dest = {0};
         uint64_t imm = 0;
 
-        uint32_t flags = 0;
-        uint32_t mode = 0;
-        uint32_t rsrc = src.valid ? src.code : 0;
-        uint32_t rdest = dest.valid ? dest.code : 0;
+        uint8_t flags = 0;
+        uint8_t mode = 0;
+        uint8_t rsrc = src.valid ? src.code : 0;
+        uint8_t rdest = dest.valid ? dest.code : 0;
 
         bool issrc = false;
+        bool valid_qm = true; // valid?
 
         for (size_t j = 0; j < inst.operand_count; j++) {
             char* operand = inst.operands[j];
@@ -494,7 +532,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     imm = strtoul(operand, NULL, 10);
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &imm);
+                    parse_memory_operand(operand, &src, &dest, &imm, &flags);
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
@@ -505,7 +543,11 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
         }
 
-        uint64_t opcode_full = get_opcode(inst.opcode);
+        uint64_t opcode_full = get_opcode(inst.opcode, &valid_qm);
+
+        if (!(flags & FLAGS_VALID) && !valid_qm) flags = 0; // Empty it out
+        else if (flags & FLAGS_VALID && !valid_qm) flags &= ~FLAGS_VALID; // Clear valid bit
+        else if (!(flags & FLAGS_VALID) && valid_qm) flags &= ~FLAGS_VALID; // Clear valid bit
 
         if (!opcode_full) {
             fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\n" COLOR_RESET, token_type_to_ogstr(inst.opcode));
@@ -522,12 +564,21 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         
         uint32_t outbytes = 0x0;
         outbytes |= ((uint32_t)(opcode_full & ((1 << OPCODE_BITS) - 1))) << OPCODE_SHIFT;
-        outbytes |= ((uint32_t)(mode   & ((1 << MODE_BITS)   - 1))) << MODE_SHIFT;
-        outbytes |= ((uint32_t)(rsrc   & ((1 << RSRC_BITS)   - 1))) << RSRC_SHIFT;
-        outbytes |= ((uint32_t)(rdest  & ((1 << RDEST_BITS)  - 1))) << RDEST_SHIFT;
-        outbytes |= ((uint32_t)(flags  & ((1 << FLAGS_BITS)  - 1))) << FLAGS_SHIFT;
+        outbytes |= ((uint32_t)(mode & ((1 << MODE_BITS) - 1))) << MODE_SHIFT;
+        outbytes |= ((uint32_t)(rsrc & ((1 << RSRC_BITS) - 1))) << RSRC_SHIFT;
+        outbytes |= ((uint32_t)(rdest & ((1 << RDEST_BITS) - 1))) << RDEST_SHIFT;
+        outbytes |= ((uint32_t)(flags & ((1 << FLAGS_BITS) - 1))) << FLAGS_SHIFT;
 
         emit_bytes(out, (uint8_t*)&outbytes, 4);
+
+        if (flags & FLAGS_IMM) {
+            emit_bytes(out, (uint8_t*)&imm, 8);
+        } else if (flags & FLAGS_DISP) {
+            uint64_t disp64 = 0;
+            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+            emit_bytes(out, (uint8_t*)&disp64, 8);
+            add_reloc(&text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
+        }
     }
 
     if (inst_written > text_sec.size) {

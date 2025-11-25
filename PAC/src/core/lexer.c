@@ -122,6 +122,15 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "shr") == 0) return ASM_SHR;
     if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
     if (strcmp(str, "lea") == 0) return ASM_LEA;
+    if (strcmp(str, "load") == 0) return ASM_LOAD;
+    if (strcmp(str, "store") == 0) return ASM_STORE;
+    if (strcmp(str, "shiftl") == 0) return ASM_SHIFTL;
+    if (strcmp(str, "shiftr") == 0) return ASM_SHIFTR;
+    if (strcmp(str, "ashr") == 0) return ASM_ASHR;
+    if (strcmp(str, "ashl") == 0) return ASM_ASHL;
+    if (strcmp(str, "rotl") == 0) return ASM_ROTL;
+    if (strcmp(str, "rotr") == 0) return ASM_ROTR;
+
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
     return -1; // Not a keyword
@@ -518,6 +527,14 @@ const char* token_type_to_str(TokenType type) {
         case ASM_SHR: return "ASM_SHR";
         case ASM_SYSCALL: return "ASM_SYSCALL";
         case ASM_LEA: return "ASM_LEA";
+        case ASM_LOAD: return "ASM_LOAD";
+        case ASM_STORE: return "ASM_STORE";
+        case ASM_SHIFTL: return "ASM_SHIFTL";
+        case ASM_SHIFTR: return "ASM_SHIFTR";
+        case ASM_ASHR: return "ASM_ASHR";
+        case ASM_ASHL: return "ASM_ASHL";
+        case ASM_ROTL: return "ASM_ROTL";
+        case ASM_ROTR: return "ASM_ROTR";
         case ASM_NOP: return "ASM_NOP";
 
         // Literals
@@ -633,6 +650,15 @@ const char* token_type_to_ogstr(TokenType type) {
         case ASM_SHR: return "shr";
         case ASM_SYSCALL: return "syscall";
         case ASM_LEA: return "lea";
+        case ASM_LOAD: return "load";
+        case ASM_STORE: return "store";
+        case ASM_SHIFTL: return "shiftl";
+        case ASM_SHIFTR: return "shiftr";
+        case ASM_ASHR: return "ashr";
+        case ASM_ASHL: return "ashl";
+        case ASM_ROTL: return "rotl";
+        case ASM_ROTR: return "rotr";
+
         case ASM_NOP: return "nop";
 
         // Punctuation
