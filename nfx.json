@@ -1,6 +1,15 @@
 {
-    "Type": "PackageHolder",
-    "Packages": [
-        "PAC"
+    "Name": "pac",
+    "Description": "Pheonix Assembler Collection",
+    "Author": "Pheonix-Studios",
+    "License": "LICENSE",
+    "Readme": "README.md",
+    "Binaries": [
+        {
+            "Name": "pac",
+            "Os": ["linux"],
+            "Arch": ["x86_64"],
+            "Path": "PAC/bin/linux/x86_64/pac"
+        }
     ]
 }
