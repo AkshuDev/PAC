@@ -2,6 +2,8 @@
 
 # Compiler
 CC = gcc
+# Windows Compiler (IF PRESENT)
+WCC = x86_64-w64-mingw32-gcc
 
 # Directories
 SRC_DIR := src
@@ -24,13 +26,17 @@ ARCH := $(shell uname -m | tr '[:upper:]' '[:lower:]')
 COBITS := 
 CFLAGS_RELEASE := -O3 -march=native -flto -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
 CFLAGS_DEBUG := -O0 -g3 -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
+WCFLAGS_RELEASE := -include special/extensions.h -O3 -march=native -flto -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
+WCFLAGS_DEBUG := -include special/extensions.h -O0 -g3 -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 
 # Build type
 BUILD ?= debug
 ifeq ($(BUILD),debug)
     CFLAGS := $(CFLAGS_DEBUG)
+    WCFLAGS := $(WCFLAGS_DEBUG)
 else
     CFLAGS := $(CFLAGS_RELEASE)
+    WCFLAGS := $(WCFLAGS_RELEASE)
 endif
 
 # Find all C source files recursively
@@ -39,9 +45,11 @@ HEADER_FILES := $(shell find $(SRC_DIR) -type f -name '*.h')
 
 # Map source files to object files in BUILD_DIR
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
+WOBJ_FILES := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.win.o,$(SRC_FILES))
 
 # Output executable
 OUTPUT := $(BIN_DIR)/$(OS)/$(ARCH)/pac
+WOUTPUT := $(BIN_DIR)/windows/x86_64/pac
 
 # === Rules ===
 
@@ -55,7 +63,12 @@ all: dirs
 # Create necessary directories
 dirs:
 	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BIN_DIR)
 	@mkdir -p $(BIN_DIR)/$(OS)/$(ARCH)
+
+win_dirs:
+	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BIN_DIR)/windows/x86_64
 
 # Link final executable
 $(OUTPUT): $(OBJ_FILES)
@@ -75,3 +88,19 @@ clean:
 	@echo "$(RED)==> Cleaning all build artifacts$(RESET)"
 	@rm -rf $(BUILD_DIR) $(BIN_DIR)
 	@echo "$(RED)==> Clean complete$(RESET)"
+
+build_win: win_dirs
+	@echo "$(CYAN)==> Starting $(BUILD_NAME) build for PAC (Windows/x86_64)$(RESET)"
+	@$(MAKE) $(WOUTPUT)
+	@echo "$(GREEN)==> Build completed: $(WOUTPUT)$(RESET)"
+
+$(WOUTPUT): $(WOBJ_FILES)
+	@echo "$(YELLOW)==> Linking final executable$(RESET)"
+	@$(WCC) $(WCFLAGS) $^ -o $@
+	@echo "$(GREEN)==> Linked $(WOUTPUT)$(RESET)"
+
+$(BUILD_DIR)/%.win.o: $(SRC_DIR)/%.c $(HEADER_FILES)
+	@mkdir -p $(dir $@)
+	@echo "$(CYAN)Compiling $<...$(RESET)"
+	@$(WCC) $(WCFLAGS) -c $< -o $@
+	@echo "$(GREEN)done$(RESET)"

@@ -10,6 +10,12 @@
             "Os": ["linux"],
             "Arch": ["x86_64"],
             "Path": "PAC/bin/linux/x86_64/pac"
+        },
+        {
+            "Name": "pac",
+            "Os": ["windows"],
+            "Arch": ["x86_64"],
+            "Path": "PAC/bin/windows/x86_64/pac"
         }
     ]
 }
