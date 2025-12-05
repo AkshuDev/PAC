@@ -172,6 +172,12 @@ void free_ast(ASTNode* node) {
             break;
         case AST_DECLIDENTIFIER:
             free(node->decl_identifier.name);
+            if (node->decl_identifier.array_value_count > 0 && node->decl_identifier.is_array) {
+                for (size_t i = 0; i < node->decl_identifier.array_value_count; i++) {
+                    free_ast(node->decl_identifier.array_values[i]);
+                }
+                free(node->decl_identifier.array_values);
+            }
             break;
         case AST_RESERVE:
             free(node->reserve.name);
@@ -278,7 +284,7 @@ static ASTOperand* parse_operand(Parser* p) {
         // Probably some memory expression
         op->type = OPERAND_MEMORY;
         
-        size_t memoprcount = 0; // Something is corrupting the other fields on malloc/realloc/calloc
+        size_t memoprcount = 0;
         parser_advance(p);
         while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL) {
             ASTOperand* opr = parse_operand(p);
@@ -430,11 +436,41 @@ static ASTNode* parse_identifier(Parser* p) {
     }
     parser_advance(p);
     TokenType opt_specified_type = (TokenType)-1;
+    bool is_array = false;
+    int array_len = 0;
     if (parser_check(p, OP_NOT)) {
         parser_advance(p);
         if (p->current.type >= T_BYTE && p->current.type <= T_PTR) {
             parser_advance(p);
             opt_specified_type = p->current.type;
+        }
+        if (p->current.type == LBRACKET) {
+            // Array
+            is_array = true;
+            array_len = -1; // Auto
+            parser_advance(p);
+            if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
+                ASTNode* arrsize_node = parse_literal(p);
+                array_len = arrsize_node->literal.int_val;
+                free_ast(arrsize_node);
+            } else if (p->current.type == RBRACKET) {
+                // Pass
+            } else {
+                free_ast(p->root);
+                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, name, strlen(name), "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
+                free(name);
+                exit(PAC_Error_TypeResolutionFailed);
+            }
+
+            if (p->current.type == RBRACKET) {
+                // Parse Array Values
+                parser_advance(p);
+            } else {
+                free_ast(p->root);
+                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, name, strlen(name), "Forgot to close array size specifier '[]' ?");
+                free(name);
+                exit(PAC_Error_TypeResolutionFailed);
+            }
         }
     }
 
@@ -448,22 +484,45 @@ static ASTNode* parse_identifier(Parser* p) {
         pac_strdup(name, node->decl_identifier.name);
         node->decl_identifier.type = p->current.type;
         node->decl_identifier.opt_specified_type = opt_specified_type;
+        node->decl_identifier.is_array = is_array;
+        node->decl_identifier.array_size = array_len;
+        node->decl_identifier.array_values = NULL;
+        node->decl_identifier.array_value_count = 0;
+        bool continue_loop = true;
+        int i = 0;
 
-        if (p->current.type == IDENTIFIER_TOK) {
-            child = parse_identifier(p);
-            if (child->type == AST_LITERAL) { // Probably due to macro
-                node->decl_identifier.type = child->literal.type;
+        while (continue_loop) {
+            if (!is_array) {
+                continue_loop = false;
+            } else if (is_array && i == 0){
+                opt_specified_type = p->current.type;
             }
-        } else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
-            child = parse_literal(p);
-        } else {
-            free_ast(p->root);
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, name, strlen(name), "Unknown Value!");
-            free(name);
-            exit(PAC_Error_TypeResolutionFailed);
-        }
+            if (p->current.type == IDENTIFIER_TOK) {
+                child = parse_identifier(p);
+                if (child->type == AST_LITERAL) { // Probably due to macro
+                    node->decl_identifier.type = child->literal.type;
+                }
+            } else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
+                child = parse_literal(p);
+            } else {
+                free_ast(p->root);
+                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, name, strlen(name), "Unknown Value!");
+                free(name);
+                exit(PAC_Error_TypeResolutionFailed);
+            }
+        
+            if (is_array) {
+                node->decl_identifier.array_value_count++;
+                node->decl_identifier.array_values = (ASTNode**)realloc(node->decl_identifier.array_values, sizeof(ASTNode**) * node->decl_identifier.array_value_count);
+                node->decl_identifier.array_values[node->decl_identifier.array_value_count - 1] = child;
+            } else {
+                add_child(node, child);
+            }
 
-        add_child(node, child);
+            if (p->current.type != COMMA) continue_loop = false;
+            else parser_advance(p);
+            i++;
+        }
         new_macro(name, NULL);
         free(name);
         return node;
@@ -702,6 +761,7 @@ ASTNode* parse_program(Parser* p) {
                 }
                 rm_macro(label);
             }
+            memset(func_start, 0, sizeof(func_start));
         } else {
             PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unexpected token at top-level!");
             free_ast(root);

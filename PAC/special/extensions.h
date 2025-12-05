@@ -7,7 +7,7 @@ inline static char* strndup(const char* src, size_t size) {
     char* new_str = malloc(len + 1);
     if (new_str) {
         memcpy(new_str, src, len);
-        new_str[len] = '\\0';
+        new_str[len] = '\0';
     }
     return new_str;
 }

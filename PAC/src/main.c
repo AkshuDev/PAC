@@ -403,6 +403,10 @@ int main(int argc, char** argv) {
         if (args.arch == x86_64) {
             if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) break;
         } else if (args.arch == x86) {
+            if (args.bits == 64) {
+                fprintf(stderr, COLOR_YELLOW "Warning: x86 does not support 64-bit, if the default is being used then ignore. Changing bits to 32...\n" COLOR_RESET);
+                args.bits = 32;
+            }
             if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) break;
         } else if (args.arch == PVCPU) {
             if (!encode_pvcpu(&assembler, outfile, &irlist, args.bits)) break;

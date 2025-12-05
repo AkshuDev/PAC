@@ -32,6 +32,8 @@
 #define OPERAND_MEM 9
 #define OPERAND_ONLY_OPCODE 10
 #define OPERAND_MEM_TO_REG_WMODRM 11 // WMODRM stands for With ModR/M
+#define OPERAND_IMM8 12
+#define OPERAND_IMM32 13
 
 typedef struct {
     uint8_t code; // 3-bit ID
@@ -272,6 +274,8 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
 
         case ASM_PUSH:
             *no_bytes = 1;
+            if (*operand_mod == OPERAND_IMM8) return 0x6A;
+            else if (*operand_mod == OPERAND_IMM32) return 0x68;
             *operand_mod = OPERAND_ONLY_OPCODE;
             uint64_t code = 0x50;
             return (uint64_t)(code + rm.code);
@@ -451,7 +455,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     eh.e_ident[EI_OSABI] = ELFOSABI_SYSV;
     eh.e_ident[EI_ABIVERSION] = 0;
     eh.e_type = ET_REL;
-    eh.e_machine =  EM_X86_64;
+    eh.e_machine = bits == 64 ? EM_X86_64 : EM_386;
     eh.e_version = EV_CURRENT;
     eh.e_entry = (Elf64_Addr)(ctx->entry ? ctx->entry : 0);
     eh.e_phoff = 0; // no program header
@@ -596,7 +600,9 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     floatval = atof(sym.value);
                     use = 1;
                 } else if (sym.type_of_data == T_ARRAY) {
-
+                    use = 2; // NULL it
+                    char* data = sym.value;
+                    fwrite(data, 1, strlen(data), out);
                 } else {
                     // PTR
                 }
@@ -704,7 +710,39 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
         }
 
+        if (src.valid && src.size > 32 && bits < 64) {
+            fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, src.name);
+            fclose(out);
+
+            if (remove(output_file) != 0) {
+                perror("Error deleting file");
+            }
+
+            free(shdrs);
+
+            return false;
+        }
+        if (dest.valid && dest.size > 32 && bits < 64) {
+            fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, dest.name);
+            fclose(out);
+
+            if (remove(output_file) != 0) {
+                perror("Error deleting file");
+            }
+
+            free(shdrs);
+
+            return false;
+        }
+
         if (inst.operand_count == 0) operand_mod = OPERAND_ONLY_OPCODE;
+
+        if (operand_mod == OPERAND_IMM_TO_REG && !src.valid && !dest.valid) {
+            operand_mod = bits == 8 ? OPERAND_IMM8 : OPERAND_IMM32;
+            if (imm > 0xFFFFFFFF) {
+                fprintf(stderr, COLOR_YELLOW "Warning: Imm is truncated to fit 32-bit!\n" COLOR_RESET);
+            }
+        }
 
         int no_bytes = 0;
         uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, src, dest);
@@ -750,6 +788,13 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 emit_bytes(out, &imm_part, 1);
                 inst_written += 1;
             }
+        } else if (operand_mod == OPERAND_IMM8 || operand_mod == OPERAND_IMM32) {
+            size_t imm_parts = operand_mod == OPERAND_IMM8 ? 1 : 4;
+            for (size_t i = 0; i < imm_parts; i++) {
+                uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                emit_bytes(out, &imm_part, 1);
+                inst_written += 1;
+            }
         } else if (operand_mod == OPERAND_MEM_TO_REG || operand_mod == OPERAND_REG_TO_MEM) {
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
@@ -778,7 +823,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 emit_bytes(out, (uint8_t*)"\0", 1);
                 inst_written += 1;
             } else {
-                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, 0);
+                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
                 emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                 inst_written += 4;
             }

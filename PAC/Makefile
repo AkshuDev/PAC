@@ -24,9 +24,9 @@ ARCH := $(shell uname -m | tr '[:upper:]' '[:lower:]')
 
 # Flags
 COBITS := 
-CFLAGS_RELEASE := -O3 -march=native -flto -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
+CFLAGS_RELEASE := -O0 -fsanitize=address,undefined -march=native -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
 CFLAGS_DEBUG := -O0 -g3 -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
-WCFLAGS_RELEASE := -include special/extensions.h -O3 -march=native -flto -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
+WCFLAGS_RELEASE := -include special/extensions.h -O0 -march=native -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 WCFLAGS_DEBUG := -include special/extensions.h -O0 -g3 -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 
 # Build type

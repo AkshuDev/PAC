@@ -81,6 +81,10 @@ typedef struct ASTDeclIdentifier {
     char* name;
     TokenType type;
     TokenType opt_specified_type;
+    bool is_array;
+    int array_size;
+    struct ASTNode** array_values;
+    size_t array_value_count;
 } ASTDeclIdentifier;
 
 typedef struct ASTComment {

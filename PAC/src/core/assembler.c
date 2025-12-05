@@ -162,6 +162,7 @@ static size_t operand_length_x86(ASTOperand *op, ASTInstruction *inst, enum Arch
     switch (op->type)
     {
     case OPERAND_REGISTER:
+        if (inst->opcode == ASM_PUSH) return 0; // only opcode
         // extended registers (r8–r15) need REX prefix
         if (prev && prev->type == OPERAND_REGISTER) return 1; // already taken into account (+1 for ModR/M)
         if (arch == x86_64 && op->reg[0] == 'r' )
@@ -245,6 +246,7 @@ static uint64_t get_opcode_len_x86(TokenType opcode, bool* only_opcode)
         return 1;
 
     case ASM_PUSH:
+        return 1; // Could not be only opcode
     case ASM_POP:
         *only_opcode = true;
         return 1;
@@ -336,6 +338,9 @@ static size_t instruction_length(ASTInstruction inst, enum Architecture arch, As
     case PVCPU:
         // PVCpu is fixed at 4 bytes (It has gone through many changes, finally 4 bytes seems best, Transistions: [16, 12, 8, 16, 8, 4])
         length = 4;
+        // ISA in Very Very Brief (PVCpu (Pheonix Virtual Cpu) Architecture)
+        // [opcode:12bits][mode:4bits][src:6bits][dest:6bits][flags:4bits]
+        // Flags -> Bit0:Valid, Bit1: Imm/AbsMemory, Bit2: Disp64, Bit3: ExtendedFlags
         break;
 
     default:
@@ -471,13 +476,22 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
             TokenType type = node->decl_identifier.type;
             size_t size = 0;
-            char value[512];
+            char* value = (char*)malloc(100);
+            size_t val_size = 0;
+            size_t val_max_size = 100;
             if (type >= LIT_INT && type <= LIT_FLOAT)
             {
                 size = 4;
             }
             else if (type == LIT_STRING)
             {
+                if (node->decl_identifier.is_array == false) {
+                    PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "You need to specify an array to define strings!");
+                    symtab_free(symtab);
+                    section_free(sectab);
+                    free_ast(ctx->parser->root);
+                    exit(PAC_Error_TypeResolutionFailed);
+                }
                 if (node->child_count == 0)
                 {
                     size = sizeof(void *);
@@ -503,31 +517,118 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             switch (type)
             {
             case LIT_INT:
-                type = T_INT;
-                snprintf(value, sizeof(value), "%lld", (long long int)node->children[0]->literal.int_val);
-                break;
             case LIT_BIN:
-                type = T_INT;
-                snprintf(value, sizeof(value), "%lld", (long long int)node->children[0]->literal.int_val);
-                break;
             case LIT_HEX:
                 type = T_INT;
-                snprintf(value, sizeof(value), "%lld", (long long int)node->children[0]->literal.int_val);
+                sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
                 break;
             case LIT_CHAR:
                 type = T_BYTE;
-                snprintf(value, sizeof(value), "%lld", (long long int)node->children[0]->literal.int_val);
+                sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
                 break;
             case LIT_FLOAT:
                 type = T_FLOAT;
-                snprintf(value, sizeof(value), "%f", node->children[0]->literal.float_val);
+                sprintf(value, "%f", node->children[0]->literal.float_val);
                 break;
             case LIT_STRING:
                 type = T_ARRAY;
-                snprintf(value, sizeof(value), "%s", node->children[0]->literal.str_val);
                 break;
             default:
                 break;
+            }
+
+            if (node->decl_identifier.is_array) {
+                type = T_ARRAY;
+                char* val2 = (char*)calloc(100, 1);
+                size_t cur_size = 0;
+                size_t cur_max_size = 100;
+                bool done = false;
+                TokenType littype = (TokenType)-1;
+                for (size_t i = 0; i < node->decl_identifier.array_value_count; i++) {
+                    switch (node->decl_identifier.type) {
+                        case LIT_INT:
+                        case LIT_BIN:
+                        case LIT_HEX:
+                        case LIT_CHAR:
+                            if (cur_size > cur_max_size) {
+                                val2 = (char*)realloc(val2, cur_max_size * 2);
+                                cur_max_size = cur_max_size * 2;
+                            }
+                            if (val_size > val_max_size) {
+                                value = (char*)realloc(value, val_max_size * 2);
+                                val_max_size = val_max_size * 2;
+                            }
+                            littype = node->decl_identifier.array_values[i]->literal.type;
+                            if ((littype < LIT_INT || littype > LIT_BIN) && littype != LIT_CHAR) {
+                                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
+                                symtab_free(symtab);
+                                section_free(sectab);
+                                free_ast(ctx->parser->root);
+                                exit(PAC_Error_SyntaxInvalidOperandType);
+                            }
+                            sprintf(value, "%s%ld", val2, node->decl_identifier.array_values[i]->literal.int_val);
+                            sprintf(val2, "%s", value);
+                            cur_size = strlen(val2);
+                            val_size = strlen(value);
+                            size += 1;
+                            if (!done) done = true;
+                            break;
+                        case LIT_FLOAT:
+                            PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot create a float array!");
+                            symtab_free(symtab);
+                            section_free(sectab);
+                            free_ast(ctx->parser->root);
+                            exit(PAC_Error_TypeResolutionFailed);
+                        case LIT_STRING:
+                            if (size > cur_max_size) {
+                                val2 = realloc(val2, cur_max_size * 2);
+                                cur_max_size = cur_max_size * 2;
+                            }
+                            if (val_size > val_max_size) {
+                                value = (char*)realloc(value, val_max_size * 2);
+                                val_max_size = val_max_size * 2;
+                            }
+                            if (node->decl_identifier.array_values[i]->literal.type != LIT_STRING) {
+                                littype = node->decl_identifier.array_values[i]->literal.type;
+                                switch (littype) {
+                                    case LIT_INT:
+                                    case LIT_CHAR:
+                                        if (val_size + 2 > val_max_size) {
+                                            value = (char*)realloc(value, val_max_size * 2);
+                                            val_max_size = val_max_size * 2;
+                                        }
+                                        if (cur_size + 2 > cur_max_size) {
+                                            val2 = (char*)realloc(val2, cur_max_size * 2);
+                                            cur_max_size = cur_max_size * 2;
+                                        }
+                                        size_t value_cur_size = strlen(value);
+                                        value[value_cur_size] = (unsigned char)node->decl_identifier.array_values[i]->literal.int_val;
+                                        value[value_cur_size + 1] = '\0';
+                                        sprintf(val2, "%s", value);
+                                        cur_size += strlen(val2);
+                                        val_size += strlen(value);
+                                        break;
+                                    default:
+                                        PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
+                                        symtab_free(symtab);
+                                        section_free(sectab);
+                                        free_ast(ctx->parser->root);
+                                        exit(PAC_Error_SyntaxInvalidOperandType);
+                                }
+                                break;
+                            }
+                            sprintf(value, "%s%s", val2, node->decl_identifier.array_values[i]->literal.str_val);
+                            sprintf(val2, "%s", value);
+                            cur_size = strlen(val2);
+                            val_size = strlen(value);
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+                free(val2);
+                if (!done) size = strlen(value);
             }
 
             if (node->decl_identifier.opt_specified_type != (TokenType)-1 && node->decl_identifier.opt_specified_type >= T_BYTE && node->decl_identifier.opt_specified_type <= T_PTR)
@@ -545,26 +646,16 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                     switch (node->decl_identifier.opt_specified_type)
                     {
                     case T_BYTE:
-                        size = 1;
-                        break;
                     case T_UBYTE:
                         size = 1;
                         break;
                     case T_SHORT:
-                        size = 2;
-                        break;
                     case T_USHORT:
                         size = 2;
                         break;
                     case T_INT:
-                        size = 4;
-                        break;
                     case T_UINT:
-                        size = 4;
-                        break;
                     case T_FLOAT:
-                        size = 4;
-                        break;
                     case T_DOUBLE:
                         size = 8;
                         break;
@@ -572,13 +663,11 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                         size = sizeof(void *);
                         break;
                     case T_LONG:
-                        size = 8;
-                        break;
                     case T_ULONG:
                         size = 8;
                         break;
                     case T_ARRAY:
-                        size = 8;
+                        // Already handled
                         break;
                     default:
                         PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
@@ -592,6 +681,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
             symtab_add(symtab, node->decl_identifier.name, SYM_IDENTIFIER, cvaddr, value, current_section, (uint64_t)size, type, false);
 
+            free(value);
             cvaddr += size;
             sectab->sections[current_section].size += size;
 

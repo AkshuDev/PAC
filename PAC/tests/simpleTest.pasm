@@ -11,7 +11,7 @@
 
 :section .data
 
-msg1!ubyte = 'H' // ubyte
+msg1!ubyte[] = "Hello World", 10 // string
 num1!int   = 1234 // 4 bytes
 flag!byte  = 1 // 1 byte
 
@@ -35,7 +35,7 @@ pad!ubyte  = 'A' // char (1 bytes) -> padded up to 8 boundary
 
 :section .rodata
 
-const_msg!ubyte = 'U'
+const_msg!ubyte[] = "Hello This is a constant message!", 10
 const_val!long = 0x1122334455667788
 
 // ----------------------------------------------------------
@@ -47,40 +47,25 @@ const_val!long = 0x1122334455667788
 
 main:
     lea %rax, [const_msg]
-    mov %rbx, 1
+    mov [aligned_num], %rax
+    mov %rbx, 34
     call $print
-    mov %rbx, 0 // Return code
 
-    jmp exit
+    call $exit
 
-exit:
+.func exit
+    mov %rdi, %rax
     mov %rax, 60
-    mov %rdi, %rbx
     syscall
+.endfunc
 
 .func print
-    push %rax // To keep stack aligned
-    push %rdi
-    push %rsi
-    push %rdx
-    push %rax
-    push %rbx
-    push %rax
-    push %rbx
-    mov %rax, 1
-    mov %rdi, 1
+    mov %rsi, %rax
+    mov %rdx, %rbx
     jmp $print.do_print
 do_print:
-    pop %rdx
-    pop %rsi
+    mov %rax, 1
+    mov %rdi, 1
     syscall
-    jmp $print.end
-end:
-    pop %rbx
-    pop %rax
-    pop %rdx
-    pop %rsi
-    pop %rdi
-    pop %rax
     ret
 .endfunc
