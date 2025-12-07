@@ -192,7 +192,11 @@ void free_ast(ASTNode* node) {
 }
 
 static ASTOperand* parse_operand(Parser* p) {
-    if (parser_check(p, RBRACKET)) {parser_advance(p); return NULL; } // Probably a memory expression closing
+    if (parser_check(p, RBRACKET)) {
+        parser_advance(p);
+        if (parser_check(p, COMMA)) parser_advance(p);
+        return NULL;
+    } // Probably a memory expression closing
 
     ASTOperand* op = calloc(1, sizeof(ASTOperand));
 
@@ -268,25 +272,33 @@ static ASTOperand* parse_operand(Parser* p) {
         ASTNode* identnode = parse_identifier(p);
         op->type = OPERAND_IDENTIFIER;
         op->identifier = identnode;
-        parser_advance(p);
+        if (parser_check(p, RBRACKET)) {
+            parser_advance(p);
+            if (parser_check(p, COMMA)) parser_advance(p);
+        }
     } else if (parser_check(p, LABEL_DEF)) {
         op->type = OPERAND_LABEL;
         op->label = (char*)calloc(strlen(p->current.lexeme) + 1, 1);
         op->label[strlen(p->current.lexeme)] = '\0';
         pac_strdup(p->current.lexeme, op->label);
-        parser_advance(p);
+        if (parser_check(p, RBRACKET)) {
+            parser_advance(p);
+            if (parser_check(p, COMMA)) parser_advance(p);
+        }
     } else if (parser_check(p, IDENTIFIER_TOK)) {
         ASTNode* identnode = parse_identifier(p);
         op->type = OPERAND_IDENTIFIER;
         op->identifier = identnode;
-        parser_advance(p);
+        if (parser_check(p, RBRACKET)) {
+            parser_advance(p);
+        }
     } else if (parser_check(p, LBRACKET)) {
         // Probably some memory expression
         op->type = OPERAND_MEMORY;
         
         size_t memoprcount = 0;
         parser_advance(p);
-        while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL) {
+        while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL && p->current.type != COMMA) {
             ASTOperand* opr = parse_operand(p);
             if (!opr) break;
             op->mem_addr = recalloc(op->mem_addr, memoprcount, memoprcount + 1, sizeof(ASTOperand*));
@@ -306,14 +318,13 @@ static ASTNode* parse_inst(Parser* p) {
     node->inst.opcode = p->current.type;
     parser_advance(p);
 
-    while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL) {
+    while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL) { 
         ASTOperand* op = parse_operand(p);
         if (!op) break;
         node->inst.operands = realloc(node->inst.operands, sizeof(ASTOperand*) * (node->inst.operand_count + 1));
         node->inst.operands[node->inst.operand_count++] = op;
 
         if (parser_match(p, COMMA)) continue;
-        else break;
     }
     return node;
 }

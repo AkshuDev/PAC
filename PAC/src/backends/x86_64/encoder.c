@@ -25,15 +25,16 @@
 #define OPERAND_IMM_TO_MEM 2
 #define OPERAND_IMM32_TO_REG 3
 #define OPERAND_MEM_DISP32_TO_REG 4
-#define OPERAND_MEM_DISP8_TO_REG 5
+#define OPERAND_MEM_DISP8_TO_REG 4
 #define OPERAND_MEM_DISP32 6
 #define OPERAND_REG_TO_MEM 7
 #define OPERAND_MEM_TO_REG 8
 #define OPERAND_MEM 9
 #define OPERAND_ONLY_OPCODE 10
 #define OPERAND_MEM_TO_REG_WMODRM 11 // WMODRM stands for With ModR/M
-#define OPERAND_IMM8 12
-#define OPERAND_IMM32 13
+#define OPERAND_REG_TO_MEM_WMODRM 12
+#define OPERAND_IMM8 13
+#define OPERAND_IMM32 14
 
 typedef struct {
     uint8_t code; // 3-bit ID
@@ -241,10 +242,10 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
                 if (rm.code == 7) return 0xBF; // di
                 }
                 return 0xB8; // ax
-            } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
+            } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_TO_REG_WMODRM || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
                 *no_bytes = 1;
                 return 0x8B; // mem -> reg
-            } else if (modrm == OPERAND_REG_TO_MEM) {
+            } else if (modrm == OPERAND_REG_TO_MEM || modrm == OPERAND_REG_TO_MEM_WMODRM) {
                 *no_bytes = 1;
                 return 0x89; // reg -> mem
             }
@@ -439,12 +440,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
         return false;
-    }
-
-    if (bits != 64) {
-        printf(COLOR_RED "Error: Cannot make a ELF Object file of architecture x86_64 with the specified bits [%d]\n" COLOR_RESET, bits);
-        return false;
-    }
+    } 
 
     // Header
     Elf64_Ehdr eh = {0};
@@ -625,6 +621,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         } else if (written < sec.size) {
@@ -642,8 +640,10 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
 
-        if (inst.arch != x86_64) {
-            fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction!" COLOR_RESET);
+        if (inst.arch != x86_64 && inst.arch != x86) {
+            char archs[128];
+            archenum_to_archs(inst.arch, archs);
+            fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction: [%s]\n" COLOR_RESET, archs);
             fclose(out);
 
             if (remove(output_file) != 0) {
@@ -651,6 +651,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         }
@@ -671,26 +673,20 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 case OPERAND_REGISTER:
                     if (issrc) { src = encode_register(operand); issrc = false; }
                     else {dest = encode_register(operand); issrc = true; }
-                    modrm_mod = MODRM_MOD_REG_TO_REG;
-                    operand_mod = OPERAND_REG_TO_REG;
                     break;
                 case OPERAND_LIT_INT:
                     imm = strtoul(operand, NULL, 10);
-                    modrm_mod = MODRM_MOD_MEMORY;
-                    operand_mod = OPERAND_IMM_TO_REG;
+                    if (modrm_mod == MODRM_MOD_REG_TO_REG) modrm_mod = MODRM_MOD_MEMORY;
+                    if (operand_mod == OPERAND_REG_TO_REG) operand_mod = OPERAND_IMM_TO_REG;
                     break;
                 case OPERAND_MEMORY:
                     parse_memory_operand(operand, &src, &dest, &imm, &modrm_mod, &operand_mod);
-                    if (operand_mod == OPERAND_MEM_TO_REG) {                  
-                        if (operand_mod == OPERAND_MEM_TO_REG) {
-                            if (inst.opcode == ASM_LEA) {
-                                modrm_mod = MODRM_MOD_MEMORY;
-                                operand_mod = OPERAND_MEM_TO_REG_WMODRM;
-                            } else {
-                                if (dest.size == 8) { operand_mod = OPERAND_MEM_DISP8_TO_REG; modrm_mod = MODRM_MOD_MEM_PLUS_DISP8; }
-                                else { operand_mod = OPERAND_MEM_DISP32_TO_REG; modrm_mod = MODRM_MOD_MEM_PLUS_DISP32; }
-                            }
-                        }
+                    if (operand_mod == OPERAND_MEM_TO_REG) {
+                        modrm_mod = MODRM_MOD_MEMORY;
+                        operand_mod = OPERAND_MEM_TO_REG_WMODRM;
+                    } else if (operand_mod == OPERAND_REG_TO_MEM) {
+                        modrm_mod = MODRM_MOD_MEMORY;
+                        operand_mod = OPERAND_REG_TO_MEM_WMODRM;
                     }
                     break;
                 case OPERAND_LABEL:
@@ -706,6 +702,9 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     break;
                 default:
                     fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
+                    free(shdrs);
+                    free(strtab);
+                    free(shstrtab);
                     return false;
             }
         }
@@ -719,6 +718,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         }
@@ -731,6 +732,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         }
@@ -763,6 +766,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         } 
@@ -813,7 +818,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 emit_bytes(out, &imm_part, 1);
                 inst_written += 1;
             }
-        } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM) {
+        } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM || operand_mod == OPERAND_REG_TO_MEM_WMODRM) {
             uint8_t modrm_bytes = make_modrm(dest, (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
             emit_bytes(out, &modrm_bytes, 1);
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
@@ -839,6 +844,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         }
 
         free(shdrs);
+        free(strtab);
+        free(shstrtab);
 
         return false;
     } else if (inst_written < text_sec.size) {
