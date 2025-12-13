@@ -854,6 +854,9 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             }
     }
 
+    char padding[256];
+    fwrite(padding, 1, 256, out);
+
     fseek(out, 0, SEEK_SET);
     eh.e_shoff = sizeof(Elf64_Ehdr);
     eh.e_shnum = section_count;

@@ -170,24 +170,10 @@ static size_t operand_length_x86(ASTOperand *op, ASTInstruction *inst, enum Arch
             return 1; //  REX
         }
         return 0; // No REX
+
     case OPERAND_LIT_INT:
-        *index += 1;
-        if (prev && prev->type == OPERAND_REGISTER && inst->opcode != ASM_CMP) {
-            if (prev->reg[0] == 'r' && arch == x86_64) return 8;
-            else if (prev->reg[0] == 'e') return 4;
-            else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
-            else return 1;
-        }
-        return 4; // 4 byte imm
+    case OPERAND_LIT_CHAR:
     case OPERAND_LIT_FLOAT:
-        *index += 1;
-        if (prev && prev->type == OPERAND_REGISTER) {
-            if (prev->reg[0] == 'r' && arch == x86_64) return 8;
-            else if (prev->reg[0] == 'e') return 4;
-            else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
-            else return 1;
-        }
-        return 4;
     case OPERAND_LIT_DOUBLE:
         *index += 1;
         if (prev && prev->type == OPERAND_REGISTER) {
@@ -286,6 +272,21 @@ static uint64_t get_opcode_len_x86(TokenType opcode, bool* only_opcode)
     }
 }
 
+static size_t operand_length_pvcpu(ASTOperand* op, bool is_compressed) {
+    switch (op->type) {
+        case OPERAND_REGISTER: return 0; // instruction taken care of
+        case OPERAND_LIT_INT:
+        case OPERAND_LIT_DOUBLE:
+        case OPERAND_LIT_FLOAT:
+        case OPERAND_MEMORY:
+        case OPERAND_LABEL:
+        case OPERAND_IDENTIFIER:
+        case OPERAND_LIT_CHAR:
+            return is_compressed ? 8 : 4;
+        default: return 0;
+    }
+}
+
 static size_t instruction_length(ASTInstruction inst, enum Architecture arch, Assembler* ctx, size_t* cvaddr)
 {
     size_t length = 0;
@@ -336,11 +337,10 @@ static size_t instruction_length(ASTInstruction inst, enum Architecture arch, As
         break;
 
     case PVCPU:
-        // PVCpu is fixed at 4 bytes (It has gone through many changes, finally 4 bytes seems best, Transistions: [16, 12, 8, 16, 8, 4])
-        length = 4;
-        // ISA in Very Very Brief (PVCpu (Pheonix Virtual Cpu) Architecture)
-        // [opcode:12bits][mode:4bits][src:6bits][dest:6bits][flags:4bits]
-        // Flags -> Bit0:Valid, Bit1: Imm/AbsMemory, Bit2: Disp64, Bit3: ExtendedFlags
+        length = 4; // Basic Instruction
+        for (size_t i = 0; i < inst.operand_count; i++) {
+            length += operand_length_pvcpu(inst.operands[i], false); // Not Compressed version
+        }
         break;
 
     default:
