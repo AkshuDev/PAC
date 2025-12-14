@@ -257,38 +257,67 @@ static uint64_t get_opcode(TokenType opcode, bool* valid) {
     *valid = true;
     switch (opcode) {
         case ASM_NOP: return 0x0;
-        // Memory
-        case ASM_LOAD: return 0x100;
-        case ASM_STORE: return 0x101;
-        // Jumping & Calling
-        case ASM_JMP: return 0x120;
-        case ASM_JG: return 0x121;
-        case ASM_JL: return 0x122;
-        case ASM_JGE: return 0x123;
-        case ASM_JLE: return 0x124;
-        case ASM_JE: return 0x125;
-        case ASM_CALL: return 0x126;
-        case ASM_RET: return 0x127;
-        // Movement
-        case ASM_MOV: return 0x150;
-
         // ALU
         case ASM_ADD: return 0x1;
         case ASM_SUB: return 0x2;
         case ASM_MUL: return 0x3;
         case ASM_DIV: return 0x4;
         case ASM_CMP: return 0x5;
-        case ASM_AND: return 0x6;
-        case ASM_NOT: return 0x7;
+        case ASM_UCMP: return 0x6;
+        case ASM_AND: return 0x7;
         case ASM_OR: return 0x8;
-        case ASM_XOR: return 0x9;
-        case ASM_SHIFTL: return 0x10;
-        case ASM_SHIFTR: return 0x11;
+        case ASM_NOT: return 0x9;
+        case ASM_NAND: return 0xA;
+        case ASM_NOR: return 0xB;
+        case ASM_XOR: return 0xC;
+        case ASM_SHL: return 0xE;
+        case ASM_SHR: return 0xF;
+        case ASM_ROTL: return 0x10;
+        case ASM_ROTR: return 0x11;
         case ASM_ASHL: return 0x12;
         case ASM_ASHR: return 0x13;
-        case ASM_ROTL: return 0x14;
-        case ASM_ROTR: return 0x15;
-        
+        case ASM_INC: return 0x14;
+        case ASM_DEC: return 0x15;
+        case ASM_TEST: return 0x16;
+
+        // Memory
+        case ASM_LOAD: return 0x100;
+        case ASM_STORE: return 0x101;
+        case ASM_PUSH: return 0x102;
+        case ASM_POP: return 0x103;
+        case ASM_PUSH16: return 0x104;
+        case ASM_POP16: return 0x105;
+        case ASM_PUSH32: return 0x106;
+        case ASM_POP32: return 0x107;
+        case ASM_PUSH64: return 0x108;
+        case ASM_POP64: return 0x109;
+        case ASM_MSET: return 0x10A;
+        case ASM_MCPY: return 0x10B;
+        case ASM_MCMP: return 0x10C;
+
+        // Movement
+        case ASM_MOV: return 0x115;
+        case ASM_MOVB: return 0x116;
+        case ASM_MOVW: return 0x117;
+        case ASM_MOVD: return 0x118;
+        case ASM_MOVQ: return 0x119;
+        case ASM_XCHG: return 0x11A;
+        case ASM_RREG: return 0x11B;
+
+        // Jumping and more
+        case ASM_JMP: return 0x12C;
+        case ASM_CALL: return 0x12D;
+        case ASM_RET: return 0x12E;
+        // ASM_EXCEPTION - Privilaged
+        case ASM_JZ: return 0x130;
+        case ASM_JNZ: return 0x131;
+        case ASM_JL: return 0x132;
+        case ASM_JLE: return 0x133;
+        case ASM_JG: return 0x134;
+        case ASM_JGE: return 0x135;
+        case ASM_JE: return 0x136;
+        case ASM_JNE: return 0x137;
+
         default:
             *valid = false;
             return 0x0; // Default ASM_NOP but with valid flag off

@@ -112,6 +112,8 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "jge") == 0) return ASM_JGE;
     if (strcmp(str, "jl") == 0) return ASM_JL;
     if (strcmp(str, "jle") == 0) return ASM_JLE;
+    if (strcmp(str, "jz") == 0) return ASM_JZ;
+    if (strcmp(str, "jnz") == 0) return ASM_JNZ;
     if (strcmp(str, "cmp") == 0) return ASM_CMP;
     if (strcmp(str, "test") == 0) return ASM_TEST;
     if (strcmp(str, "and") == 0) return ASM_AND;
@@ -124,12 +126,28 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "lea") == 0) return ASM_LEA;
     if (strcmp(str, "load") == 0) return ASM_LOAD;
     if (strcmp(str, "store") == 0) return ASM_STORE;
-    if (strcmp(str, "shiftl") == 0) return ASM_SHIFTL;
-    if (strcmp(str, "shiftr") == 0) return ASM_SHIFTR;
     if (strcmp(str, "ashr") == 0) return ASM_ASHR;
     if (strcmp(str, "ashl") == 0) return ASM_ASHL;
     if (strcmp(str, "rotl") == 0) return ASM_ROTL;
     if (strcmp(str, "rotr") == 0) return ASM_ROTR;
+    if (strcmp(str, "ucmp") == 0) return ASM_UCMP;
+    if (strcmp(str, "movb") == 0) return ASM_MOVB;
+    if (strcmp(str, "movw") == 0) return ASM_MOVW;
+    if (strcmp(str, "movd") == 0) return ASM_MOVD;
+    if (strcmp(str, "movq") == 0) return ASM_MOVQ;
+    if (strcmp(str, "xchg") == 0) return ASM_XCHG;
+    if (strcmp(str, "rreg") == 0) return ASM_RREG;
+    if (strcmp(str, "push16") == 0) return ASM_PUSH16;
+    if (strcmp(str, "push32") == 0) return ASM_PUSH32;
+    if (strcmp(str, "push64") == 0) return ASM_PUSH64;
+    if (strcmp(str, "pop16") == 0) return ASM_POP16;
+    if (strcmp(str, "nand") == 0) return ASM_NAND;
+    if (strcmp(str, "nor") == 0) return ASM_NOR;
+    if (strcmp(str, "inc") == 0) return ASM_INC;
+    if (strcmp(str, "dec") == 0) return ASM_DEC;
+    if (strcmp(str, "mset") == 0) return ASM_MSET;
+    if (strcmp(str, "mcmp") == 0) return ASM_MCMP;
+    if (strcmp(str, "mcpy") == 0) return ASM_MCPY;
 
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
@@ -529,13 +547,33 @@ const char* token_type_to_str(TokenType type) {
         case ASM_LEA: return "ASM_LEA";
         case ASM_LOAD: return "ASM_LOAD";
         case ASM_STORE: return "ASM_STORE";
-        case ASM_SHIFTL: return "ASM_SHIFTL";
-        case ASM_SHIFTR: return "ASM_SHIFTR";
         case ASM_ASHR: return "ASM_ASHR";
         case ASM_ASHL: return "ASM_ASHL";
         case ASM_ROTL: return "ASM_ROTL";
         case ASM_ROTR: return "ASM_ROTR";
+        case ASM_UCMP: return "ASM_UCMP";
         case ASM_NOP: return "ASM_NOP";
+        case ASM_NAND: return "ASM_NAND";
+        case ASM_NOR: return "ASM_NOR";
+        case ASM_XCHG: return "ASM_XCHG";
+        case ASM_PUSH16: return "ASM_PUSH16";
+        case ASM_POP16: return "ASM_POP16";
+        case ASM_PUSH32: return "ASM_PUSH32";
+        case ASM_POP32: return "ASM_POP32";
+        case ASM_PUSH64: return "ASM_PUSH64";
+        case ASM_POP64: return "ASM_POP64";
+        case ASM_MOVB: return "ASM_MOVB";
+        case ASM_MOVW: return "ASM_MOVW";
+        case ASM_MOVD: return "ASM_MOVD";
+        case ASM_MOVQ: return "ASM_MOVQ";
+        case ASM_RREG: return "ASM_RREG";
+        case ASM_MSET: return "ASM_MSET";
+        case ASM_MCMP: return "ASM_MCMP";
+        case ASM_MCPY: return "ASM_MCPY";
+        case ASM_JZ: return "ASM_JZ";
+        case ASM_JNZ: return "ASM_JNZ";
+        case ASM_INC: return "ASM_INC";
+        case ASM_DEC: return "ASM_DEC";
 
         // Literals
         case LIT_INT: return "LIT_INT";
@@ -652,13 +690,33 @@ const char* token_type_to_ogstr(TokenType type) {
         case ASM_LEA: return "lea";
         case ASM_LOAD: return "load";
         case ASM_STORE: return "store";
-        case ASM_SHIFTL: return "shiftl";
-        case ASM_SHIFTR: return "shiftr";
         case ASM_ASHR: return "ashr";
         case ASM_ASHL: return "ashl";
         case ASM_ROTL: return "rotl";
         case ASM_ROTR: return "rotr";
-
+        case ASM_UCMP: return "ucmp";
+        case ASM_NAND: return "nand";
+        case ASM_NOR: return "nor";
+        case ASM_INC: return "inc";
+        case ASM_DEC: return "dec";
+        case ASM_PUSH16: return "push16";
+        case ASM_POP16: return "pop16";
+        case ASM_PUSH32: return "push32";
+        case ASM_POP32: return "pop32";
+        case ASM_PUSH64: return "push64";
+        case ASM_POP64: return "pop64";
+        case ASM_MOVB: return "movb";
+        case ASM_MOVW: return "movw";
+        case ASM_MOVD: return "movd";
+        case ASM_MOVQ: return "movq";
+        case ASM_JZ: return "jz";
+        case ASM_JNZ: return "jnz";
+        case ASM_RREG: return "rreg";
+        case ASM_XCHG: return "xchg";
+        case ASM_MSET: return "mset";
+        case ASM_MCMP: return "mcmp";
+        case ASM_MCPY: return "mcpy";
+        
         case ASM_NOP: return "nop";
 
         // Punctuation
