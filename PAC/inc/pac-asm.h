@@ -89,6 +89,7 @@ Section *section_get(SectionTable *table, const char *name);
 bool symtab_get(SymbolTable *tab, const char *name, Symbol *out);
 void add_reloc(Section* sec, uint64_t offset, uint32_t symbol, uint32_t type, int64_t addend);
 void free_reloc(Section* sec);
+void free_relocs(SectionTable* sectab);
 IRList assemble(Assembler* ctx);    
 void free_ir_list(IRList* list);
 void init_assembler(Assembler* ctx, Lexer* lex, Parser* parser, size_t bits, enum Architecture arch, ASTNode* root, SymbolTable* symtable, SectionTable* sectable, char* entry_label);

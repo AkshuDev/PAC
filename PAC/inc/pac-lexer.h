@@ -122,6 +122,7 @@ typedef enum {
     ASM_MSET,
     ASM_MCPY,
     ASM_MCMP,
+    ASM_EXCEPTION,
     ASM_NOP,
     // Literals
     LIT_INT,

@@ -44,8 +44,9 @@ typedef enum {
     MODE_STORE_IMMADDR, // mem[imm] = src
     MODE_STORE_PC_REL, // mem[dest (as offset) + PC] = src
     // Special
-    MODE_SYSCALL_REG, // syscall(src)
-    MODE_SYSCALL_IMM, // syscall(imm)
+    MODE_SRC_REG, // (opcode) reg
+    MODE_SRC_REG_IMM, // (opcode) (src as imm)
+    MODE_SRC_IMM, // (opcode) imm
 } Modes;
 
 typedef struct {
@@ -59,7 +60,7 @@ static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
     fwrite(bytes, 1, count, out);
 }
 
-static RegInfo encode_register(const char *reg) {
+static RegInfo encode_register(const char *reg, bool unlocked) {
     RegInfo r = {0};
 
     r.valid = true;
@@ -246,14 +247,32 @@ static RegInfo encode_register(const char *reg) {
     else if (strcmp(reg, "sf") == 0) { r.code = 0x33; r.size = 64; return r; }
     else if (strcmp(reg, "sp") == 0) { r.code = 0x34; r.size = 64; return r; }
 
+    // Privilaged
+    if (unlocked) {
+        if (strcmp(reg, "bi0") == 0) { r.code = 0x36; r.size = 8; return r; }
+        else if (strcmp(reg, "bi1") == 0) { r.code = 0x37; r.size = 8; return r; }
+        else if (strcmp(reg, "bi2") == 0) { r.code = 0x38; r.size = 8; return r; }
+        else if (strcmp(reg, "wi0") == 0) { r.code = 0x36; r.size = 8; return r; }
+        else if (strcmp(reg, "wi1") == 0) { r.code = 0x37; r.size = 16; return r; }
+        else if (strcmp(reg, "wi2") == 0) { r.code = 0x38; r.size = 16; return r; }
+        else if (strcmp(reg, "di0") == 0) { r.code = 0x36; r.size = 8; return r; }
+        else if (strcmp(reg, "di1") == 0) { r.code = 0x37; r.size = 32; return r; }
+        else if (strcmp(reg, "di2") == 0) { r.code = 0x38; r.size = 32; return r; }
+        else if (strcmp(reg, "qi0") == 0) { r.code = 0x36; r.size = 8; return r; }
+        else if (strcmp(reg, "qi1") == 0) { r.code = 0x37; r.size = 64; return r; }
+        else if (strcmp(reg, "qi2") == 0) { r.code = 0x38; r.size = 64; return r; }
+        else if (strcmp(reg, "i0") == 0) { r.code = 0x36; r.size = 8; return r; }
+        else if (strcmp(reg, "i1") == 0) { r.code = 0x37; r.size = 64; return r; }
+        else if (strcmp(reg, "i2") == 0) { r.code = 0x38; r.size = 64; return r; }
+    }
 
-    fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
+    fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_CYAN "\tTip: If the register is privilaged, try re-assembling with --unlock\n" COLOR_RESET, reg);
     r.code = 0xFF;
     r.valid = false;
     return r;
 }
 
-static uint64_t get_opcode(TokenType opcode, bool* valid) {
+static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlocked, uint8_t* mode) {
     *valid = true;
     switch (opcode) {
         case ASM_NOP: return 0x0;
@@ -296,7 +315,12 @@ static uint64_t get_opcode(TokenType opcode, bool* valid) {
         case ASM_MCMP: return 0x10C;
 
         // Movement
-        case ASM_MOV: return 0x115;
+        case ASM_MOV: // for 4-bit
+            if (op_size == 64) return 0x119;
+            else if (op_size == 32) return 0x118;
+            else if (op_size == 16) return 0x117;
+            else if (op_size == 8) return 0x116;
+            else return 0x115;
         case ASM_MOVB: return 0x116;
         case ASM_MOVW: return 0x117;
         case ASM_MOVD: return 0x118;
@@ -305,10 +329,22 @@ static uint64_t get_opcode(TokenType opcode, bool* valid) {
         case ASM_RREG: return 0x11B;
 
         // Jumping and more
-        case ASM_JMP: return 0x12C;
-        case ASM_CALL: return 0x12D;
-        case ASM_RET: return 0x12E;
-        // ASM_EXCEPTION - Privilaged
+        case ASM_JMP: 
+            *mode = MODE_SRC_IMM;
+            return 0x12C;
+        case ASM_CALL: 
+            *mode = MODE_SRC_IMM;
+            return 0x12D;
+        case ASM_RET:
+            *mode = MODE_SRC_IMM;
+            return 0x12E;
+        case ASM_EXCEPTION:
+            if (!unlocked) {
+                fprintf(stderr, COLOR_RED "Privilaged Instruction is not allowed!\n" COLOR_CYAN "\tTip: Try re-assembling with '--unlock'\n" COLOR_RESET);
+                break;
+            }
+            *mode = MODE_SRC_IMM;
+            return 0x12F;
         case ASM_JZ: return 0x130;
         case ASM_JNZ: return 0x131;
         case ASM_JL: return 0x132;
@@ -334,34 +370,72 @@ static OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
-static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm, uint8_t* flags, uint8_t* mode) {
-    (void)dest;
+static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm, uint8_t* flags, uint8_t* mode, bool* is_symbol, bool unlocked) {
     // remove brackets
     char buf[128]; 
-    strncpy(buf, op + 1, strlen(op) - 2);
-    buf[strlen(op) - 2] = '\0';
+    size_t len = strlen(op);
+    if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
+        *mode = (uint8_t)-1; // INVALID
+        return;
+    }
 
+    memcpy(buf, op + 1, len - 2);
+    buf[len - 2] = '\0';
+
+    char* w = buf;
+    for (char* r = buf; *r; r++) {
+        if (!isspace((unsigned char)*r))
+            *w++ = *r;
+    }
+    *w = '\0';
+
+    *imm = 0;
+    *mode = MODE_REG_DISP;
+    *flags = 0;
+    *flags |= FLAGS_VALID;
     *flags |= FLAGS_DISP;
 
-    // check for displacement: [reg + 0x10] or [0x1234]
-    if (isdigit(buf[0])) {
-        *imm = strtoul(buf, NULL, 16);
-        *mode = MODE_REG_EXTIMM;
-        *flags |= FLAGS_VALID;
-    } else {
-        // assume register base
-        *src = encode_register(buf);
-        *imm = 0;
-        bool disp = false;
+    char* p = buf;
+    while (*p) {
+        int sign = +1;
+        if (*p == '+') {
+            sign = +1;
+            p++;
+        } else if (*p == '-') {
+            sign = -1;
+            p++;
+        }
 
-        if (buf[3] == '+') { *imm = strtoul(buf + 2, NULL, 10); disp = true; } // check if displacement like -> [reg + 100]
-        else if (buf[4] == '+') { *imm = strtoul(buf + 3, NULL, 10); disp = true; }
-        else if (buf[3] == '-') { *imm = -strtoul(buf + 2, NULL, 10); disp = true; }
-        else if (buf[4] == '-') { *imm = -strtoul(buf + 3, NULL, 10); disp = true; }
-    
-        *flags |= FLAGS_VALID;
-        if (disp) *mode = MODE_REG_DISP;
+        char term[64];
+        int ti = 0;
+
+        while (*p && *p != '+' && *p != '-') {
+            term[ti++] = *p++;
+        }
+        term[ti] = '\0';
+
+        if (term[0] == '\0') continue;
+
+        if (isalpha(term[0])) {
+            RegInfo r = encode_register(term, unlocked);
+            if (r.valid) {
+                if (dest->valid) *src = r;
+                else *dest = r;
+                continue;
+            }
+        }
+
+        int base = 10;
+        if (term[0] == '0' && (term[1] == 'x' || term[1] == 'X')) {
+            base = 16;
+            *is_symbol = true; // Parser auto-resolves all hex/bin/dec numbers by the user to decimal, only assembler uses hex, that so for only memory addresses
+        } else {
+            *is_symbol = false;
+        }
+
+        *imm += sign * strtoll(term, NULL, base);
     }
+
 }
 
 static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
@@ -375,7 +449,7 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
     return 0;
 }
 
-bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int bits) {
+bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked) {
     FILE* out = fopen(output_file, "wb");
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
@@ -428,7 +502,7 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
     size_t roffset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
     size_t offset = roffset;
     size_t text_off = offset;
-    Section text_sec;
+    Section* text_sec;
     size_t text_sec_idx = 0;
 
     // Null section
@@ -471,30 +545,30 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
     shdrs[3].sh_addralign = 1;
 
     for (size_t i = 0; i < ctx->sections->count; i++) {
-        Section sec = ctx->sections->sections[i];
+        Section* sec = &ctx->sections->sections[i];
         Elf64_Shdr* sh = &shdrs[i + 5];
 
-        size_t len = strlen(sec.name) + 1;
-        memcpy(shstrtab + shstrtab_off, sec.name, len);
+        size_t len = strlen(sec->name) + 1;
+        memcpy(shstrtab + shstrtab_off, sec->name, len);
         sh->sh_name = shstrtab_off;
         shstrtab_off += len;
 
-        if (strcmp(sec.name, ".text") == 0) {
+        if (strcmp(sec->name, ".text") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC | SHF_EXECINSTR;
             text_off = offset;
-            text_sec = ctx->sections->sections[i];
+            text_sec = &ctx->sections->sections[i];
             text_sec_idx = i + 5;
-        } else if (strcmp(sec.name, ".data") == 0) {
+        } else if (strcmp(sec->name, ".data") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC | SHF_WRITE;
-        } else if (strcmp(sec.name, ".bss") == 0) {
+        } else if (strcmp(sec->name, ".bss") == 0) {
             sh->sh_type = SHT_NOBITS;
             sh->sh_flags = SHF_ALLOC | SHF_WRITE;
-            sh->sh_addr = (Elf64_Addr)sec.base;
-            sh->sh_addralign = (Elf64_Xword)sec.alignment;
+            sh->sh_addr = (Elf64_Addr)sec->base;
+            sh->sh_addralign = (Elf64_Xword)sec->alignment;
             continue;
-        } else if (strcmp(sec.name, ".rodata") == 0) {
+        } else if (strcmp(sec->name, ".rodata") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC;
         } else {
@@ -502,15 +576,15 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
             sh->sh_flags = 0;
         }
 
-        sh->sh_addr = (Elf64_Addr)sec.base;
+        sh->sh_addr = (Elf64_Addr)sec->base;
         sh->sh_offset = (Elf64_Xword)offset;
-        sh->sh_size = (Elf64_Xword)sec.size;
+        sh->sh_size = (Elf64_Xword)sec->size;
         sh->sh_link = 0;
         sh->sh_info = 0;
-        sh->sh_addralign = (Elf64_Xword)sec.alignment;
+        sh->sh_addralign = (Elf64_Xword)sec->alignment;
         sh->sh_entsize = 0;
 
-        offset += sec.size;
+        offset += sec->size;
     }
 
     // Write data
@@ -541,7 +615,9 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
                     floatval = atof(sym.value);
                     use = 1;
                 } else if (sym.type_of_data == T_ARRAY) {
-
+                    use = 2; // NULL it
+                    char* data = sym.value;
+                    fwrite(data, 1, strlen(data), out);
                 } else {
                     // PTR
                 }
@@ -564,6 +640,8 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         } else if (written < sec.size) {
@@ -588,6 +666,8 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         }
@@ -603,6 +683,7 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
 
         bool issrc = false;
         bool valid_qm = true; // valid?
+        bool is_symbol = true;
 
         for (size_t j = 0; j < inst.operand_count; j++) {
             char* operand = inst.operands[j];
@@ -610,8 +691,8 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
 
             switch (optype) {
                 case OPERAND_REGISTER:
-                    if (issrc) { src = encode_register(operand); issrc = false; }
-                    else {dest = encode_register(operand); issrc = true; }
+                    if (issrc) { src = encode_register(operand, unlocked); issrc = false; }
+                    else {dest = encode_register(operand, unlocked); issrc = true; }
                     break;
                 case OPERAND_LIT_INT:
                     imm = strtoul(operand, NULL, 10);
@@ -621,7 +702,7 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
                     }
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &imm, &flags, &mode);
+                    parse_memory_operand(operand, &src, &dest, &imm, &flags, &mode, &is_symbol, unlocked);
                     break;
                 case OPERAND_LABEL:
                     size_t addr = strtoul(operand, NULL, 16); // resolve symbol
@@ -630,6 +711,12 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
                     break;
                 default:
                     fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
+                    fclose(out);
+                    if (remove(output_file) != 0)
+                        perror("Error Deleting file");
+                    free(shdrs);
+                    free(strtab);
+                    free(shstrtab);
                     return false;
             }
         }
@@ -637,7 +724,16 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
         rsrc = src.valid ? src.code : 0;
         rdest = dest.valid ? dest.code : 0;
 
-        uint64_t opcode_full = get_opcode(inst.opcode, &valid_qm);
+        // something like - push16 %g0
+        if (dest.valid && !src.valid && mode == MODE_REG_REG) { mode = MODE_SRC_REG; src = dest; dest.valid = false; }
+        else if (dest.valid && !src.valid && mode == MODE_REG_IMM) { mode = MODE_SRC_IMM; src = dest; dest.valid = false; }
+        else if (dest.valid && !src.valid && mode == MODE_REG_EXTIMM) { mode = MODE_SRC_REG_IMM; src = dest; dest.valid = false; }
+
+        int op_size = 0;
+        if (src.valid && dest.valid) op_size = (int)dest.size;
+        else if (src.valid && !dest.valid) op_size = (int)src.size;
+        else if (!src.valid && dest.valid) op_size = (int)dest.size;
+        uint64_t opcode_full = get_opcode(inst.opcode, &valid_qm, op_size, unlocked, &mode);
 
         if (!(flags & FLAGS_VALID) && !valid_qm) flags = 0; // Empty it out
         else if (flags & FLAGS_VALID && !valid_qm) flags &= ~FLAGS_VALID; // Clear valid bit
@@ -652,9 +748,18 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
             }
 
             free(shdrs);
+            free(strtab);
+            free(shstrtab);
 
             return false;
         } 
+
+        if (mode == MODE_SRC_IMM && imm < 0b111111) mode = MODE_SRC_REG_IMM;
+        if (mode == MODE_REG_IMM || mode == MODE_SRC_REG_IMM) {
+            if (src.valid) dest = src;
+            src.code = (uint8_t)imm;
+            if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
+        }
         
         uint32_t outbytes = 0x0;
         outbytes |= (uint32_t)(opcode_full & OPCODE_BITS) << OPCODE_SHIFT;
@@ -667,16 +772,22 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
 
         if (flags & FLAGS_IMM) {
             emit_bytes(out, (uint8_t*)&imm, 8);
-        } else if (flags & FLAGS_DISP) {
-            uint64_t disp64 = 0;
-            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
-            emit_bytes(out, (uint8_t*)&disp64, 8);
-            add_reloc(&text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
+        }
+        if (flags & FLAGS_DISP) {
+            int64_t disp64 = 0;
+            if (is_symbol) {
+                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+                emit_bytes(out, (uint8_t*)&disp64, 8);
+                add_reloc(text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
+            } else {
+                disp64 = (int64_t)imm;
+                emit_bytes(out, (uint8_t*)&disp64, 8);
+            }
         }
     }
 
-    if (inst_written > text_sec.size) {
-        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec.size);
+    if (inst_written > text_sec->size) {
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
         fclose(out);
 
         if (remove(output_file) != 0) {
@@ -684,10 +795,12 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
         }
 
         free(shdrs);
+        free(strtab);
+        free(shstrtab);
 
         return false;
-    } else if (inst_written < text_sec.size) {
-        for (size_t i = 0; i < (text_sec.size - inst_written); i++) {
+    } else if (inst_written < text_sec->size) {
+        for (size_t i = 0; i < (text_sec->size - inst_written); i++) {
             fwrite("\0", 1, 1, out);
         }
     }
@@ -711,7 +824,7 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
     shdrs[4].sh_entsize = sizeof(Elf64_Rela);
     Section last_sec = ctx->sections->sections[ctx->sections->count - 1];
     shdrs[4].sh_offset = (Elf64_Xword)(roffset + last_sec.base + last_sec.size + 16); // +16 for safety
-    shdrs[4].sh_size = (Elf64_Xword)(text_sec.reloc_count * sizeof(Elf64_Rela));
+    shdrs[4].sh_size = (Elf64_Xword)(text_sec->reloc_count * sizeof(Elf64_Rela));
     shdrs[4].sh_addralign = 1;
 
     fwrite(&eh, sizeof(eh), 1, out);
@@ -755,18 +868,17 @@ bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int b
     fseek(out, shdrs[4].sh_offset, SEEK_SET);
     
     // add relocs of .text section
-    for (size_t i = 0; i < text_sec.reloc_count; i++) {
-        Relocation reloc = text_sec.relocs[i];
+    for (size_t i = 0; i < text_sec->reloc_count; i++) {
+        Relocation* reloc = &text_sec->relocs[i];
         Elf64_Rela r = {0};
 
-        r.r_addend = reloc.addend;
-        r.r_offset = reloc.offset;
-        r.r_info = ELF64_R_INFO(reloc.symbol + 1, reloc.type);
+        r.r_addend = reloc->addend;
+        r.r_offset = reloc->offset;
+        r.r_info = ELF64_R_INFO(reloc->symbol + 1, reloc->type);
         
         fwrite(&r, sizeof(r), 1, out);
     }
 
-    free_reloc(&text_sec);
     fclose(out);
     free(shdrs);
 

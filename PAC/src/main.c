@@ -31,6 +31,7 @@ typedef struct {
     bool asmout;
     bool savetemps;
     bool only_asm;
+    bool unlocked;
     size_t base;
     char* entry_label;
     LinkerFormat linkformat;
@@ -54,6 +55,7 @@ void print_usage(const char* prog) {
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
     printf("\t-f, --format <elf64/elf32/win64/win32> Target output format (default: elf64)\n");
+    printf("\t--unlock                  Allows the use of privilaged instructions\n");
 }
 
 bool parse_args(int argc, char** argv, Args* args) {
@@ -77,6 +79,7 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->entry_label = NULL;
     args->linkformat = ELF64;
     args->only_asm = false;
+    args->unlocked = false;
 
     // Define long options
     static struct option long_options[] = {
@@ -95,6 +98,7 @@ bool parse_args(int argc, char** argv, Args* args) {
         {"version", no_argument, 0, 1004},
         {"format", required_argument, 0, 'f'},
         {"only-asm", no_argument, 0, 1005},
+        {"unlock", no_argument, 0, 1006},
         {0, 0, 0, 0}
     };
 
@@ -159,6 +163,9 @@ bool parse_args(int argc, char** argv, Args* args) {
                 break;
             case 1005:
                 args->only_asm = true;
+                break;
+            case 1006:
+                args->unlocked = true;
                 break;
             case '?': // unknown option
             default:
@@ -401,32 +408,41 @@ int main(int argc, char** argv) {
         strcpy(encoded_files[i], outfile);
 
         if (args.arch == x86_64) {
-            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) {
+            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
                 free(src);
+                free_relocs(&sectab);
                 symtab_free(&symtab);
                 free_ir_list(&irlist);
                 section_free(&sectab);
-                break;
+                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+                free(encoded_files);
+                return PAC_Error_Unknown;
             }
         } else if (args.arch == x86) {
             if (args.bits == 64) {
                 fprintf(stderr, COLOR_YELLOW "Warning: x86 does not support 64-bit, if the default is being used then ignore. Changing bits to 32...\n" COLOR_RESET);
                 args.bits = 32;
             }
-            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits)) {
+            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
                 free(src);
+                free_relocs(&sectab);
                 symtab_free(&symtab);
                 free_ir_list(&irlist);
                 section_free(&sectab);
-                break;
+                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+                free(encoded_files);
+                return PAC_Error_Unknown;
             }
         } else if (args.arch == PVCPU) {
-            if (!encode_pvcpu(&assembler, outfile, &irlist, args.bits)) {
+            if (!encode_pvcpu(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
                 free(src);
+                free_relocs(&sectab);
                 symtab_free(&symtab);
                 free_ir_list(&irlist);
                 section_free(&sectab);
-                break;
+                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+                free(encoded_files);
+                return PAC_Error_Unknown;
             }
         } else {
             fprintf(stderr, COLOR_RED "Error: Unsupported Architecture\n" COLOR_RESET);
@@ -434,6 +450,7 @@ int main(int argc, char** argv) {
         }
 
         free(src);
+        free_relocs(&sectab);
         symtab_free(&symtab);
         free_ir_list(&irlist);
         section_free(&sectab);
@@ -441,10 +458,19 @@ int main(int argc, char** argv) {
 
     if (!args.only_asm) pac_link(args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
 
-    for (int i = 0; i < args.input_count; i++) {
-        char* outfile = encoded_files[i];
-        if (!args.savetemps && !args.only_asm) remove(outfile);
-        free(encoded_files[i]);
+    if (args.input_count > 1) {
+        for (int i = 0; i < args.input_count; i++) {
+            char* outfile = encoded_files[i];
+            if (!args.savetemps && !args.only_asm) remove(outfile);
+            free(encoded_files[i]);
+        }
+    } else {
+        if (args.only_asm && !args.savetemps)
+            rename(encoded_files[0], args.output_file);
+        else
+            remove(encoded_files[0]);
+
+        free(encoded_files[0]);
     }
 
     free(encoded_files);

@@ -27,6 +27,7 @@ pad!ubyte  = 'A' // char (1 bytes) -> padded up to 8 boundary
 
 :res aligned_msg!ubyte
 :res aligned_num!int
+:res aligned_long!long
 :res aligned_ptr!ptr // test pointer alignment (8 bytes)
 
 // ----------------------------------------------------------
@@ -48,6 +49,10 @@ const_val!long = 0x1122334455667788
 main:
     lea %rax, [const_msg]
     mov [aligned_num], %rax
+    mov [%rax - 4], %rax
+    mov [%rax + 4], %rax
+    mov %rax, [%rax - 4]
+    mov %rax, [%rax + 4]
     mov %rbx, 34
     call $print
 

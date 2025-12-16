@@ -120,6 +120,18 @@ void free_reloc(Section* sec) {
     }
 }
 
+void free_relocs(SectionTable* sectab) {
+    for (size_t i = 0; i < sectab->count; i++) {
+        Section* sec = &sectab->sections[i];
+        if (sec->relocs) {
+            free(sec->relocs);
+            sec->reloc_count = 0;
+            sec->reloc_capacity = 0;
+            sec->relocs = NULL;
+        }
+    }
+}
+
 void init_assembler(Assembler *ctx, Lexer *lex, Parser *parser, size_t bits, enum Architecture arch, ASTNode *root, SymbolTable *symtable, SectionTable *sectable, char *entry_label)
 {
     ctx->arch = arch;
@@ -1006,8 +1018,8 @@ IRList assemble(Assembler *ctx)
 
                         if (opmem_op->type == OPERAND_REGISTER)
                         {
-                            if (opmem_op->int_val >= 0) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val);
-                            else snprintf(buf, sizeof(buf), "[%s - %llu]", opmem_op->reg, (unsigned long long)-opmem_disp->int_val);
+                            if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val);
+                            else snprintf(buf, sizeof(buf), "[%s + %lld]", opmem_op->reg, (long long)opmem_disp->int_val);
                         }
                         else if (opmem_op->type == OPERAND_IDENTIFIER)
                         {
@@ -1024,8 +1036,8 @@ IRList assemble(Assembler *ctx)
                             bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
                             if (got_sym)
                             {
-                                if (opmem_op->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym.addr, (unsigned long long)opmem_disp->int_val);
-                                else snprintf(buf, sizeof(buf), "[0x%llX - %llu]", (long long)sym.addr, (unsigned long long)-opmem_disp->int_val);
+                                if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym.addr, (unsigned long long)opmem_disp->int_val);
+                                else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym.addr, (long long)opmem_disp->int_val);
                             }
                             else
                             {

@@ -398,30 +398,81 @@ static OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
-static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm, int* modrm_mod, int* operand_mod) {
+static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, int64_t* imm, int* modrm_mod, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
-    strncpy(buf, op + 1, strlen(op) - 2); 
-    buf[strlen(op) - 2] = '\0';
-
-    // check for displacement: [reg + 0x10] or [0x1234]
-    if (isdigit(buf[0])) {
-        *imm = strtoul(buf, NULL, 16);
-        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
-        if (dest->valid) *operand_mod = OPERAND_MEM_TO_REG;
-        else *operand_mod = OPERAND_REG_TO_MEM;
-    } else {
-        // assume register base
-        *src = encode_register(buf);
-        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP8;
-        *operand_mod = OPERAND_MEM_DISP8_TO_REG;
-        *imm = 0;
-
-        if (buf[3] == '+') *imm = strtoul(buf + 2, NULL, 10); // check if displacement like -> [reg + 100]
-        else if (buf[4] == '+') *imm = strtoul(buf + 3, NULL, 10);
-        else if (buf[3] == '-') *imm = -strtoul(buf + 2, NULL, 10);
-        else if (buf[4] == '-') *imm = -strtoul(buf + 3, NULL, 10);
+    size_t len = strlen(op);
+    if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
+        *operand_mod = -1; // INVALID
+        return;
     }
+
+    memcpy(buf, op + 1, len - 2);
+    buf[len - 2] = '\0';
+
+    char* w = buf;
+    for (char* r = buf; *r; r++) {
+        if (!isspace((unsigned char)*r))
+            *w++ = *r;
+    }
+    *w = '\0';
+
+    *imm = 0;
+    
+    char* p = buf;
+    while (*p) {
+        int sign = +1;
+        if (*p == '+') {
+            sign = +1;
+            p++;
+        } else if (*p == '-') {
+            sign = -1;
+            p++;
+        }
+
+        char term[64];
+        int ti = 0;
+
+        while (*p && *p != '+' && *p != '-') {
+            term[ti++] = *p++;
+        }
+        term[ti] = '\0';
+
+        if (term[0] == '\0') continue;
+
+        if (isalpha(term[0])) {
+            RegInfo r = encode_register(term);
+            if (r.valid) {
+                *src = r;
+                continue;
+            }
+        }
+
+        int base = 10;
+        if (term[0] == '0' && (term[1] == 'x' || term[1] == 'X')) {
+            base = 16;
+            *is_symbol = true; // Parser auto-resolves all hex/bin/dec numbers by the user to decimal, only assembler uses hex, that so for only memory addresses
+        } else {
+            *is_symbol = false;
+        }
+
+        *imm += sign * strtoll(term, NULL, base);
+    }
+
+    if (!src->valid) {
+        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
+    } else if (*imm == 0) {
+        *modrm_mod = MODRM_MOD_MEMORY;
+    } else if (*imm >= -128 && *imm <= 127) {
+        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP8;
+    } else {
+        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
+    }
+
+    if (dest && dest->valid)
+        *operand_mod = OPERAND_MEM_TO_REG;
+    else
+        *operand_mod = OPERAND_REG_TO_MEM;
 }
 
 static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
@@ -435,7 +486,7 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
     return 0;
 }
 
-bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int bits) {
+bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked) {
     FILE* out = fopen(output_file, "wb");
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
@@ -483,7 +534,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     size_t roffset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
     size_t offset = roffset;
     size_t text_off = offset;
-    Section text_sec;
+    Section* text_sec;
     size_t text_sec_idx = 0;
 
     // Null section
@@ -526,30 +577,30 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     shdrs[3].sh_addralign = 1;
 
     for (size_t i = 0; i < ctx->sections->count; i++) {
-        Section sec = ctx->sections->sections[i];
+        Section* sec = &ctx->sections->sections[i];
         Elf64_Shdr* sh = &shdrs[i + 5];
 
-        size_t len = strlen(sec.name) + 1;
-        memcpy(shstrtab + shstrtab_off, sec.name, len);
+        size_t len = strlen(sec->name) + 1;
+        memcpy(shstrtab + shstrtab_off, sec->name, len);
         sh->sh_name = shstrtab_off;
         shstrtab_off += len;
 
-        if (strcmp(sec.name, ".text") == 0) {
+        if (strcmp(sec->name, ".text") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC | SHF_EXECINSTR;
             text_off = offset;
-            text_sec = ctx->sections->sections[i];
+            text_sec = &ctx->sections->sections[i];
             text_sec_idx = i + 5;
-        } else if (strcmp(sec.name, ".data") == 0) {
+        } else if (strcmp(sec->name, ".data") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC | SHF_WRITE;
-        } else if (strcmp(sec.name, ".bss") == 0) {
+        } else if (strcmp(sec->name, ".bss") == 0) {
             sh->sh_type = SHT_NOBITS;
             sh->sh_flags = SHF_ALLOC | SHF_WRITE;
-            sh->sh_addr = (Elf64_Addr)sec.base;
-            sh->sh_addralign = (Elf64_Xword)sec.alignment;
+            sh->sh_addr = (Elf64_Addr)sec->base;
+            sh->sh_addralign = (Elf64_Xword)sec->alignment;
             continue;
-        } else if (strcmp(sec.name, ".rodata") == 0) {
+        } else if (strcmp(sec->name, ".rodata") == 0) {
             sh->sh_type = SHT_PROGBITS;
             sh->sh_flags = SHF_ALLOC;
         } else {
@@ -557,15 +608,15 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
             sh->sh_flags = 0;
         }
 
-        sh->sh_addr = (Elf64_Addr)sec.base;
+        sh->sh_addr = (Elf64_Addr)sec->base;
         sh->sh_offset = (Elf64_Xword)offset;
-        sh->sh_size = (Elf64_Xword)sec.size;
+        sh->sh_size = (Elf64_Xword)sec->size;
         sh->sh_link = 0;
         sh->sh_info = 0;
-        sh->sh_addralign = (Elf64_Xword)sec.alignment;
+        sh->sh_addralign = (Elf64_Xword)sec->alignment;
         sh->sh_entsize = 0;
 
-        offset += sec.size;
+        offset += sec->size;
     }
 
     // Write data
@@ -659,9 +710,10 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
 
         RegInfo src = {0};
         RegInfo dest = {0};
-        uint64_t imm = 0;
+        int64_t imm = 0;
 
         bool issrc = false;
+        bool is_symbol = true;
         int modrm_mod = MODRM_MOD_REG_TO_REG;
         int operand_mod = OPERAND_REG_TO_REG;
 
@@ -680,7 +732,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     if (operand_mod == OPERAND_REG_TO_REG) operand_mod = OPERAND_IMM_TO_REG;
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &imm, &modrm_mod, &operand_mod);
+                    parse_memory_operand(operand, &src, &dest, &imm, &modrm_mod, &operand_mod, &is_symbol);
                     if (operand_mod == OPERAND_MEM_TO_REG) {
                         modrm_mod = MODRM_MOD_MEMORY;
                         operand_mod = OPERAND_MEM_TO_REG_WMODRM;
@@ -702,6 +754,9 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                     break;
                 default:
                     fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
+                    fclose(out);
+                    if (remove(output_file) != 0)
+                        perror("Error deleting file");
                     free(shdrs);
                     free(strtab);
                     free(shstrtab);
@@ -784,7 +839,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         } else if (modrm_mod == MODRM_MOD_MEMORY && operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-            add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
+            add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
             emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
             inst_written += 4;
         } else if (operand_mod == OPERAND_IMM_TO_REG) {
@@ -801,16 +856,26 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
                 inst_written += 1;
             }
         } else if (operand_mod == OPERAND_MEM_TO_REG || operand_mod == OPERAND_REG_TO_MEM) {
-            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+            if (is_symbol) {
+                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-            if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_8, 0);
-                emit_bytes(out, (uint8_t*)"\0", 1);
-                inst_written += 1;
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
+                    emit_bytes(out, (uint8_t*)"\0", 1);
+                    inst_written += 1;
+                } else {
+                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, 0);
+                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    inst_written += 4;
+                }
             } else {
-                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_32, 0);
-                emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-                inst_written += 4;
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    emit_bytes(out, (uint8_t*)&imm, 1);
+                    inst_written += 1;
+                } else {
+                    emit_bytes(out, (uint8_t*)&imm, 4);
+                    inst_written += 4;
+                }
             }
         } else if (operand_mod == OPERAND_IMM32_TO_REG) {
             for (size_t i = 0; i < 4; i++) {
@@ -821,22 +886,32 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM || operand_mod == OPERAND_REG_TO_MEM_WMODRM) {
             uint8_t modrm_bytes = make_modrm(dest, (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
             emit_bytes(out, &modrm_bytes, 1);
-            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+            if (is_symbol) {
+                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-            if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
-                emit_bytes(out, (uint8_t*)"\0", 1);
-                inst_written += 1;
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
+                    emit_bytes(out, (uint8_t*)"\0", 1);
+                    inst_written += 1;
+                } else {
+                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
+                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    inst_written += 4;
+                }
             } else {
-                add_reloc(&text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
-                emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-                inst_written += 4;
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    emit_bytes(out, (uint8_t*)&imm, 1);
+                    inst_written += 1;
+                } else {
+                    emit_bytes(out, (uint8_t*)&imm, 4);
+                    inst_written += 4;
+                }
             }
         }
     }
 
-    if (inst_written > text_sec.size) {
-        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec.size);
+    if (inst_written > text_sec->size) {
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
         fclose(out);
 
         if (remove(output_file) != 0) {
@@ -848,8 +923,8 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
         free(shstrtab);
 
         return false;
-    } else if (inst_written < text_sec.size) {
-        for (size_t i = 0; i < (text_sec.size - inst_written); i++) {
+    } else if (inst_written < text_sec->size) {
+        for (size_t i = 0; i < (text_sec->size - inst_written); i++) {
                 fwrite("\0", 1, 1, out);
             }
     }
@@ -873,7 +948,7 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     shdrs[4].sh_entsize = sizeof(Elf64_Rela);
     Section last_sec = ctx->sections->sections[ctx->sections->count - 1];
     shdrs[4].sh_offset = (Elf64_Xword)(roffset + last_sec.base + last_sec.size + 16); // +16 for safety
-    shdrs[4].sh_size = (Elf64_Xword)(text_sec.reloc_count * sizeof(Elf64_Rela));
+    shdrs[4].sh_size = (Elf64_Xword)(text_sec->reloc_count * sizeof(Elf64_Rela));
     shdrs[4].sh_addralign = 1;
 
     fwrite(&eh, sizeof(eh), 1, out);
@@ -917,18 +992,17 @@ bool encode_x86_64(Assembler* ctx, const char* output_file, IRList* irlist, int 
     fseek(out, shdrs[4].sh_offset, SEEK_SET);
     
     // add relocs of .text section
-    for (size_t i = 0; i < text_sec.reloc_count; i++) {
-        Relocation reloc = text_sec.relocs[i];
+    for (size_t i = 0; i < text_sec->reloc_count; i++) {
+        Relocation* reloc = &text_sec->relocs[i];
         Elf64_Rela r = {0};
 
-        r.r_addend = reloc.addend;
-        r.r_offset = reloc.offset;
-        r.r_info = ELF64_R_INFO(reloc.symbol + 1, reloc.type);
+        r.r_addend = reloc->addend;
+        r.r_offset = reloc->offset;
+        r.r_info = ELF64_R_INFO(reloc->symbol + 1, reloc->type);
         
         fwrite(&r, sizeof(r), 1, out);
     }
 
-    free_reloc(&text_sec);
     fclose(out);
     free(shdrs);
 

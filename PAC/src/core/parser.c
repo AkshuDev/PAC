@@ -306,7 +306,9 @@ static ASTOperand* parse_operand(Parser* p) {
         }
         op->mem_opr_count = memoprcount;
     } else {
-        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unexpected Token in Operand!");
+        char msgbuf[128];
+        snprintf(msgbuf, sizeof(msgbuf), "Unexpected token in operand: [%s]", token_type_to_ogstr(p->current.type));
+        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), msgbuf);
         free_ast(p->root);
         exit(PAC_Error_UnexpectedToken);
     }
@@ -325,6 +327,8 @@ static ASTNode* parse_inst(Parser* p) {
         node->inst.operands[node->inst.operand_count++] = op;
 
         if (parser_match(p, COMMA)) continue;
+        if (parser_match(p, COMMENT_BLOCK)) break;
+        if (parser_match(p, COMMENT_LINE)) break;
     }
     return node;
 }

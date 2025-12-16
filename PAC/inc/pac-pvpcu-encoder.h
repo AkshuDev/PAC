@@ -11,4 +11,4 @@
 #define R_PVCPU_16 0x80001002
 #define R_PVCPU_8 0x80001003
 
-bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int bits);
+bool encode_pvcpu(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked);

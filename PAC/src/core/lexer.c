@@ -148,6 +148,7 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "mset") == 0) return ASM_MSET;
     if (strcmp(str, "mcmp") == 0) return ASM_MCMP;
     if (strcmp(str, "mcpy") == 0) return ASM_MCPY;
+    if (strcmp(str, "exception") == 0) return ASM_EXCEPTION;
 
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
@@ -574,6 +575,7 @@ const char* token_type_to_str(TokenType type) {
         case ASM_JNZ: return "ASM_JNZ";
         case ASM_INC: return "ASM_INC";
         case ASM_DEC: return "ASM_DEC";
+        case ASM_EXCEPTION: return "ASM_EXCEPTION";
 
         // Literals
         case LIT_INT: return "LIT_INT";
@@ -716,6 +718,7 @@ const char* token_type_to_ogstr(TokenType type) {
         case ASM_MSET: return "mset";
         case ASM_MCMP: return "mcmp";
         case ASM_MCPY: return "mcpy";
+        case ASM_EXCEPTION: return "exception";
         
         case ASM_NOP: return "nop";
 
