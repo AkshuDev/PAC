@@ -15,8 +15,7 @@
 #include <pac-linker.h>
 
 // Encoders
-#include <pac-x86_64-encoder.h> // includes x86 also
-#include <pac-pvpcu-encoder.h>
+#include <pac-encoder.h>
 
 typedef struct {
     char* output_file;
@@ -407,46 +406,20 @@ int main(int argc, char** argv) {
         encoded_files[i] = (char*)malloc(128);
         strcpy(encoded_files[i], outfile);
 
-        if (args.arch == x86_64) {
-            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
-                free(src);
-                free_relocs(&sectab);
-                symtab_free(&symtab);
-                free_ir_list(&irlist);
-                section_free(&sectab);
-                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-                free(encoded_files);
-                return PAC_Error_Unknown;
-            }
-        } else if (args.arch == x86) {
-            if (args.bits == 64) {
-                fprintf(stderr, COLOR_YELLOW "Warning: x86 does not support 64-bit, if the default is being used then ignore. Changing bits to 32...\n" COLOR_RESET);
-                args.bits = 32;
-            }
-            if (!encode_x86_64(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
-                free(src);
-                free_relocs(&sectab);
-                symtab_free(&symtab);
-                free_ir_list(&irlist);
-                section_free(&sectab);
-                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-                free(encoded_files);
-                return PAC_Error_Unknown;
-            }
-        } else if (args.arch == PVCPU) {
-            if (!encode_pvcpu(&assembler, outfile, &irlist, args.bits, args.unlocked)) {
-                free(src);
-                free_relocs(&sectab);
-                symtab_free(&symtab);
-                free_ir_list(&irlist);
-                section_free(&sectab);
-                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-                free(encoded_files);
-                return PAC_Error_Unknown;
-            }
-        } else {
-            fprintf(stderr, COLOR_RED "Error: Unsupported Architecture\n" COLOR_RESET);
-            return PAC_Error_ArchitectureNotSupported;
+        if (args.arch == x86 && args.bits == 64) {
+            fprintf(stderr, COLOR_YELLOW "Warning: x86 does not support 64-bit, if the default is being used then ignore. Changing bits to 32...\n" COLOR_RESET);
+            args.bits = 32;
+        }
+
+        if (!encode(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
+            free(src);
+            free_relocs(&sectab);
+            symtab_free(&symtab);
+            free_ir_list(&irlist);
+            section_free(&sectab);
+            for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+            free(encoded_files);
+            return PAC_Error_Unknown;
         }
 
         free(src);
