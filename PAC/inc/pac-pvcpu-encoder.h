@@ -3,6 +3,7 @@
 #define PAC_PVPCU_ASM_ELF
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <pac-asm.h>
 
 #define EM_PVCPU 0x5650
