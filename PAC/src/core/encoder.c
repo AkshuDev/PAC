@@ -144,7 +144,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         } else if (strcmp(sec->name, ".bss") == 0) {
             sh->sh_type = SHT_NOBITS;
             sh->sh_flags = SHF_ALLOC | SHF_WRITE;
-            sh->sh_addr = (Elf64_Addr)sec->base;
+            sh->sh_addr = (Elf64_Addr)0;
             sh->sh_addralign = (Elf64_Xword)sec->alignment;
             continue;
         } else if (strcmp(sec->name, ".rodata") == 0) {
@@ -155,7 +155,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             sh->sh_flags = 0;
         }
 
-        sh->sh_addr = (Elf64_Addr)sec->base;
+        sh->sh_addr = (Elf64_Addr)0;
         sh->sh_offset = (Elf64_Xword)offset;
         sh->sh_size = (Elf64_Xword)sec->size;
         sh->sh_link = 0;
@@ -164,7 +164,68 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         sh->sh_entsize = 0;
 
         offset += sec->size;
-    } 
+    }
+ 
+    bool ret = false;
+
+    switch (arch) {
+        case x86_64:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec);
+            break;
+        case x86:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec);
+            break;
+        case PVCPU:
+            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec);
+            break;
+        default:
+            break;
+    }
+
+    if (!ret) {
+        fclose(out);
+        if (remove(output_file) != 0) {
+            fprintf(stderr, COLOR_RED "Error: Unable to remove output file!\n" COLOR_RESET);
+        }
+        free(shstrtab);
+        free(strtab);
+        free(shdrs);
+        return false;
+    }
+
+    Elf64_Shdr* text_sh = (Elf64_Shdr*)(&shdrs[text_sec_idx]);
+    uint64_t text_size = (uint64_t)text_sh->sh_size;
+    if (text_size != text_sec->size) { // Updated by encoder
+        text_sh->sh_size = text_sec->size;
+        uint64_t offset = text_off + text_sec->size;
+        for (uint64_t i = text_sec_idx; i < section_count; i++) {
+            Section* sec = &ctx->sections->sections[i - 5];
+            Elf64_Shdr* sh = &shdrs[i];
+
+            if (strcmp(sec->name, ".bss") == 0) {
+                continue;
+            }
+
+            uint64_t new_base = sec->base;
+            if (new_base > offset) {
+                new_base = offset;
+                for (uint64_t j = 0; j < ctx->symbols->count; j++) {
+                    Symbol* sym = &ctx->symbols->symbols[j];
+                    if (sym->section_index == i) {
+                        uint64_t off = sym->addr - sec->base;
+                        sym->addr = new_base + off;
+                    }
+                }
+            }
+
+            sec->base = new_base;
+            sh->sh_offset = (Elf64_Xword)offset;
+            offset += sec->size;
+        }
+    }
+
+    char padding[128];
+    fwrite(padding, 1, 128, out);
 
     // Write data
     for (size_t i = 0; i < ctx->sections->count; i++) {
@@ -227,36 +288,6 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         }
     }
 
-    bool ret = false;
-
-    switch (arch) {
-        case x86_64:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec);
-            break;
-        case x86:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec);
-            break;
-        case PVCPU:
-            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec);
-            break;
-        default:
-            break;
-    }
-
-    if (!ret) {
-        fclose(out);
-        if (remove(output_file) != 0) {
-            fprintf(stderr, COLOR_RED "Error: Unable to remove output file!\n" COLOR_RESET);
-        }
-        free(shstrtab);
-        free(strtab);
-        free(shdrs);
-        return false;
-    }
-
-    char padding[256];
-    fwrite(padding, 1, 256, out);
-
     fseek(out, 0, SEEK_SET);
     eh.e_shoff = sizeof(Elf64_Ehdr);
     eh.e_shnum = section_count;
@@ -287,21 +318,24 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     strtab_off += 1;
 
     for (size_t i = 0; i < ctx->symbols->count; i++) {
-        Symbol sym = ctx->symbols->symbols[i];
+        Symbol* sym = &ctx->symbols->symbols[i];
+
         Elf64_Sym* esym = &elfsymtab[i + 1];
         
         // Add name
-        esym->st_shndx = sym.section_index + 5;
-        if (sym.type == SYM_IDENTIFIER) esym->st_size = (Elf64_Xword)sym.size;
+        esym->st_shndx = sym->section_index + 5;
+        if (sym->type == SYM_IDENTIFIER) esym->st_size = (Elf64_Xword)sym->size;
         else esym->st_size = 0;
-        if (sym.type == SYM_LABEL) esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
-        else if (sym.type == SYM_FILE) esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
-        else esym->st_info = ELF64_ST_INFO(sym.is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
-        esym->st_other = 0;
-        esym->st_value = (Elf64_Addr)(sym.addr - ctx->sections->sections[sym.section_index].base);
 
-        size_t len = strlen(sym.name) + 1;
-        memcpy(strtab + strtab_off, sym.name, len);
+        if (sym->type == SYM_LABEL) esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
+        else if (sym->type == SYM_FILE) esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
+        else esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
+        
+        esym->st_other = 0;
+        esym->st_value = (Elf64_Addr)(sym->addr - ctx->sections->sections[sym->section_index].base);
+
+        size_t len = strlen(sym->name) + 1;
+        memcpy(strtab + strtab_off, sym->name, len);
         esym->st_name = strtab_off; 
         strtab_off += len;
     }

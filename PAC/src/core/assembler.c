@@ -169,163 +169,20 @@ static size_t default_section_alignment(const char *name)
     return 8; // generic safe fallback
 }
 
-static size_t operand_length_x86(ASTOperand *op, ASTInstruction *inst, enum Architecture arch, size_t *index, ASTOperand* prev, Assembler* ctx, size_t* cvaddr, size_t* clength)
-{
-    switch (op->type)
-    {
-    case OPERAND_REGISTER:
-        if (inst->opcode == ASM_PUSH) return 0; // only opcode
-        // extended registers (r8–r15) need REX prefix
-        if (prev && prev->type == OPERAND_REGISTER) return 1; // already taken into account (+1 for ModR/M)
-        if (arch == x86_64 && op->reg[0] == 'r' )
-        {
-            return 1; //  REX
-        }
-        return 0; // No REX
-
-    case OPERAND_LIT_INT:
-    case OPERAND_LIT_CHAR:
-    case OPERAND_LIT_FLOAT:
-    case OPERAND_LIT_DOUBLE:
-        *index += 1;
-        if (prev && prev->type == OPERAND_REGISTER) {
-            if (prev->reg[0] == 'r' && arch == x86_64) return 8;
-            else if (prev->reg[0] == 'e') return 4;
-            else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
-            else return 1;
-        }
-        return 4;
-    case OPERAND_MEMORY:
-        size_t len = 1; // ModR/M
-        *index += 1;
-        len += 4; // max displacement
-        return len;
-    case OPERAND_LABEL:
-        *index += 1;
-        if (inst->opcode >= ASM_JMP && inst->opcode <= ASM_JLE) {
-            Symbol sym;
-            if (symtab_get(ctx->symbols, op->label, &sym)) {
-                size_t disp = sym.addr - (*cvaddr + *clength + 4);
-                if (disp < 0xFF) return 4; // Currently I only support 32-bit disp
-            }
-        }
-        return 4; // assume relative address
-    case OPERAND_IDENTIFIER:
-        *index += 1;
-        if (inst->opcode >= ASM_JMP && inst->opcode <= ASM_JLE) {
-            Symbol sym;
-            if (symtab_get(ctx->symbols, op->identifier->identifier.name, &sym)) {
-                size_t disp = sym.addr - (*cvaddr + *clength + 4);
-                if (disp < 0xFF) return 4; // Currently I only support 32-bit disp
-            }
-        }
-        
-        if (prev && prev->type == OPERAND_REGISTER) {
-            if (prev->reg[0] == 'r' && arch == x86_64) return 8;
-            else if (prev->reg[0] == 'e') return 4;
-            else if (prev->reg[0] == 'a' && (prev->reg[1] != 'h' || prev->reg[1] != 'l')) return 2;
-            else return 1;
-        }
-        return 4; // 4 byte relative displacement
-    default:
-        return 0;
-    }
-}
-
-static uint64_t get_opcode_len_x86(TokenType opcode, bool* only_opcode)
-{
-    switch (opcode)
-    {
-    case ASM_MOV:
-    case ASM_ADD:
-    case ASM_SUB:
-    case ASM_MUL:
-    case ASM_DIV:
-        return 1;
-
-    case ASM_PUSH:
-        return 1; // Could not be only opcode
-    case ASM_POP:
-        *only_opcode = true;
-        return 1;
-
-    case ASM_CALL:
-    case ASM_RET:
-    case ASM_JMP:
-        return 1;
-
-    case ASM_JE:
-    case ASM_JNE:
-    case ASM_JG:
-    case ASM_JGE:
-    case ASM_JL:
-    case ASM_JLE:
-        return 2;
-
-    case ASM_CMP:
-    case ASM_TEST:
-    case ASM_AND:
-    case ASM_OR:
-    case ASM_XOR:
-    case ASM_NOT:
-    case ASM_SHL:
-    case ASM_SHR:
-        return 1;
-
-    case ASM_SYSCALL:
-        return 2;
-    
-    case ASM_LEA:
-    case ASM_NOP:
-        return 1;
-
-    default:
-        return 0;
-    }
-}
-
-static size_t operand_length_pvcpu(ASTOperand* op, bool is_compressed) {
-    switch (op->type) {
-        case OPERAND_REGISTER: return 0; // instruction taken care of
-        case OPERAND_LIT_INT:
-        case OPERAND_LIT_DOUBLE:
-        case OPERAND_LIT_FLOAT:
-        case OPERAND_MEMORY:
-        case OPERAND_LABEL:
-        case OPERAND_IDENTIFIER:
-        case OPERAND_LIT_CHAR:
-            return is_compressed ? 8 : 4;
-        default: return 0;
-    }
-}
-
-static size_t instruction_length(ASTInstruction inst, enum Architecture arch, Assembler* ctx, size_t* cvaddr)
+static size_t instruction_length(enum Architecture arch)
 {
     size_t length = 0;
-    size_t temp = 0;
-    ASTOperand* prev = NULL;
-    bool only_opcode = false;
-
+    
     switch (arch)
     {
     case x86_64:
-        // x86_64 is variable length        
-        length = get_opcode_len_x86(inst.opcode, &only_opcode); // opcode
-        if (inst.operand_count == 0 || only_opcode == true) break;
-        for (size_t i = 0; i < inst.operand_count; i++) {
-            if (i != 0) prev = inst.operands[i - 1];
-            length += operand_length_x86(inst.operands[i], &inst, arch, &temp, prev, ctx, cvaddr, &length);
-        }
+        // x86_64 is variable length (use max len)
+        length = 15;
         break;
 
     case x86:
-        // x86 is variable length
-        length = get_opcode_len_x86(inst.opcode, &only_opcode); // opcode
-        if (inst.operand_count == 0 || only_opcode == true) break;
-        for (size_t i = 0; i < inst.operand_count; i++) {
-            if (i != 0) prev = inst.operands[i - 1];
-            length += operand_length_x86(inst.operands[i], &inst, arch, &temp, prev, ctx, cvaddr, &length);
-        }
+        // x86 is variable length (use max len)
+        length = 15;
         break;
 
     case ARM32:
@@ -349,18 +206,13 @@ static size_t instruction_length(ASTInstruction inst, enum Architecture arch, As
         break;
 
     case PVCPU:
-        length = 4; // Basic Instruction
-        for (size_t i = 0; i < inst.operand_count; i++) {
-            length += operand_length_pvcpu(inst.operands[i], false); // Not Compressed version
-        }
+        // PVCpu is deterministically variable (here use max len)
+        length = 12;
         break;
 
     default:
-        // fallback: sum opcode + operand sizes from AST
-        length = 1;
-        for (size_t i = 0; i < inst.operand_count; i++)
-            length += 4; // assuming 4 bytes each
-        break;
+        // fallback: assume 4 bytes
+        length = 4;
     }
 
     return length;
@@ -782,7 +634,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_SectionNotFound);
             }
-            size_t inst_size = instruction_length(node->inst, ctx->arch, ctx, &cvaddr);
+            size_t inst_size = instruction_length(ctx->arch);
             cvaddr += inst_size;
             sectab->sections[current_section].size += inst_size;
             break;
@@ -1057,8 +909,8 @@ IRList assemble(Assembler *ctx)
             }
 
             add_ir(&list, ir);
-            current_offset += instruction_length(node->inst, ctx->arch, ctx, &current_offset);
-            sectab->sections[current_section].size += instruction_length(node->inst, ctx->arch, ctx, &current_offset);
+            current_offset += instruction_length(ctx->arch);
+            sectab->sections[current_section].size += instruction_length(ctx->arch);
         }
     }
 

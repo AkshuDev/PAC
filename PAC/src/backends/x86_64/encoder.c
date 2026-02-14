@@ -669,12 +669,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
     }
 
     if (inst_written > text_sec->size) {
-        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!\n\tCurrent Size: %llu bytes\n\tAllocated Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %llu bytes\n\tReserved Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
         return false;
     } else if (inst_written < text_sec->size) {
-        for (size_t i = 0; i < (text_sec->size - inst_written); i++) {
-                fwrite("\0", 1, 1, out);
-            }
+        text_sec->size = inst_written;
     }
 
     return true;
