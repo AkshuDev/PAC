@@ -12,4 +12,4 @@
 #define R_PVCPU_16 0x80001002
 #define R_PVCPU_8 0x80001003
 
-bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec);
+bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size);

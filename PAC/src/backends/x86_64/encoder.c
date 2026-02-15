@@ -36,6 +36,8 @@
 #define OPERAND_IMM8 13
 #define OPERAND_IMM32 14
 
+#define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
+
 typedef struct {
     uint8_t code; // 3-bit ID
     bool rex_needed; // Needs a REX prefix at all?
@@ -486,14 +488,27 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
     return 0;
 }
 
-bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec) {
+bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
     // [REX prefix] [Opcode] [ModR/M] [SIB] [Displacement] [Immediate]
     // REX prefix = 0100WRXB
     size_t inst_written = 0;
+    size_t cur_symbol_idx = 0;
 
     fseek(out, text_off, SEEK_SET);
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
+
+        for (size_t si = cur_symbol_idx; si < symbol_list_size; si++) {
+            uint64_t ent = symbol_list[si];
+            uint64_t sym_idx = (uint64_t)((uint32_t)ent);
+            uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
+
+            if (ir_idx == i && sym_idx < ctx->symbols->count) {
+                Symbol* sym = &ctx->symbols->symbols[sym_idx];
+                sym->addr = text_sec->base + inst_written;
+                cur_symbol_idx = si;
+            }
+        }
 
         if (inst.arch != x86_64 && inst.arch != x86) {
             char archs[128];
@@ -672,7 +687,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %llu bytes\n\tReserved Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
         return false;
     } else if (inst_written < text_sec->size) {
-        text_sec->size = inst_written;
+        text_sec->size = ALIGN_UP(inst_written, 16);
+        for (int i = 0; i < (text_sec->size - inst_written); i++) {
+            fwrite("\x90", 1, 1, out); // use nop
+        }
     }
 
     return true;

@@ -449,12 +449,25 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
     return 0;
 }
 
-bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec) {
+bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
     size_t inst_written = 0;
+    size_t cur_symbol_idx = 0;
 
     fseek(out, text_off, SEEK_SET);
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
+
+        for (size_t si = cur_symbol_idx; si < symbol_list_size; si++) {
+            uint64_t ent = symbol_list[si];
+            uint64_t sym_idx = (uint64_t)((uint32_t)ent);
+            uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
+
+            if (ir_idx == si && sym_idx < ctx->symbols->count) {
+                Symbol* sym = &ctx->symbols->symbols[sym_idx];
+                sym->addr = text_sec->base + inst_written;
+                cur_symbol_idx = si;
+            }
+        }
 
         if (inst.arch != PVCPU) {
             fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction!" COLOR_RESET);

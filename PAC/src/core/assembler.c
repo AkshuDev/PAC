@@ -680,20 +680,6 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
     {
         fprintf(stderr, COLOR_YELLOW "Warning: No entry point specified, defaulting to the first label/func!\n" COLOR_RESET);
         ctx->entry_label = first_label_node->label.name;
-        ctx->entry = (size_t)first_label->addr;
-    }
-    else
-    {
-        Symbol *entry_label = NULL;
-        if (!symtab_get(symtab, ctx->entry_label, entry_label))
-        {
-            fprintf(stderr, COLOR_RED "Error: No such label/function [%s]\n", ctx->entry_label);
-            symtab_free(symtab);
-            section_free(sectab);
-            free_ast(ctx->parser->root);
-            exit(PAC_Error_MissingEntryPoint);
-        }
-        ctx->entry = (size_t)entry_label->addr;
     }
 }
 
