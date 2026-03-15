@@ -56,9 +56,9 @@ WOUTPUT := $(BIN_DIR)/windows/x86_64/pac
 .PHONY: all clean dirs
 
 all: dirs
-	@echo "$(CYAN)==> Starting $(BUILD_NAME) build for PAC ($(OS)/$(ARCH))$(RESET)"
+	@printf "$(CYAN)==> Starting %s build for PAC (%s/%s)$(RESET)\n" $(BUILD_NAME) $(OS) $(ARCH)
 	@$(MAKE) $(OUTPUT)
-	@echo "$(GREEN)==> Build completed: $(OUTPUT)$(RESET)"
+	@printf "$(GREEN)==> Build completed: %s$(RESET)\n" $(OUTPUT)
 
 # Create necessary directories
 dirs:
@@ -72,35 +72,35 @@ win_dirs:
 
 # Link final executable
 $(OUTPUT): $(OBJ_FILES)
-	@echo "$(YELLOW)==> Linking final executable$(RESET)"
+	@printf "$(YELLOW)==> Linking final executable$(RESET)\n"
 	@$(CC) $(CFLAGS) $^ -o $@
-	@echo "$(GREEN)==> Linked $(OUTPUT)$(RESET)"
+	@printf "$(GREEN)==> Linked %s$(RESET)\n" $(OUTPUT)
 
 # Compile source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(HEADER_FILES)
 	@mkdir -p $(dir $@)
-	@echo "$(CYAN)Compiling $<...$(RESET)"
+	@printf "$(CYAN)Compiling %s...$(RESET)\n" $<
 	@$(CC) $(CFLAGS) -c $< -o $@
-	@echo "$(GREEN)done$(RESET)"
+	@printf "$(GREEN)done$(RESET)\n"
 
 # Clean build
 clean:
-	@echo "$(RED)==> Cleaning all build artifacts$(RESET)"
+	@printf "$(RED)==> Cleaning all build artifacts$(RESET)\n"
 	@rm -rf $(BUILD_DIR) $(BIN_DIR)
-	@echo "$(RED)==> Clean complete$(RESET)"
+	@printf "$(RED)==> Clean complete$(RESET)\n"
 
 build_win: win_dirs
-	@echo "$(CYAN)==> Starting $(BUILD_NAME) build for PAC (Windows/x86_64)$(RESET)"
+	@printf "$(CYAN)==> Starting %s build for PAC (Windows/x86_64)$(RESET)\n" $(BUILD_NAME)
 	@$(MAKE) $(WOUTPUT)
-	@echo "$(GREEN)==> Build completed: $(WOUTPUT)$(RESET)"
+	@printf "$(GREEN)==> Build completed: %s$(RESET)\n" $(WOUTPUT)
 
 $(WOUTPUT): $(WOBJ_FILES)
-	@echo "$(YELLOW)==> Linking final executable$(RESET)"
+	@printf "$(YELLOW)==> Linking final executable$(RESET)\n"
 	@$(WCC) $(WCFLAGS) $^ -o $@
-	@echo "$(GREEN)==> Linked $(WOUTPUT)$(RESET)"
+	@printf "$(GREEN)==> Linked %s$(RESET)\n" $(WOUTPUT)
 
 $(BUILD_DIR)/%.win.o: $(SRC_DIR)/%.c $(HEADER_FILES)
 	@mkdir -p $(dir $@)
-	@echo "$(CYAN)Compiling $<...$(RESET)"
+	@printf "$(CYAN)Compiling %s...$(RESET)\n" $<
 	@$(WCC) $(WCFLAGS) -c $< -o $@
-	@echo "$(GREEN)done$(RESET)"
+	@printf "$(GREEN)done$(RESET)\n"

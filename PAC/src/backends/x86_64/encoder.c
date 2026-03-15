@@ -36,6 +36,8 @@
 #define OPERAND_IMM8 13
 #define OPERAND_IMM32 14
 
+#define MAX_INST_BUF_SIZE 4096
+
 #define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
 
 typedef struct {
@@ -50,8 +52,45 @@ typedef struct {
     bool valid;
 } RegInfo;
 
+static size_t inst_buf_off = 0;
+static uint8_t* inst_buf = NULL;
+static bool inst_buf_init = false;
+static size_t inst_buf_capacity = 0;
+
+static size_t out_text_off = 0;
+static size_t inst_text_off = 0;
+
 static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
-    fwrite(bytes, 1, count, out);
+    if (!inst_buf_init) return;
+    if (inst_buf_off >= MAX_INST_BUF_SIZE) {
+        fseek(out, out_text_off + inst_text_off, SEEK_SET);
+        fwrite(inst_buf, 1, inst_buf_off, out);
+        fwrite(bytes, 1, count, out);
+        inst_text_off += inst_buf_off + count;
+        inst_buf_off = 0;
+        return;
+    }
+
+    if (inst_buf_capacity < inst_buf_off + count) {
+        uint8_t* new_buf = realloc(inst_buf, inst_buf_capacity * 2);
+        if (!new_buf) return;
+
+        inst_buf = new_buf;
+        inst_buf_capacity *= 2;
+    }
+
+    memcpy(inst_buf + inst_buf_off, bytes, count);
+    inst_buf_off += count;
+}
+
+static void flush_everything(FILE* out) {
+    if (inst_buf_off > 0 && inst_buf) {
+        fseek(out, out_text_off + inst_text_off, SEEK_SET);
+        fwrite(inst_buf, 1, inst_buf_off, out);
+        inst_buf_off = 0;
+    }
+
+    fflush(out);
 }
 
 static RegInfo encode_register(const char *reg) {
@@ -494,7 +533,13 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
     size_t inst_written = 0;
     size_t cur_symbol_idx = 0;
 
-    fseek(out, text_off, SEEK_SET);
+    inst_buf_capacity = MAX_INST_BUF_SIZE;
+    inst_buf = (uint8_t*)malloc(inst_buf_capacity);
+    inst_buf_init = true;
+    inst_buf_off = 0;
+    inst_text_off = 0;
+    out_text_off = text_off;
+
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
 
@@ -503,9 +548,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             uint64_t sym_idx = (uint64_t)((uint32_t)ent);
             uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
 
+            if (ir_idx > i) break;
+
             if (ir_idx == i && sym_idx < ctx->symbols->count) {
                 Symbol* sym = &ctx->symbols->symbols[sym_idx];
-                sym->addr = text_sec->base + inst_written;
+                sym->addr = text_off + inst_written;
                 cur_symbol_idx = si;
             }
         }
@@ -612,7 +659,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         } else if (modrm_mod == MODRM_MOD_MEMORY && operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-            add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
+            add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, -4);
             emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
             inst_written += 4;
         } else if (operand_mod == OPERAND_IMM_TO_REG) {
@@ -633,11 +680,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                 if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
+                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
                 } else {
-                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, 0);
+                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, 0);
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     inst_written += 4;
                 }
@@ -663,11 +710,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                 if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC8, 0);
+                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
                 } else {
-                    add_reloc(text_sec, ftell(out) - text_off, symindex, R_X86_64_PC32, -4);
+                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, -4);
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     inst_written += 4;
                 }
@@ -688,10 +735,12 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         return false;
     } else if (inst_written < text_sec->size) {
         text_sec->size = ALIGN_UP(inst_written, 16);
-        for (int i = 0; i < (text_sec->size - inst_written); i++) {
-            fwrite("\x90", 1, 1, out); // use nop
+        for (uint64_t i = 0; i < (text_sec->size - inst_written); i++) {
+            emit_bytes(out, (uint8_t*)"\x90", 1); // use nop
         }
     }
+
+    flush_everything(out);
 
     return true;
 }

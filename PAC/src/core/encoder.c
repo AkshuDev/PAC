@@ -96,8 +96,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     size_t strtab_off = 0;
     size_t strtab_size = (ctx->symbols->count + 1) * sizeof(symname);
     
-    size_t roffset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
-    size_t offset = roffset;
+    size_t offset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
     size_t text_off = offset;
     Section* text_sec;
     size_t text_sec_idx = 0;
@@ -149,6 +148,8 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         memcpy(shstrtab + shstrtab_off, sec->name, len);
         sh->sh_name = shstrtab_off;
         shstrtab_off += len;
+
+        offset = ALIGN_UP(offset, sec->alignment);
 
         if (strcmp(sec->name, ".text") == 0) {
             sh->sh_type = SHT_PROGBITS;
@@ -232,6 +233,22 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         }
     }
 
+    fseek(out, 0, SEEK_END);
+    size_t curr_size = ftell(out);
+    if (curr_size < text_off) {
+        size_t fill = text_off - curr_size;
+        uint8_t* zeros = calloc(1, fill); // zero-initialized
+        fwrite(zeros, 1, fill, out);
+        free(zeros);
+    }
+    fflush(out);
+
+    fseek(out, 0, SEEK_END);
+    curr_size = ftell(out);
+    if (curr_size < text_off) {
+        fprintf(stderr, COLOR_YELLOW "Warning: Failed to extend file!\n" COLOR_RESET);
+    }
+
     switch (arch) {
         case x86_64:
             ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
@@ -263,30 +280,33 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     uint64_t text_size = (uint64_t)text_sh->sh_size;
     if (text_size != text_sec->size) { // Updated by encoder
         text_sh->sh_size = text_sec->size;
-        uint64_t voffset = text_sec->base;
         offset = text_off;
 
-        for (uint64_t i = text_sec_idx + 1; i < section_count; i++) {
+        for (uint64_t i = 0; i < section_count; i++) {
+            if (i < 5) {
+                shdrs[i].sh_addr = 0;
+                continue;
+            }
+
             Section* sec = &ctx->sections->sections[i - 5];
             Elf64_Shdr* sh = &shdrs[i];
 
-            uint64_t new_base = voffset;
+            sh->sh_offset = (Elf64_Xword)offset;
+
             for (uint64_t j = 0; j < ctx->symbols->count; j++) {
                 Symbol* sym = &ctx->symbols->symbols[j];
-                if (sym->section_index == (i - 5)) {
-                    uint64_t off = sym->addr - sec->base;
-                    sym->addr = new_base + off;
-                }
+                if (sym->section_index != (i - 5)) continue;
+                if (sym->type != SYM_IDENTIFIER && sym->type != SYM_LABEL) continue;
+
+                size_t off = sym->addr - sec->base;
+                if (sym->type == SYM_IDENTIFIER) sym->addr = off + sh->sh_offset;
+                else sym->addr = off;
             }
 
-            sec->base = new_base;
-            if (strcmp(sec->name, ".bss") != 0){
-                sh->sh_offset = (Elf64_Xword)offset;
-                offset += sec->size;
-                offset = ALIGN_UP(offset, sh->sh_addralign);
-            }
-            voffset += sec->size;
-            voffset = ALIGN_UP(voffset, sh->sh_addralign);
+            sh->sh_addr = 0;
+
+            offset += sec->size;
+            offset = ALIGN_UP(offset, sh->sh_addralign);
         }
     }
 
@@ -304,34 +324,27 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         fseek(out, sh->sh_offset, SEEK_SET);
 
         for (size_t j = 0; j < ctx->symbols->count; j++) {
-            Symbol sym = ctx->symbols->symbols[j];
-            if (sym.section_index != i) continue;
+            Symbol* sym = &ctx->symbols->symbols[j];
+            if (sym->section_index != i) continue;
+            if (sym->type != SYM_IDENTIFIER) continue; // Only for identifier/allocated stuff
+            
+            size_t off = sym->addr - sec.base;
 
-            if (sym.type == SYM_IDENTIFIER) { // Only for identifier/allocated stuff
-                int use = 0;
-                long long intval = 0;
-                double floatval = 0;
-                if (sym.type_of_data >= T_BYTE && sym.type_of_data <= T_ULONG) {
-                    intval = atoll(sym.value);
-                    use = 0;
-                } else if (sym.type_of_data >= T_FLOAT && sym.type_of_data <= T_DOUBLE) {
-                    floatval = atof(sym.value);
-                    use = 1;
-                } else if (sym.type_of_data == T_ARRAY) {
-                    use = 2; // NULL it
-                    char* data = sym.value;
-                    fwrite(data, 1, strlen(data), out);
-                } else {
-                    // PTR
-                }
+            fseek(out, sh->sh_offset + off, SEEK_SET);
 
-                if (use == 0) {
-                    fwrite(&intval, sym.size, 1, out);
-                } else if (use == 1) {
-                    fwrite(&floatval, sym.size, 1, out);
-                }
-                written += sym.size;
+            long long intval = 0;
+            double floatval = 0;
+
+            if (sym->type_of_data >= T_BYTE && sym->type_of_data <= T_ULONG) {
+                intval = atoll(sym->value);
+                fwrite(&intval, sym->size, 1, out);
+            } else if (sym->type_of_data >= T_FLOAT && sym->type_of_data <= T_DOUBLE) {
+                floatval = atof(sym->value);
+                fwrite(&floatval, sym->size, 1, out);
+            } else if (sym->type_of_data == T_ARRAY) {
+                fwrite(sym->value, 1, sym->size, out);
             }
+            written += sym->size;
         }
 
         if (written > sec.size) {
@@ -365,8 +378,8 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     shdrs[4].sh_link = 1;
     shdrs[4].sh_info = text_sec_idx;
     shdrs[4].sh_entsize = sizeof(Elf64_Rela);
-    Section last_sec = ctx->sections->sections[ctx->sections->count - 1];
-    shdrs[4].sh_offset = (Elf64_Xword)(roffset + last_sec.base + last_sec.size + 16); // +16 for safety
+    size_t reloc_offset = ALIGN_UP(offset, 8);
+    shdrs[4].sh_offset = (Elf64_Xword)(reloc_offset);
     shdrs[4].sh_size = (Elf64_Xword)(text_sec->reloc_count * sizeof(Elf64_Rela));
     shdrs[4].sh_addralign = 1;
 
@@ -385,14 +398,36 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         Elf64_Sym* esym = &elfsymtab[i + 1];
         
         // Add name
-        esym->st_shndx = sym->section_index + 5;
-        if (sym->type == SYM_IDENTIFIER) esym->st_size = (Elf64_Xword)sym->size;
-        else esym->st_size = 0;
-        if (sym->type == SYM_LABEL) esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
-        else if (sym->type == SYM_FILE) esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
-        else esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
-        esym->st_other = 0;
-        esym->st_value = (Elf64_Addr)(sym->addr - ctx->sections->sections[sym->section_index].base);
+        switch (sym->type) {
+            case SYM_IDENTIFIER:
+                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
+                esym->st_size = (Elf64_Xword)sym->size;
+                esym->st_other = 0;
+                esym->st_shndx = sym->section_index + 5;
+                esym->st_value = (Elf64_Addr)(sym->addr - shdrs[esym->st_shndx].sh_offset);
+                break;
+            case SYM_LABEL:
+                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
+                esym->st_size = 0;
+                esym->st_other = 0;
+                esym->st_shndx = sym->section_index + 5;
+                esym->st_value = (Elf64_Addr)(sym->addr - shdrs[esym->st_shndx].sh_addr);
+                break;
+            case SYM_FILE:
+                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
+                esym->st_size = 0;
+                esym->st_other = 0;
+                esym->st_value = (Elf64_Addr)(sym->addr);
+                esym->st_shndx = 0;
+                break;
+            default:
+                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_NOTYPE);
+                esym->st_size = 0;
+                esym->st_other = 0;
+                esym->st_value = (Elf64_Addr)(sym->addr);
+                esym->st_shndx = 0;
+                break;
+        }
 
         size_t len = strlen(sym->name) + 1;
         memcpy(strtab + strtab_off, sym->name, len);

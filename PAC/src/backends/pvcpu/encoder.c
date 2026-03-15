@@ -31,6 +31,8 @@
 #define MODE_SHIFT 16
 #define OPCODE_SHIFT 20
 
+#define MAX_INST_BUF_SIZE 4096
+
 typedef enum {
     MODE_NULL = 0, // No mode
     MODE_REG_REG, // dest = src
@@ -56,8 +58,45 @@ typedef struct {
     bool valid;
 } RegInfo;
 
+static size_t inst_buf_off = 0;
+static uint8_t* inst_buf = NULL;
+static bool inst_buf_init = false;
+static size_t inst_buf_capacity = 0;
+
+static size_t out_text_off = 0;
+static size_t inst_text_off = 0;
+
 static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
-    fwrite(bytes, 1, count, out);
+    if (!inst_buf_init) return;
+    if (inst_buf_off >= MAX_INST_BUF_SIZE) {
+        fseek(out, out_text_off + inst_text_off, SEEK_SET);
+        fwrite(inst_buf, 1, inst_buf_off, out);
+        fwrite(bytes, 1, count, out);
+        inst_text_off += inst_buf_off + count;
+        inst_buf_off = 0;
+        return;
+    }
+
+    if (inst_buf_capacity < inst_buf_off + count) {
+        uint8_t* new_buf = realloc(inst_buf, inst_buf_capacity * 2);
+        if (!new_buf) return;
+
+        inst_buf = new_buf;
+        inst_buf_capacity *= 2;
+    }
+
+    memcpy(inst_buf + inst_buf_off, bytes, count);
+    inst_buf_off += count;
+}
+
+static void flush_everything(FILE* out) {
+    if (inst_buf_off > 0 && inst_buf) {
+        fseek(out, out_text_off + inst_text_off, SEEK_SET);
+        fwrite(inst_buf, 1, inst_buf_off, out);
+        inst_buf_off = 0;
+    }
+
+    fflush(out);
 }
 
 static RegInfo encode_register(const char *reg, bool unlocked) {
@@ -453,7 +492,13 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
     size_t inst_written = 0;
     size_t cur_symbol_idx = 0;
 
-    fseek(out, text_off, SEEK_SET);
+    inst_buf_capacity = MAX_INST_BUF_SIZE;
+    inst_buf = (uint8_t*)malloc(inst_buf_capacity);
+    inst_buf_init = true;
+    inst_buf_off = 0;
+    inst_text_off = 0;
+    out_text_off = text_off;
+
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
 
@@ -578,6 +623,8 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
     } else if (inst_written < text_sec->size) {
         text_sec->size = inst_written;
     }
+
+    flush_everything(out);
     
     return true;
 }
