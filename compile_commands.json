@@ -1,0 +1,191 @@
+[
+  {
+    "file": "src/backends/x86_64/encoder.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/backends/x86_64/encoder.c",
+      "-o",
+      "build/backends/x86_64/encoder.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/backends/x86_64/encoder.o"
+  },
+  {
+    "file": "src/backends/arm64/encoder.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/backends/arm64/encoder.c",
+      "-o",
+      "build/backends/arm64/encoder.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/backends/arm64/encoder.o"
+  },
+  {
+    "file": "src/backends/pvcpu/encoder.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/backends/pvcpu/encoder.c",
+      "-o",
+      "build/backends/pvcpu/encoder.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/backends/pvcpu/encoder.o"
+  },
+  {
+    "file": "src/main.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/main.c",
+      "-o",
+      "build/main.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/main.o"
+  },
+  {
+    "file": "src/core/parser.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/core/parser.c",
+      "-o",
+      "build/core/parser.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/core/parser.o"
+  },
+  {
+    "file": "src/core/assembler.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/core/assembler.c",
+      "-o",
+      "build/core/assembler.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/core/assembler.o"
+  },
+  {
+    "file": "src/core/encoder.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/core/encoder.c",
+      "-o",
+      "build/core/encoder.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/core/encoder.o"
+  },
+  {
+    "file": "src/core/linker.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/core/linker.c",
+      "-o",
+      "build/core/linker.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/core/linker.o"
+  },
+  {
+    "file": "src/core/lexer.c",
+    "arguments": [
+      "gcc",
+      "-O0",
+      "-g3",
+      "-Wall",
+      "-Wextra",
+      "-fsanitize=address,undefined",
+      "-fstack-protector-strong",
+      "-std=c2x",
+      "-I",
+      "inc",
+      "-c",
+      "src/core/lexer.c",
+      "-o",
+      "build/core/lexer.o"
+    ],
+    "directory": "/home/AkshuDev/Projects/PAC/PAC",
+    "output": "build/core/lexer.o"
+  }
+]
