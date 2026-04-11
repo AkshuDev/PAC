@@ -8,6 +8,7 @@ typedef enum {
     ELF64,
     WIN32,
     WIN64,
+    BINARY
 } LinkerFormat;
 
 char* linker_format_to_str(LinkerFormat outformat);

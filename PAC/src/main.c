@@ -53,7 +53,7 @@ void print_usage(const char* prog) {
     printf("\t-b, --bits <16|32|64>     Target bits (default: 64)\n");
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
-    printf("\t-f, --format <elf64/elf32/win64/win32> Target output format (default: elf64)\n");
+    printf("\t-f, --format <elf64/elf32/win64/win32/binary> Target output format (default: elf64)\n");
     printf("\t--unlock                  Allows the use of privilaged instructions\n");
 }
 
@@ -411,15 +411,28 @@ int main(int argc, char** argv) {
             args.bits = 32;
         }
 
-        if (!encode(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
-            free(src);
-            free_relocs(&sectab);
-            symtab_free(&symtab);
-            free_ir_list(&irlist);
-            section_free(&sectab);
-            for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-            free(encoded_files);
-            return PAC_Error_Unknown;
+        if (args.linkformat == BINARY) {
+            if (!encode_binary(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
+                free(src);
+                free_relocs(&sectab);
+                symtab_free(&symtab);
+                free_ir_list(&irlist);
+                section_free(&sectab);
+                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+                free(encoded_files);
+                return PAC_Error_Unknown;
+            }
+        } else {
+            if (!encode(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
+                free(src);
+                free_relocs(&sectab);
+                symtab_free(&symtab);
+                free_ir_list(&irlist);
+                section_free(&sectab);
+                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+                free(encoded_files);
+                return PAC_Error_Unknown;
+            }
         }
 
         free(src);

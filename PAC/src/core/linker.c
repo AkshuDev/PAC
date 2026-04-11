@@ -77,6 +77,7 @@ char* linker_format_to_str(LinkerFormat outformat) {
         case ELF32: return "elf32";
         case WIN32: return "win32";
         case WIN64: return "win64";
+        case BINARY: return "binary";
         default: return "Unknown";
     }
     return NULL;
@@ -88,6 +89,7 @@ LinkerFormat str_to_linker_format(char* s) {
     else if (strcmp(s, "elf32") == 0) return ELF32;
     else if (strcmp(s, "win64") == 0) return WIN64;
     else if (strcmp(s, "win32") == 0) return WIN32;
+    else if (strcmp(s, "binary") == 0) return BINARY;
 
     return (LinkerFormat)-1;
 }

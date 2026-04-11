@@ -462,3 +462,87 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 
     return true;
 }
+
+bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch) {
+    FILE* out = fopen(output_file, "wb");
+    if (!out) {
+        printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
+        return false;
+    }
+
+    int ret = 0;
+    size_t text_off = 0;
+    size_t offset = 0;
+    Section text_sec = {0};
+
+    for (size_t i = 0; i < ctx->sections->count; i++) {
+        Section sec = ctx->sections->sections[i];
+        size_t written = 0;
+        
+        if (strcmp(sec.name, ".text") == 0) {
+            text_sec = sec;
+            continue;
+        }
+        if (strcmp(sec.name, ".bss") == 0) {
+            continue;
+        }
+
+        fseek(out, offset, SEEK_SET);
+
+        for (size_t j = 0; j < ctx->symbols->count; j++) {
+            Symbol* sym = &ctx->symbols->symbols[j];
+            if (sym->section_index != i) continue;
+            if (sym->type != SYM_IDENTIFIER) continue; // Only for identifier/allocated stuff
+            
+            size_t off = sym->addr - sec.base;
+
+            fseek(out, offset + off, SEEK_SET);
+
+            long long intval = 0;
+            double floatval = 0;
+
+            if (sym->type_of_data >= T_BYTE && sym->type_of_data <= T_ULONG) {
+                intval = atoll(sym->value);
+                fwrite(&intval, sym->size, 1, out);
+            } else if (sym->type_of_data >= T_FLOAT && sym->type_of_data <= T_DOUBLE) {
+                floatval = atof(sym->value);
+                fwrite(&floatval, sym->size, 1, out);
+            } else if (sym->type_of_data == T_ARRAY) {
+                fwrite(sym->value, 1, sym->size, out);
+            }
+            written += sym->size;
+        }
+
+        if (written > sec.size) {
+            fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's size!" COLOR_RESET);
+            fclose(out);
+            if (remove(output_file) != 0) {
+                fprintf(stderr, COLOR_RED "Error: Unable to remove output file!\n" COLOR_RESET);
+            }
+            return false;
+        } else if (written < sec.size) {
+            for (size_t i = 0; i < (sec.size - written); i++) {
+                fwrite("\0", 1, 1, out);
+            }
+        }
+    }
+
+    text_off = ALIGN_UP(offset + 1, 16);
+
+    switch (arch) {
+        case x86_64:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        case x86:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        case PVCPU:
+            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        default:
+            break;
+    }
+    fclose(out);
+
+    return ret;
+}

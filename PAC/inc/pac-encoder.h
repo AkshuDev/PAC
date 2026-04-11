@@ -6,3 +6,4 @@
 #include <stdbool.h>
 
 bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch);
+bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch);
