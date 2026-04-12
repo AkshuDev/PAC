@@ -5,6 +5,5 @@
     :global main
 
 main:
-    mov %qg0, [msg]
-    mov %g1, 24
+    mov %qg1, 24
     exception 0x1 // Privilaged

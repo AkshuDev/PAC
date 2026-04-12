@@ -477,13 +477,34 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
 
     for (size_t i = 0; i < ctx->sections->count; i++) {
         Section sec = ctx->sections->sections[i];
-        size_t written = 0;
-        
         if (strcmp(sec.name, ".text") == 0) {
             text_sec = sec;
-            continue;
+            break;;
         }
-        if (strcmp(sec.name, ".bss") == 0) {
+    }
+
+    switch (arch) {
+        case x86_64:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        case x86:
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        case PVCPU:
+            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            break;
+        default:
+            break;
+    }
+
+    offset = ALIGN_UP(ftell(out), 16);
+
+    // Write data
+    for (size_t i = 0; i < ctx->sections->count; i++) {
+        Section sec = ctx->sections->sections[i];
+        size_t written = 0;
+        
+        if (strcmp(sec.name, ".bss") == 0 || strcmp(sec.name, ".text") == 0) {
             continue;
         }
 
@@ -527,21 +548,6 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
         }
     }
 
-    text_off = ALIGN_UP(offset + 1, 16);
-
-    switch (arch) {
-        case x86_64:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
-            break;
-        case x86:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
-            break;
-        case PVCPU:
-            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
-            break;
-        default:
-            break;
-    }
     fclose(out);
 
     return ret;
