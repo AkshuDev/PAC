@@ -304,7 +304,6 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             sh->sh_addr = 0;
 
             if (i < text_sec_idx) continue; // skip
-
             sh->sh_offset = (Elf64_Xword)offset;
             offset += sec->size;
             offset = ALIGN_UP(offset, sec->alignment);
