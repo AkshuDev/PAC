@@ -291,8 +291,6 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             Section* sec = &ctx->sections->sections[i - 5];
             Elf64_Shdr* sh = &shdrs[i];
 
-            sh->sh_offset = (Elf64_Xword)offset;
-
             for (uint64_t j = 0; j < ctx->symbols->count; j++) {
                 Symbol* sym = &ctx->symbols->symbols[j];
                 if (sym->section_index != (i - 5)) continue;
@@ -305,8 +303,11 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 
             sh->sh_addr = 0;
 
+            if (i < text_sec_idx) continue; // skip
+
+            sh->sh_offset = (Elf64_Xword)offset;
             offset += sec->size;
-            offset = ALIGN_UP(offset, sh->sh_addralign);
+            offset = ALIGN_UP(offset, sec->alignment);
         }
     }
 
@@ -451,7 +452,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         Elf64_Rela r = {0};
 
         r.r_addend = reloc->addend;
-        r.r_offset = reloc->offset;
+        r.r_offset = reloc->offset - text_sh->sh_offset;
         r.r_info = ELF64_R_INFO(reloc->symbol + 1, reloc->type);
         
         fwrite(&r, sizeof(r), 1, out);
@@ -473,25 +474,28 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
     int ret = 0;
     size_t text_off = 0;
     size_t offset = 0;
-    Section text_sec = {0};
+    uint64_t text_sec_idx = 0;
+    Section* text_sec = NULL;
 
     for (size_t i = 0; i < ctx->sections->count; i++) {
         Section sec = ctx->sections->sections[i];
         if (strcmp(sec.name, ".text") == 0) {
-            text_sec = sec;
+            text_sec_idx = i;
             break;;
         }
     }
 
+    text_sec = &ctx->sections->sections[text_sec_idx];
+
     switch (arch) {
         case x86_64:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
             break;
         case x86:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
             break;
         case PVCPU:
-            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, &text_sec, NULL, 0);
+            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
             break;
         default:
             break;
@@ -548,6 +552,7 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
         }
     }
 
+    free_relocs(ctx->sections);
     fclose(out);
 
     return ret;

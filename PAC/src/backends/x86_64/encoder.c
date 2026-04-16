@@ -659,7 +659,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         } else if (modrm_mod == MODRM_MOD_MEMORY && operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-            add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, -4);
+            add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
             emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
             inst_written += 4;
         } else if (operand_mod == OPERAND_IMM_TO_REG) {
@@ -680,11 +680,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                 if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC8, 0);
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
                 } else {
-                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, 0);
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, 0);
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     inst_written += 4;
                 }
@@ -710,11 +710,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                 if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC8, 0);
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
                 } else {
-                    add_reloc(text_sec, inst_written - text_off, symindex, R_X86_64_PC32, -4);
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     inst_written += 4;
                 }
