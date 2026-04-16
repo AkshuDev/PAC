@@ -1,0 +1,40 @@
+{
+    "Name": "pac",
+    "Description": "Pheonix Assembler Collection",
+
+    "Version": "0.1.0",
+    "Author": "Pheonix-Studios",
+
+    "License": "LICENSE",
+    "Readme": "README.md",
+
+    "Id": "pheonix_studios.pac",
+    "Status": "beta",
+
+    "Build": {
+        "Date": "2026-04-16"
+    },
+    
+    "Binaries": [
+        {
+            "Name": "pac",
+            "Os": ["linux"],
+            "Arch": ["x86_64"],
+            "Path": "PAC/bin/linux/x86_64/pac",
+            "Size": 0,
+            "Sha256": "",
+            "Executable": true
+        },
+        {
+            "Name": "pac",
+            "Os": ["windows"],
+            "Arch": ["x86_64"],
+            "Path": "PAC/bin/windows/x86_64/pac",
+            "Size": 0,
+            "Sha256": "",
+            "Executable": true
+        }
+    ],
+    "Dependencies": [],
+    "Conflicts": []
+}

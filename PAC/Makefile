@@ -26,8 +26,8 @@ ARCH := $(shell uname -m | tr '[:upper:]' '[:lower:]')
 COBITS := 
 CFLAGS_RELEASE := -O0 -fsanitize=address,undefined -march=native -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
 CFLAGS_DEBUG := -O0 -g3 -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
-WCFLAGS_RELEASE := -include special/extensions.h -O0 -march=native -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS) -static-libgcc
-WCFLAGS_DEBUG := -include special/extensions.h -O0 -g3 -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS) -static-libgcc
+WCFLAGS_RELEASE := -include special/extensions.h -O0 -march=native -Wall -Wextra -fno-stack-protector -std=c2x -I $(INC_DIR) -I special $(COBITS) -static -static-libgcc -static-libstdc++ -Wl,-Bstatic
+WCFLAGS_DEBUG := -include special/extensions.h -O0 -g3 -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 
 # Build type
 BUILD ?= debug
@@ -53,7 +53,7 @@ WOUTPUT := $(BIN_DIR)/windows/x86_64/pac
 
 # === Rules ===
 
-.PHONY: all clean dirs
+.PHONY: all clean build_win help info
 
 all: dirs
 	@printf "$(CYAN)==> Starting %s build for PAC (%s/%s)$(RESET)\n" $(BUILD_NAME) $(OS) $(ARCH)
@@ -104,3 +104,36 @@ $(BUILD_DIR)/%.win.o: $(SRC_DIR)/%.c $(HEADER_FILES)
 	@printf "$(CYAN)Compiling %s...$(RESET)\n" $<
 	@$(WCC) $(WCFLAGS) -c $< -o $@
 	@printf "$(GREEN)done$(RESET)\n"
+
+help:
+	@echo "PAC Makefile Help"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make                 Build project (debug by default)"
+	@echo "  make BUILD=release   Build optimized release version"
+	@echo "  make clean           Remove build/ and bin/ directories"
+	@echo "  make build_win       Cross-compile for Windows (x86_64)"
+	@echo "  make info            Shows all info about target and build settings"
+	@echo "  make help            Show this help message"
+	@echo ""
+	@echo "Directories:"
+	@echo "  src/   -> source files"
+	@echo "  inc/   -> headers"
+	@echo "  build/ -> object files"
+	@echo "  bin/   -> final binaries"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make"
+	@echo "  make BUILD=debug"
+	@echo "  make BUILD=release"
+	@echo "  make build_win"
+	@echo "  make clean"
+
+info:
+	@echo "========== PAC BUILD INFO =========="
+	@echo "Build mode : $(BUILD)"
+	@echo "OS         : $(OS)"
+	@echo "ARCH       : $(ARCH)"
+	@echo "CC         : $(CC)"
+	@echo "WCC        : $(WCC)"
+	@echo "===================================="
