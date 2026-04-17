@@ -24,19 +24,21 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac",
-      "Sha256": "6359b1cb523e40fd9b709dcd49f721c11e511a09fd48a138382751b4751007ed",
+      "Sha256": "9949920c00fc1d4daa3fe02dd52d4399eb80b7bec54f55e69821ca700877cc1e",
       "Size": 318735
     }
   ],
   "Build": {
-    "Date": "2026-04-16"
+    "AllowedSigners": "keys/allowed_signers",
+    "Date": "2026-04-16",
+    "SignatureIdentity": "pheonix-pac"
   },
   "Conflicts": [],
   "Dependencies": [],
   "Description": "Pheonix Assembler Collection",
   "Id": "pheonix_studios.pac",
   "License": "LICENSE",
-  "Name": "pac",
+  "Name": "PAC",
   "Readme": "README.md",
   "Status": "beta",
   "Version": "0.1.0"

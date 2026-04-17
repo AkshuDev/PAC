@@ -66,7 +66,8 @@ zip: dirs build-linux build-windows canonical
 		$(PAC_LINUX) \
 		$(PAC_WINDOWS) \
 		$(LICENSE) \
-		$(README)
+		$(README) \
+		$(KEY_DIR)/allowed_signers
 	@rm nfx.json
 	@printf "$(GREEN)==> Created Zip! (%s) \n$(RESET)" $(ZIP)
 sign: zip

@@ -1,5 +1,5 @@
 {
-    "Name": "pac",
+    "Name": "PAC",
     "Description": "Pheonix Assembler Collection",
 
     "Version": "0.1.0",
@@ -12,7 +12,9 @@
     "Status": "beta",
 
     "Build": {
-        "Date": "2026-04-16"
+        "Date": "2026-04-16",
+        "AllowedSigners": "keys/allowed_signers",
+        "SignatureIdentity": "pheonix-pac"
     },
     
     "Binaries": [
