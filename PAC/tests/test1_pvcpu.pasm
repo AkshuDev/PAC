@@ -6,4 +6,5 @@
 
 main:
     mov %qg1, 24
+    mov %qg0, 0x10020
     exception 0x1 // Privilaged

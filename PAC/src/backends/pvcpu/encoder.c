@@ -22,8 +22,8 @@
 
 #define FLAGS_VALID (1 << 0) // Is It Valid????
 #define FLAGS_IMM (1 << 1) // Used for memory and just numbers
-#define FLAGS_EXTFLAGS (1 << 2) // Extended Flags (8 byte)
-#define FLAGS_DISP (1 << 3) // 64-bit Displacement, using the registers
+#define FLAGS_64 (1 << 2) // Extended Flags (8 byte)
+#define FLAGS_EXTFLAGS (1 << 3) // 64-bit Displacement, using the registers
 
 #define FLAGS_SHIFT 0
 #define RDEST_SHIFT 4
@@ -311,7 +311,7 @@ static RegInfo encode_register(const char *reg, bool unlocked) {
     return r;
 }
 
-static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlocked, uint8_t* mode) {
+static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlocked, uint8_t* mode, bool* special_usage) {
     *valid = true;
     switch (opcode) {
         case ASM_NOP: return 0x0;
@@ -341,14 +341,14 @@ static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlo
         // Memory
         case ASM_LOAD: return 0x100;
         case ASM_STORE: return 0x101;
-        case ASM_PUSH: return 0x102;
-        case ASM_POP: return 0x103;
-        case ASM_PUSH16: return 0x104;
-        case ASM_POP16: return 0x105;
-        case ASM_PUSH32: return 0x106;
-        case ASM_POP32: return 0x107;
-        case ASM_PUSH64: return 0x108;
-        case ASM_POP64: return 0x109;
+        case ASM_PUSH: *special_usage = true; return 0x102;
+        case ASM_POP: *special_usage = true; return 0x103;
+        case ASM_PUSH16: *special_usage = true; return 0x104;
+        case ASM_POP16: *special_usage = true; return 0x105;
+        case ASM_PUSH32: *special_usage = true; return 0x106;
+        case ASM_POP32: *special_usage = true; return 0x107;
+        case ASM_PUSH64: *special_usage = true; return 0x108;
+        case ASM_POP64: *special_usage = true; return 0x109;
         case ASM_MSET: return 0x10A;
         case ASM_MCPY: return 0x10B;
         case ASM_MCMP: return 0x10C;
@@ -365,16 +365,19 @@ static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlo
         case ASM_MOVD: return 0x118;
         case ASM_MOVQ: return 0x119;
         case ASM_XCHG: return 0x11A;
-        case ASM_RREG: return 0x11B;
+        case ASM_RREG: *special_usage = true; return 0x11B;
 
         // Jumping and more
         case ASM_JMP: 
+            *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12C;
         case ASM_CALL: 
+            *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12D;
         case ASM_RET:
+            *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12E;
         case ASM_EXCEPTION:
@@ -382,16 +385,17 @@ static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlo
                 fprintf(stderr, COLOR_RED "Privilaged Instruction is not allowed!\n" COLOR_CYAN "\tTip: Try re-assembling with '--unlock'\n" COLOR_RESET);
                 break;
             }
+            *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12F;
-        case ASM_JZ: return 0x130;
-        case ASM_JNZ: return 0x131;
-        case ASM_JL: return 0x132;
-        case ASM_JLE: return 0x133;
-        case ASM_JG: return 0x134;
-        case ASM_JGE: return 0x135;
-        case ASM_JE: return 0x136;
-        case ASM_JNE: return 0x137;
+        case ASM_JZ: *special_usage = true; return 0x130;
+        case ASM_JNZ: *special_usage = true; return 0x131;
+        case ASM_JL: *special_usage = true; return 0x132;
+        case ASM_JLE: *special_usage = true; return 0x133;
+        case ASM_JG: *special_usage = true; return 0x134;
+        case ASM_JGE: *special_usage = true; return 0x135;
+        case ASM_JE: *special_usage = true; return 0x136;
+        case ASM_JNE: *special_usage = true; return 0x137;
 
         default:
             *valid = false;
@@ -432,7 +436,7 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
     *mode = MODE_REG_DISP;
     *flags = 0;
     *flags |= FLAGS_VALID;
-    *flags |= FLAGS_DISP;
+    *flags |= FLAGS_IMM;
 
     char* p = buf;
     while (*p) {
@@ -522,6 +526,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         RegInfo src = {0};
         RegInfo dest = {0};
         uint64_t imm = 0;
+        bool special_mode_usage_opcode = false;
 
         uint8_t flags = 0;
         uint8_t mode = MODE_REG_REG;
@@ -565,16 +570,16 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         rsrc = src.valid ? src.code : 0;
         rdest = dest.valid ? dest.code : 0;
 
-        // something like - push16 %g0
-        if (dest.valid && !src.valid && mode == MODE_REG_REG) { mode = MODE_SRC_REG; src = dest; dest.valid = false; }
-        else if (dest.valid && !src.valid && mode == MODE_REG_IMM) { mode = MODE_SRC_IMM; src = dest; dest.valid = false; }
-        else if (dest.valid && !src.valid && mode == MODE_REG_EXTIMM) { mode = MODE_SRC_REG_IMM; src = dest; dest.valid = false; }
-
         int op_size = 0;
         if (src.valid && dest.valid) op_size = (int)dest.size;
         else if (src.valid && !dest.valid) op_size = (int)src.size;
         else if (!src.valid && dest.valid) op_size = (int)dest.size;
-        uint64_t opcode_full = get_opcode(inst.opcode, &valid_qm, op_size, unlocked, &mode);
+        uint64_t opcode_full = get_opcode(inst.opcode, &valid_qm, op_size, unlocked, &mode, &special_mode_usage_opcode);
+
+        // something like - push16 %g0
+        if (dest.valid && !src.valid && mode == MODE_REG_REG && special_mode_usage_opcode) { mode = MODE_SRC_REG; src = dest; dest.valid = false; }
+        else if (dest.valid && !src.valid && mode == MODE_REG_IMM && special_mode_usage_opcode) { mode = MODE_SRC_IMM; src = dest; dest.valid = false; }
+        else if (dest.valid && !src.valid && mode == MODE_REG_EXTIMM && special_mode_usage_opcode) { mode = MODE_SRC_REG_IMM; src = dest; dest.valid = false; }
 
         if (!(flags & FLAGS_VALID) && !valid_qm) flags = 0; // Empty it out
         else if (flags & FLAGS_VALID && !valid_qm) flags &= ~FLAGS_VALID; // Clear valid bit
@@ -589,9 +594,22 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         if (mode == MODE_REG_IMM || mode == MODE_SRC_REG_IMM) {
             if (src.valid) dest = src;
             src.code = (uint8_t)imm;
+            rsrc = src.code;
+            rdest = dest.valid ? dest.code : 0;
             if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
         }
-        
+
+        if (mode == MODE_REG_EXTIMM || mode == MODE_SRC_IMM) {
+            if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
+        }
+
+        if (flags & FLAGS_IMM && imm > 0xFFFFFFFF) {
+            if (!(flags & FLAGS_64))
+                flags |= FLAGS_64;
+        } else if (flags & FLAGS_IMM && imm <= 0xFFFFFFFF && flags & FLAGS_64) {
+            flags &= ~FLAGS_64;
+        } else if (flags & FLAGS_IMM && is_symbol) flags |= FLAGS_64;
+
         uint32_t outbytes = 0x0;
         outbytes |= (uint32_t)(opcode_full & OPCODE_BITS) << OPCODE_SHIFT;
         outbytes |= (uint32_t)(mode & MODE_BITS) << MODE_SHIFT;
@@ -602,9 +620,6 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         emit_bytes(out, (uint8_t*)&outbytes, 4);
 
         if (flags & FLAGS_IMM) {
-            emit_bytes(out, (uint8_t*)&imm, 8);
-        }
-        if (flags & FLAGS_DISP) {
             int64_t disp64 = 0;
             if (is_symbol) {
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
@@ -612,7 +627,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                 add_reloc(text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
             } else {
                 disp64 = (int64_t)imm;
-                emit_bytes(out, (uint8_t*)&disp64, 8);
+                emit_bytes(out, (uint8_t*)&disp64, 8 ? flags & FLAGS_64 : 4);
             }
         }
     }
