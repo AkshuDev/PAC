@@ -38,7 +38,7 @@ typedef enum {
     MODE_REG_REG, // dest = src
     MODE_REG_IMM, // src is actually a imm! dest is a reg (dest = src (as imm))
     MODE_REG_EXTIMM, // Allows use of Bit 1 of Flags (dest = imm)
-    MODE_REG_DISP, // Allows use of Bit 2 of Flags (dest = mem[disp + src])
+    MODE_REG_DISP, // Allows use of Bit 1 of Flags (dest = mem[disp + src])
     MODE_LOAD_REGADDR, // dest = mem[src]
     MODE_LOAD_IMMADDR, // dest = mem[imm]
     MODE_LOAD_PC_REL, // dest = mem[src (as offset) + PC]
@@ -462,8 +462,8 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
         if (isalpha(term[0])) {
             RegInfo r = encode_register(term, unlocked);
             if (r.valid) {
-                if (dest->valid) *src = r;
-                else *dest = r;
+                if (dest->valid) {*src = r; *mode = MODE_LOAD_REGADDR;}
+                else {*dest = r; *mode = MODE_STORE_REGADDR;}
                 continue;
             }
         }
@@ -526,6 +526,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         RegInfo src = {0};
         RegInfo dest = {0};
         uint64_t imm = 0;
+        uint64_t disp = 0;
         bool special_mode_usage_opcode = false;
 
         uint8_t flags = 0;
@@ -548,18 +549,20 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                     break;
                 case OPERAND_LIT_INT:
                     imm = strtoul(operand, NULL, 10);
-                    mode = MODE_REG_IMM;
+                    is_symbol = false;
+                    mode = mode == MODE_REG_REG ? MODE_REG_IMM : mode;
                     if (imm > 0b111111) {
-                        mode = MODE_REG_EXTIMM;
+                        mode = mode == MODE_REG_REG ? MODE_REG_EXTIMM : mode;
                     }
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &imm, &flags, &mode, &is_symbol, unlocked);
+                    parse_memory_operand(operand, &src, &dest, &disp, &flags, &mode, &is_symbol, unlocked);
                     break;
                 case OPERAND_LABEL:
                     size_t addr = strtoul(operand, NULL, 16); // resolve symbol
                     imm = get_sym_index_via_addr(ctx->symbols, addr);
                     mode = MODE_REG_EXTIMM;
+                    is_symbol = true;
                     break;
                 default:
                     fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
@@ -603,6 +606,11 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
             if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
         }
 
+        if (mode == MODE_REG_DISP || mode == MODE_LOAD_REGADDR || mode == MODE_STORE_REGADDR) {
+            if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
+            if (!(flags & FLAGS_64)) flags |= FLAGS_64;
+        }
+
         if (flags & FLAGS_IMM && imm > 0xFFFFFFFF) {
             if (!(flags & FLAGS_64))
                 flags |= FLAGS_64;
@@ -627,7 +635,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                 add_reloc(text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
             } else {
                 disp64 = (int64_t)imm;
-                emit_bytes(out, (uint8_t*)&disp64, 8 ? flags & FLAGS_64 : 4);
+                emit_bytes(out, (uint8_t*)&disp64, flags & FLAGS_64 ? 8: 4);
             }
         }
     }
