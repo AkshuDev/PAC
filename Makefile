@@ -9,6 +9,9 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
+WORK_JSON := $(NFX_DIR)/build.json
+BUILD_DATE := $(shell date +%Y-%m-%d)
+
 ZIP := $(BUILD_DIR)/PAC.zip
 CANON_NFX := $(NFX_DIR)/nfx.canonical.json
 SIG := $(BUILD_DIR)/PAC.zip.sig
@@ -35,28 +38,38 @@ build-windows:
 	@make -C PAC BUILD=release build_win
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(PAC_WINDOWS)
 
-canonical: $(NFX_DIR)/tmp4.json
-	@printf "$(YELLOW)==> Creating canonical JSON... (%s) \n$(RESET)" $(CANON_NFX)
-	@jq -S . $(NFX_DIR)/tmp4.json > $(CANON_NFX) && rm $(NFX_DIR)/tmp4.json
+prepare-json:
+	@cp $(NFX) $(WORK_JSON)
+
+canonical: sizes date
+	@printf "$(YELLOW)==> Creating canonical JSON...\n$(RESET)"
+	@jq -S . $(WORK_JSON) > $(CANON_NFX)
 	@printf "$(GREEN)==> Created canonical JSON! (%s) \n$(RESET)" $(CANON_NFX)
 
-sizes:
+sizes: hashes
 	@printf "$(YELLOW)==> Getting Sizes... \n$(RESET)"
-	@SIZE=$$(stat -c %s $(PAC_LINUX) | awk '{print $$1}'); \
-		printf "$(GREEN)==> Got size for %s -> %s \n$(RESET)" $(PAC_LINUX) $$SIZE; \
-		jq '.Binaries[0].Size = '$$SIZE'' $(NFX_DIR)/tmp2.json > $(NFX_DIR)/tmp3.json && rm $(NFX_DIR)/tmp2.json
-	@SIZE=$$(stat -c %s $(PAC_WINDOWS) | awk '{print $$1}'); \
-		printf "$(GREEN)==> Got size for %s -> %s \n$(RESET)" $(PAC_WINDOWS) $$SIZE; \
-		jq '.Binaries[1].Size = '$$SIZE'' $(NFX_DIR)/tmp3.json > $(NFX_DIR)/tmp4.json && rm $(NFX_DIR)/tmp3.json
+	@LINUX_SIZE=$$(stat -c %s $(PAC_LINUX)); \
+		printf "$(GREEN)==> Linux size: %s\n$(RESET)" $$LINUX_SIZE; \
+		jq '.Binaries[0].Size = '$$LINUX_SIZE'' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
 
-hashes:
+	@WIN_SIZE=$$(stat -c %s $(PAC_WINDOWS)); \
+		printf "$(GREEN)==> Windows size: %s\n$(RESET)" $$WIN_SIZE; \
+		jq '.Binaries[1].Size = '$$WIN_SIZE'' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+
+hashes: prepare-json
 	@printf "$(YELLOW)==> Getting Hashes... \n$(RESET)"
-	@HASH=$$(sha256sum $(PAC_LINUX) | awk '{print $$1}'); \
-		printf "$(GREEN)==> Got hash for %s -> %s \n$(RESET)" $(PAC_LINUX) $$HASH; \
-		jq '.Binaries[0].Sha256 = "'$$HASH'"' $(NFX) > $(NFX_DIR)/tmp.json
-	@HASH=$$(sha256sum $(PAC_WINDOWS) | awk '{print $$1}'); \
-		printf "$(GREEN)==> Got hash for %s -> %s \n$(RESET)" $(PAC_WINDOWS) $$HASH; \
-		jq '.Binaries[1].Sha256 = "'$$HASH'"' $(NFX_DIR)/tmp.json > $(NFX_DIR)/tmp2.json && rm $(NFX_DIR)/tmp.json
+	@LINUX_HASH=$$(sha256sum $(PAC_LINUX) | awk '{print $$1}'); \
+		printf "$(GREEN)==> Linux hash: %s\n$(RESET)" $$LINUX_HASH; \
+		jq '.Binaries[0].Sha256 = "'$$LINUX_HASH'"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+
+	@WIN_HASH=$$(sha256sum $(PAC_WINDOWS) | awk '{print $$1}'); \
+		printf "$(GREEN)==> Windows hash: %s\n$(RESET)" $$WIN_HASH; \
+		jq '.Binaries[1].Sha256 = "'$$WIN_HASH'"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+
+date:
+	@printf "$(YELLOW)==> Injecting build date...\n$(RESET)"
+	@jq '.Build.Date = "$(BUILD_DATE)"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
+	@printf "$(GREEN)==> Build date set to $(BUILD_DATE)\n$(RESET)"
 
 zip: dirs build-linux build-windows canonical
 	@printf "$(YELLOW)==> Creating Zip... (%s) \n$(RESET)" $(ZIP)

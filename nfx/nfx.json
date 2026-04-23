@@ -28,10 +28,10 @@
             "Executable": true
         },
         {
-            "Name": "pac",
+            "Name": "pac.exe",
             "Os": ["windows"],
             "Arch": ["x86_64"],
-            "Path": "PAC/bin/windows/x86_64/pac",
+            "Path": "PAC/bin/windows/x86_64/pac.exe",
             "Size": 0,
             "Sha256": "",
             "Executable": true
