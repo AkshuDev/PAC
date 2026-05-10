@@ -507,7 +507,7 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, in
     } else if (*imm >= -128 && *imm <= 127) {
         *modrm_mod = MODRM_MOD_MEM_PLUS_DISP8;
     } else {
-        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
+        *modrm_mod = MODRM_MOD_MEMORY;
     }
 
     if (dest && dest->valid)
@@ -705,6 +705,30 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             }
         } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM || operand_mod == OPERAND_REG_TO_MEM_WMODRM) {
             uint8_t modrm_bytes = make_modrm(dest, (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
+            emit_bytes(out, &modrm_bytes, 1);
+            if (is_symbol) {
+                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                    emit_bytes(out, (uint8_t*)"\0", 1);
+                    inst_written += 1;
+                } else {
+                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    inst_written += 4;
+                }
+            } else {
+                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                    emit_bytes(out, (uint8_t*)&imm, 1);
+                    inst_written += 1;
+                } else {
+                    emit_bytes(out, (uint8_t*)&imm, 4);
+                    inst_written += 4;
+                }
+            }
+        } else if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP32 || modrm_mod == MODRM_MOD_MEM_PLUS_DISP8 && operand_mod == OPERAND_MEM_DISP32) {
+            uint8_t modrm_bytes = make_modrm(dest, src.valid ? src : (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
             emit_bytes(out, &modrm_bytes, 1);
             if (is_symbol) {
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
