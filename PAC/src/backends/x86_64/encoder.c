@@ -20,21 +20,20 @@
 #define MODRM_MOD_REG_TO_REG 3
 
 // For program
-#define OPERAND_REG_TO_REG 0
-#define OPERAND_IMM_TO_REG 1
-#define OPERAND_IMM_TO_MEM 2
-#define OPERAND_IMM32_TO_REG 3
-#define OPERAND_MEM_DISP32_TO_REG 4
-#define OPERAND_MEM_DISP8_TO_REG 4
-#define OPERAND_MEM_DISP32 6
-#define OPERAND_REG_TO_MEM 7
-#define OPERAND_MEM_TO_REG 8
-#define OPERAND_MEM 9
-#define OPERAND_ONLY_OPCODE 10
-#define OPERAND_MEM_TO_REG_WMODRM 11 // WMODRM stands for With ModR/M
-#define OPERAND_REG_TO_MEM_WMODRM 12
-#define OPERAND_IMM8 13
-#define OPERAND_IMM32 14
+#define OPERAND_REG_TO_REG 0 // Reg -> Reg
+#define OPERAND_IMM_TO_REG 1 // Imm -> Reg
+#define OPERAND_IMM_TO_MEM 2 // Imm -> Mem
+#define OPERAND_IMM32_TO_REG 3 // Imm32 -> Reg
+#define OPERAND_MEM_DISP32_TO_REG 4 // [Disp32 + Base] -> Reg
+#define OPERAND_MEM_DISP8_TO_REG 5 // [Disp8 + Base] -> Reg
+#define OPERAND_MEM_DISP32 6 // Basically Label in short form
+#define OPERAND_REG_TO_MEM 7 // Reg -> [Mem]
+#define OPERAND_MEM_TO_REG 8 // [Mem] -> Reg
+#define OPERAND_ONLY_OPCODE 9 // Only OP
+#define OPERAND_IMM8 10
+#define OPERAND_IMM32 11
+#define OPERAND_REG_TO_MEM_DISP32 12
+#define OPERAND_REG_TO_MEM_DISP8 13
 
 #define MAX_INST_BUF_SIZE 4096
 
@@ -273,20 +272,11 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
                 return 0x89; // reg -> reg
             } else if (modrm == OPERAND_IMM_TO_REG) {
                 *no_bytes = 1;
-                if (rm.valid){
-                if (rm.code == 1) return 0xB9; // cx
-                if (rm.code == 2) return 0xBA; // dx
-                if (rm.code == 3) return 0xBB; // bx
-                if (rm.code == 4) return 0xBC; // sp
-                if (rm.code == 5) return 0xBD; // bp
-                if (rm.code == 6) return 0xBE; // si
-                if (rm.code == 7) return 0xBF; // di
-                }
-                return 0xB8; // ax
-            } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_TO_REG_WMODRM || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
+                return 0xB8 + (reg.valid ? reg.code : 0); // ax
+            } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
                 *no_bytes = 1;
                 return 0x8B; // mem -> reg
-            } else if (modrm == OPERAND_REG_TO_MEM || modrm == OPERAND_REG_TO_MEM_WMODRM) {
+            } else if (modrm == OPERAND_REG_TO_MEM || modrm == OPERAND_REG_TO_MEM_DISP32 || modrm == OPERAND_REG_TO_MEM_DISP8) {
                 *no_bytes = 1;
                 return 0x89; // reg -> mem
             }
@@ -439,7 +429,7 @@ static OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
-static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, int64_t* imm, int* modrm_mod, int* operand_mod, bool* is_symbol) {
+static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegInfo* dest, int64_t* imm, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
@@ -459,6 +449,8 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, in
     *w = '\0';
 
     *imm = 0;
+
+    RegInfo base_r = {0};
     
     char* p = buf;
     while (*p) {
@@ -484,7 +476,7 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, in
         if (isalpha(term[0])) {
             RegInfo r = encode_register(term);
             if (r.valid) {
-                *src = r;
+                base_r = r;
                 continue;
             }
         }
@@ -500,20 +492,45 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, in
         *imm += sign * strtoll(term, NULL, base);
     }
 
-    if (!src->valid) {
-        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
+    if (!base_r.valid) {
+        if (src->valid) {
+            *operand_mod = OPERAND_REG_TO_MEM_DISP32;
+            *dest = (RegInfo){0};
+        } else {
+            *operand_mod = OPERAND_MEM_DISP32_TO_REG;
+            *src = (RegInfo){0};
+        }
     } else if (*imm == 0) {
-        *modrm_mod = MODRM_MOD_MEMORY;
+        if (!*issrc) {
+            *operand_mod = OPERAND_REG_TO_MEM;
+            *dest = base_r;
+            *issrc = true;
+        } else {
+            *operand_mod = OPERAND_MEM_TO_REG;
+            *src = base_r;
+            *issrc = false;
+        }
     } else if (*imm >= -128 && *imm <= 127) {
-        *modrm_mod = MODRM_MOD_MEM_PLUS_DISP8;
+        if (!*issrc) {
+            *operand_mod = OPERAND_REG_TO_MEM_DISP8;
+            *dest = base_r;
+            *issrc = true;
+        } else {
+            *operand_mod = OPERAND_MEM_DISP8_TO_REG;
+            *src = base_r;
+            *issrc = false;
+        }
     } else {
-        *modrm_mod = MODRM_MOD_MEMORY;
+        if (!*issrc) {
+            *operand_mod = OPERAND_REG_TO_MEM_DISP32;
+            *dest = base_r;
+            *issrc = true;
+        } else {
+            *operand_mod = OPERAND_MEM_DISP32_TO_REG;
+            *src = base_r;
+            *issrc = false;
+        }
     }
-
-    if (dest && dest->valid)
-        *operand_mod = OPERAND_MEM_TO_REG;
-    else
-        *operand_mod = OPERAND_REG_TO_MEM;
 }
 
 static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
@@ -584,27 +601,17 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     break;
                 case OPERAND_LIT_INT:
                     imm = strtoul(operand, NULL, 10);
-                    if (modrm_mod == MODRM_MOD_REG_TO_REG) modrm_mod = MODRM_MOD_MEMORY;
                     if (operand_mod == OPERAND_REG_TO_REG) operand_mod = OPERAND_IMM_TO_REG;
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &imm, &modrm_mod, &operand_mod, &is_symbol);
-                    if (operand_mod == OPERAND_MEM_TO_REG) {
-                        modrm_mod = MODRM_MOD_MEMORY;
-                        operand_mod = OPERAND_MEM_TO_REG_WMODRM;
-                    } else if (operand_mod == OPERAND_REG_TO_MEM) {
-                        modrm_mod = MODRM_MOD_MEMORY;
-                        operand_mod = OPERAND_REG_TO_MEM_WMODRM;
-                    }
+                    parse_memory_operand(operand, &issrc, &src, &dest, &imm, &operand_mod, &is_symbol);
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
                     if (inst.opcode >= ASM_CALL && inst.opcode <= ASM_JLE) {
-                        modrm_mod = MODRM_MOD_MEMORY; // relative disp handled later
                         operand_mod = OPERAND_MEM_DISP32;
                     } else {
                         // could be imm
-                        modrm_mod = MODRM_MOD_MEM_PLUS_DISP32;
                         operand_mod = OPERAND_IMM_TO_REG;
                     }
                     break;
@@ -624,13 +631,6 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         }
 
         if (inst.operand_count == 0) operand_mod = OPERAND_ONLY_OPCODE;
-
-        if (operand_mod == OPERAND_IMM_TO_REG && !src.valid && !dest.valid) {
-            operand_mod = bits == 8 ? OPERAND_IMM8 : OPERAND_IMM32;
-            if (imm > 0xFFFFFFFF) {
-                fprintf(stderr, COLOR_YELLOW "Warning: Imm is truncated to fit 32-bit!\n" COLOR_RESET);
-            }
-        }
 
         int no_bytes = 0;
         uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, src, dest);
@@ -653,10 +653,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         }
         
         if (operand_mod == OPERAND_REG_TO_REG) {
-            uint8_t modrm_b = make_modrm(src, dest, modrm_mod);
+            uint8_t modrm_b = make_modrm(src, dest, MODRM_MOD_REG_TO_REG);
             emit_bytes(out, &modrm_b, 1);
             inst_written += 1;
-        } else if (modrm_mod == MODRM_MOD_MEMORY && operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
+        } else if (operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
             size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
             add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
@@ -668,48 +668,23 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 emit_bytes(out, &imm_part, 1);
                 inst_written += 1;
             }
-        } else if (operand_mod == OPERAND_IMM8 || operand_mod == OPERAND_IMM32) {
-            size_t imm_parts = operand_mod == OPERAND_IMM8 ? 1 : 4;
-            for (size_t i = 0; i < imm_parts; i++) {
-                uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
-                emit_bytes(out, &imm_part, 1);
-                inst_written += 1;
-            }
         } else if (operand_mod == OPERAND_MEM_TO_REG || operand_mod == OPERAND_REG_TO_MEM) {
-            if (is_symbol) {
-                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
-
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
-                    emit_bytes(out, (uint8_t*)"\0", 1);
-                    inst_written += 1;
-                } else {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, 0);
-                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-                    inst_written += 4;
-                }
-            } else {
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
-                    emit_bytes(out, (uint8_t*)&imm, 1);
-                    inst_written += 1;
-                } else {
-                    emit_bytes(out, (uint8_t*)&imm, 4);
-                    inst_written += 4;
-                }
-            }
+            // Since no RIP, we just do NON-RIP Based
+            uint8_t modrm = make_modrm(dest, src, MODRM_MOD_MEMORY);
+            emit_bytes(out, &modrm, 1);
         } else if (operand_mod == OPERAND_IMM32_TO_REG) {
             for (size_t i = 0; i < 4; i++) {
                 uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
                 emit_bytes(out, &imm_part, 1);
                 inst_written += 1;
             }
-        } else if (operand_mod == OPERAND_MEM_TO_REG_WMODRM || operand_mod == OPERAND_REG_TO_MEM_WMODRM) {
-            uint8_t modrm_bytes = make_modrm(dest, (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
+        } else if (operand_mod == OPERAND_MEM_DISP32_TO_REG || operand_mod == OPERAND_MEM_DISP8_TO_REG) {
+            uint8_t modrm_bytes = make_modrm(dest, src, operand_mod == OPERAND_MEM_DISP32_TO_REG ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
             emit_bytes(out, &modrm_bytes, 1);
             if (is_symbol) {
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
                     add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
@@ -719,7 +694,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     inst_written += 4;
                 }
             } else {
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
                     emit_bytes(out, (uint8_t*)&imm, 1);
                     inst_written += 1;
                 } else {
@@ -727,13 +702,13 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     inst_written += 4;
                 }
             }
-        } else if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP32 || modrm_mod == MODRM_MOD_MEM_PLUS_DISP8 && operand_mod == OPERAND_MEM_DISP32) {
-            uint8_t modrm_bytes = make_modrm(dest, src.valid ? src : (RegInfo){.valid = true, .code = 101, .rex_needed = false}, modrm_mod); // using the special case
+        } else if (operand_mod == OPERAND_REG_TO_MEM_DISP32 || operand_mod == OPERAND_REG_TO_MEM_DISP8){
+            uint8_t modrm_bytes = make_modrm(src, dest, operand_mod == OPERAND_REG_TO_MEM_DISP32 ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
             emit_bytes(out, &modrm_bytes, 1);
             if (is_symbol) {
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                if (operand_mod == OPERAND_REG_TO_MEM_DISP8) {
                     add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
                     emit_bytes(out, (uint8_t*)"\0", 1);
                     inst_written += 1;
@@ -743,7 +718,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     inst_written += 4;
                 }
             } else {
-                if (modrm_mod == MODRM_MOD_MEM_PLUS_DISP8) {
+                if (operand_mod == OPERAND_REG_TO_MEM_DISP8) {
                     emit_bytes(out, (uint8_t*)&imm, 1);
                     inst_written += 1;
                 } else {

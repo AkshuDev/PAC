@@ -47,30 +47,9 @@ const_val!long = 0x1122334455667788
 :global main
 
 main:
-    lea %rax, [const_msg]
-    mov [aligned_num], %rax
-    mov [%rax - 4], %rax
-    mov [%rax + 4], %rax
-    mov %rax, [%rax - 4]
-    mov %rax, [%rax + 4]
-    mov %rbx, 34
-    call $print
+    mov %rbx, %rax
+    mov [%rbx], %rax
+    mov %rax, [%rbx]
 
-    call $exit
-
-.func exit
-    mov %rdi, %rax
-    mov %rax, 60
-    syscall
-.endfunc
-
-.func print
-    mov %rsi, %rax
-    mov %rdx, %rbx
-    jmp $print.do_print
-do_print:
-    mov %rax, 1
-    mov %rdi, 1
-    syscall
-    ret
-.endfunc
+    mov [%rcx + 4], %rdx
+    mov %rdx, [%rcx - 4]
