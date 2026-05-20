@@ -942,6 +942,7 @@ void print_ir(const IRInstruction *ir)
 
 void print_ir_list(const IRList *list)
 {
+    printf(COLOR_CYAN "NOTE: Addresses provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding\n" COLOR_RESET);
     printf(COLOR_YELLOW "=== IR Dump (%zu instructions) ===\n" COLOR_RESET, list->count);
     for (size_t i = 0; i < list->count; i++)
     {

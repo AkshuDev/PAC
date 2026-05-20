@@ -296,9 +296,10 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
                 if (sym->section_index != (i - 5)) continue;
                 if (sym->type != SYM_IDENTIFIER && sym->type != SYM_LABEL) continue;
 
+                if (sym->section_index == text_sec_idx - 5) continue; // Handled by encoder
+
                 size_t off = sym->addr - sec->base;
-                if (sym->type == SYM_IDENTIFIER) sym->addr = off + sh->sh_offset;
-                else sym->addr = off;
+                sym->addr = off;
             }
 
             sh->sh_addr = 0;
@@ -404,14 +405,14 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
                 esym->st_size = (Elf64_Xword)sym->size;
                 esym->st_other = 0;
                 esym->st_shndx = sym->section_index + 5;
-                esym->st_value = (Elf64_Addr)(sym->addr - shdrs[esym->st_shndx].sh_offset);
+                esym->st_value = (Elf64_Addr)(sym->addr);
                 break;
             case SYM_LABEL:
                 esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
                 esym->st_size = 0;
                 esym->st_other = 0;
                 esym->st_shndx = sym->section_index + 5;
-                esym->st_value = (Elf64_Addr)(sym->addr - shdrs[esym->st_shndx].sh_addr);
+                esym->st_value = (Elf64_Addr)(sym->addr);
                 break;
             case SYM_FILE:
                 esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);

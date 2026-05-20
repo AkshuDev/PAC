@@ -47,9 +47,57 @@ const_val!long = 0x1122334455667788
 :global main
 
 main:
-    mov %rbx, %rax
-    mov [%rbx], %rax
-    mov %rax, [%rbx]
+    mov %al, %bl
+    mov %ax, %bx
+    mov %eax, %ebx
+    mov %rax, %rbx
 
-    mov [%rcx + 4], %rdx
+    mov %r8b, %r9b
+    mov %r8w, %r9w
+    mov %r8d, %r9d
+    mov %r8,  %r9
+
+    mov [%rbx], %rax
+    mov [%rax], %rbx
+    mov [%rcx], %rdx
+    mov [%rdx], %r8
+
+    mov %rax, [%rbx]
+    mov %rbx, [%rax]
+    mov %rdx, [%rcx]
+    mov %r8, [%rdx]
+
+    mov %rdx, [%rcx + 0]
+    mov %rdx, [%rcx + 4]
+    mov %rdx, [%rcx + 128]
     mov %rdx, [%rcx - 4]
+    mov %rdx, [%rcx - 128]
+
+    mov %rax, [%rbp + 0]
+    mov %rax, [%rbp + 8]
+    mov %rbp, [%rbp + 0]
+
+    mov %rax, [%rip]
+    mov %rbx, [%rip + 0]
+    mov %rcx, [%rip + 4]
+    mov [%rip], %rax
+    mov [%rip + 0], %rbx
+
+    mov %r8, %rax
+    mov %rax, %r8
+
+    mov %r9, %r10
+    mov %r10, %r11
+
+    mov [%r12], %r13
+    mov %r14, [%r15]
+
+    mov %rax, [%rbx + 0]
+    mov %rax, [%rbx + 0]
+    mov %rax, [%rbx + 0]
+
+    mov %rax, %rbx
+    mov %rbx, %rax
+
+    mov %r8, %r9
+    mov %r9, %r8

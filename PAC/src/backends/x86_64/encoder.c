@@ -32,8 +32,14 @@
 #define OPERAND_ONLY_OPCODE 9 // Only OP
 #define OPERAND_IMM8 10
 #define OPERAND_IMM32 11
-#define OPERAND_REG_TO_MEM_DISP32 12
-#define OPERAND_REG_TO_MEM_DISP8 13
+#define OPERAND_REG_TO_MEM_DISP32 12 // Reg -> [Disp32 + Base]
+#define OPERAND_REG_TO_MEM_DISP8 13 // Reg -> [Disp8 + Base]
+#define OPERAND_RIP_DISP32_TO_REG 14 // [Disp32 + RIP] -> Reg
+#define OPERAND_RIP_DISP8_TO_REG 15 // [Disp8 + RIP] -> Reg
+#define OPERAND_REG_TO_RIP_DISP32 16 // Reg -> [Disp32 + RIP]
+#define OPERAND_REG_TO_RIP_DISP8 17 // Reg -> [Disp8 + RIP]
+#define OPERAND_REG_TO_MEM_SIB 18 // Reg -> [SIB]
+#define OPERAND_MEM_SIB_TO_REG 18 // [SIB] -> Reg
 
 #define MAX_INST_BUF_SIZE 4096
 
@@ -42,6 +48,7 @@
 typedef struct {
     uint8_t code; // 3-bit ID
     bool rex_needed; // Needs a REX prefix at all?
+    bool rex_ex; // Set by reg encoder to specify reg/rm == extended
     bool rex_b; // Set REX.B
     bool rex_r; // Set REX.R
     bool rex_x; // Set REX.X (rarely for registers)
@@ -59,12 +66,16 @@ static size_t inst_buf_capacity = 0;
 static size_t out_text_off = 0;
 static size_t inst_text_off = 0;
 
+static size_t inst_written = 0;
+static bool no_update_inst_written_in_pad = false;
+
 static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
     if (!inst_buf_init) return;
     if (inst_buf_off >= MAX_INST_BUF_SIZE) {
         fseek(out, out_text_off + inst_text_off, SEEK_SET);
         fwrite(inst_buf, 1, inst_buf_off, out);
         fwrite(bytes, 1, count, out);
+        if (!no_update_inst_written_in_pad) inst_written += count;
         inst_text_off += inst_buf_off + count;
         inst_buf_off = 0;
         return;
@@ -79,6 +90,7 @@ static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
     }
 
     memcpy(inst_buf + inst_buf_off, bytes, count);
+    if (!no_update_inst_written_in_pad) inst_written += count;
     inst_buf_off += count;
 }
 
@@ -108,14 +120,16 @@ static RegInfo encode_register(const char *reg) {
     if (strcmp(reg, "rsi") == 0) { r.code=6; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
     if (strcmp(reg, "rdi") == 0) { r.code=7; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
     // Extended 64-bit (Need REX.W=1 and REX.B=1)
-    if (strcmp(reg, "r8") == 0)  { r.code=0; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9") == 0)  { r.code=1; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10") == 0)  { r.code=2; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11") == 0)  { r.code=3; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12") == 0)  { r.code=4; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13") == 0)  { r.code=5; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14") == 0)  { r.code=6; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15") == 0)  { r.code=7; r.rex_b=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r8") == 0)  { r.code=0; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r9") == 0)  { r.code=1; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r10") == 0)  { r.code=2; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r11") == 0)  { r.code=3; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r12") == 0)  { r.code=4; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r13") == 0)  { r.code=5; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r14") == 0)  { r.code=6; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r15") == 0)  { r.code=7; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+    // Special 64-bit
+    if (strcmp(reg, "rip") == 0) { r.code=5, r.rex_b=0; r.rex_w=0; r.size=64; r.rex_needed=0; return r; }
 
     // 32-bit
     if (strcmp(reg, "eax") == 0) { r.code=0; r.size=32; return r; }
@@ -127,14 +141,14 @@ static RegInfo encode_register(const char *reg) {
     if (strcmp(reg, "esi") == 0) { r.code=6; r.size=32; return r; }
     if (strcmp(reg, "edi") == 0) { r.code=7; r.size=32; return r; }
     // Extended 32-bit (Need REX.B=1)
-    if (strcmp(reg, "r8d") == 0) { r.code=0; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9d") == 0) { r.code=1; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10d") == 0) { r.code=2; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11d") == 0) { r.code=3; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12d") == 0) { r.code=4; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13d") == 0) { r.code=5; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14d") == 0) { r.code=6; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15d") == 0) { r.code=7; r.rex_b=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r8d") == 0) { r.code=0; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r9d") == 0) { r.code=1; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r10d") == 0) { r.code=2; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r11d") == 0) { r.code=3; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r12d") == 0) { r.code=4; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r13d") == 0) { r.code=5; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r14d") == 0) { r.code=6; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r15d") == 0) { r.code=7; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
     
     // 16-bit (Need prefix=0x66)
     if (strcmp(reg, "ax") == 0) { r.code=0; r.size=16; return r; }
@@ -146,14 +160,14 @@ static RegInfo encode_register(const char *reg) {
     if (strcmp(reg, "si") == 0) { r.code=6; r.size=16; return r; }
     if (strcmp(reg, "di") == 0) { r.code=7; r.size=16; return r; }
     // Extended 16-bit (Need prefix=0x66 and REX.B=1)
-    if (strcmp(reg, "r8w") == 0){ r.code=0; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9w") == 0){ r.code=1; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10w") == 0){ r.code=2; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11w") == 0){ r.code=3; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12w") == 0){ r.code=4; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13w") == 0){ r.code=5; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14w") == 0){ r.code=6; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15w") == 0){ r.code=7; r.rex_b=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r8w") == 0){ r.code=0; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r9w") == 0){ r.code=1; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r10w") == 0){ r.code=2; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r11w") == 0){ r.code=3; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r12w") == 0){ r.code=4; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r13w") == 0){ r.code=5; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r14w") == 0){ r.code=6; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r15w") == 0){ r.code=7; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
 
     // 8-bit
     if (strcmp(reg, "al") == 0) { r.code=0; r.size=8; return r; }
@@ -172,14 +186,14 @@ static RegInfo encode_register(const char *reg) {
     if (strcmp(reg, "sil") == 0){ r.code=6; r.size=8; r.rex_needed=1; return r; }
     if (strcmp(reg, "dil") == 0){ r.code=7; r.size=8; r.rex_needed=1; return r; }
     // Extended 8-bit (Need REX.B=1)
-    if (strcmp(reg, "r8b") == 0){ r.code=0; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9b") == 0){ r.code=1; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10b") == 0){ r.code=2; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11b") == 0){ r.code=3; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12b") == 0){ r.code=4; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13b") == 0){ r.code=5; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14b") == 0){ r.code=6; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15b") == 0){ r.code=7; r.size=8; r.rex_b=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r8b") == 0){ r.code=0; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r9b") == 0){ r.code=1; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r10b") == 0){ r.code=2; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r11b") == 0){ r.code=3; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r12b") == 0){ r.code=4; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r13b") == 0){ r.code=5; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r14b") == 0){ r.code=6; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    if (strcmp(reg, "r15b") == 0){ r.code=7; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
 
     fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
     r.code = 0xFF;
@@ -191,8 +205,9 @@ static uint8_t make_rex(RegInfo reg, RegInfo rm) {
     uint8_t rex = 0b01000000;
     bool needed = false;
 
-    if (reg.valid && !reg.rex_needed) return 0;
-    if (rm.valid && !rm.rex_needed) return 0;
+    if (reg.valid && reg.rex_needed) needed = true;
+    if (rm.valid && rm.rex_needed) needed = true;
+    if (!needed) return 0;
 
     if (reg.valid == false) {
         if (rm.rex_w || rm.size == 64) {
@@ -264,20 +279,24 @@ static uint8_t make_modrm(RegInfo reg, RegInfo rm, uint8_t mod) {
 
 static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, RegInfo reg, RegInfo rm) {
     int modrm = *operand_mod;
-    (void)reg;
+    bool _8bit = (reg.valid && reg.size == 8) || (rm.valid && rm.size == 8);
     switch (opcode) {
-        case ASM_MOV: 
+        case ASM_MOV: // Works
             if (modrm == OPERAND_REG_TO_REG) {
                 *no_bytes = 1;
+                if (_8bit) return 0x88;
                 return 0x89; // reg -> reg
             } else if (modrm == OPERAND_IMM_TO_REG) {
                 *no_bytes = 1;
-                return 0xB8 + (reg.valid ? reg.code : 0); // ax
+                if (_8bit) return 0x88 + (reg.valid ? reg.code : 0); // al
+                return 0xB8 + (reg.valid ? reg.code : 0); // ax/eax/rax
             } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
                 *no_bytes = 1;
+                if (_8bit) return 0x8A;
                 return 0x8B; // mem -> reg
             } else if (modrm == OPERAND_REG_TO_MEM || modrm == OPERAND_REG_TO_MEM_DISP32 || modrm == OPERAND_REG_TO_MEM_DISP8) {
                 *no_bytes = 1;
+                if (_8bit) return 0x88;
                 return 0x89; // reg -> mem
             }
             break;
@@ -429,13 +448,23 @@ static OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
-static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegInfo* dest, int64_t* imm, int* operand_mod, bool* is_symbol) {
+static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
+    uint8_t sib = 0;
+    if (!index.valid || !base.valid) return sib;
+
+    sib |= base.code & 0b11111000;
+    sib |= (index.code & 0b11111000) << 3;
+    sib |= (mult & 0b11111100) << 6;
+    return sib;
+}
+
+static bool parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
     if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
-        *operand_mod = -1; // INVALID
-        return;
+        printf(COLOR_RED "Error: Invalid Memory Operand!\n" COLOR_RESET);
+        return false;
     }
 
     memcpy(buf, op + 1, len - 2);
@@ -453,6 +482,7 @@ static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
     RegInfo base_r = {0};
     
     char* p = buf;
+    bool sib = false;
     while (*p) {
         int sign = +1;
         if (*p == '+') {
@@ -461,12 +491,15 @@ static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
         } else if (*p == '-') {
             sign = -1;
             p++;
+        } else if (*p == '*') {
+            sib = true;
+            p++;
         }
 
         char term[64];
         int ti = 0;
 
-        while (*p && *p != '+' && *p != '-') {
+        while (*p && *p != '+' && *p != '-' && *p != '*') {
             term[ti++] = *p++;
         }
         term[ti] = '\0';
@@ -475,9 +508,16 @@ static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
 
         if (isalpha(term[0])) {
             RegInfo r = encode_register(term);
-            if (r.valid) {
-                base_r = r;
-                continue;
+            if (base_r.valid) {
+                if (r.valid) {
+                    *sib_index = r;
+                    continue;
+                }
+            } else {
+                if (r.valid) {
+                    base_r = r;
+                    continue;
+                }
             }
         }
 
@@ -489,7 +529,16 @@ static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
             *is_symbol = false;
         }
 
-        *imm += sign * strtoll(term, NULL, base);
+        if (!sib) {
+            *imm += sign * strtoll(term, NULL, base);
+        } else {
+            uint64_t sib_mult = strtoll(term, NULL, base);
+            if (sib_mult != 1 && sib_mult != 2 && sib_mult != 4 && sib_mult != 8) {
+                printf(COLOR_RED "Error: Invalid SIB Scale - %lu\n" COLOR_RESET, sib_mult);
+                return false;
+            }
+            *sib_scale = (uint8_t)sib_mult;
+        }
     }
 
     if (!base_r.valid) {
@@ -531,6 +580,7 @@ static void parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
             *issrc = false;
         }
     }
+    return true;
 }
 
 static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
@@ -547,7 +597,6 @@ static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
 bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
     // [REX prefix] [Opcode] [ModR/M] [SIB] [Displacement] [Immediate]
     // REX prefix = 0100WRXB
-    size_t inst_written = 0;
     size_t cur_symbol_idx = 0;
 
     inst_buf_capacity = MAX_INST_BUF_SIZE;
@@ -569,7 +618,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
             if (ir_idx == i && sym_idx < ctx->symbols->count) {
                 Symbol* sym = &ctx->symbols->symbols[sym_idx];
-                sym->addr = text_off + inst_written;
+                sym->addr = inst_written;
                 cur_symbol_idx = si;
             }
         }
@@ -583,11 +632,12 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
         RegInfo src = {0};
         RegInfo dest = {0};
+        RegInfo sib_index = {0};
+        uint8_t sib_scale = 0;
         int64_t imm = 0;
 
         bool issrc = false;
         bool is_symbol = true;
-        int modrm_mod = MODRM_MOD_REG_TO_REG;
         int operand_mod = OPERAND_REG_TO_REG;
 
         for (size_t j = 0; j < inst.operand_count; j++) {
@@ -604,7 +654,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (operand_mod == OPERAND_REG_TO_REG) operand_mod = OPERAND_IMM_TO_REG;
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &issrc, &src, &dest, &imm, &operand_mod, &is_symbol);
+                    if (!parse_memory_operand(operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) return false;
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
@@ -621,123 +671,289 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             }
         }
 
-        if (src.valid && src.size > 32 && bits < 64) {
-            fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, src.name);
-            return false;
+        if (src.valid && src.size > bits) {
+            if (src.size == 32 && bits == 16) {
+            } else {
+                fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, src.name);
+                return false;
+            }
         }
-        if (dest.valid && dest.size > 32 && bits < 64) {
-            fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, dest.name);
-            return false;
+        if (dest.valid && dest.size > bits) {
+            if (src.size == 32 && bits == 16) {
+            } else {
+                fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, dest.name);
+                return false;
+            }
         }
 
         if (inst.operand_count == 0) operand_mod = OPERAND_ONLY_OPCODE;
 
-        int no_bytes = 0;
-        uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, src, dest);
+        RegInfo* r_reg = &src;
+        RegInfo* r_rm = &dest;
 
-        // for memory imm will be used for address
-        uint8_t rex = 0;
-        if (operand_mod != OPERAND_ONLY_OPCODE) {
-            rex = make_rex(src, dest);
-            if (rex) { emit_bytes(out, &rex, 1); inst_written += 1; }
+        switch (operand_mod) {
+            case OPERAND_REG_TO_REG: {
+                if (src.valid && dest.valid && src.size != dest.size) {
+                    printf(COLOR_RED "Error: Size mismatch between '%s' and '%s' registers!\n" COLOR_RESET, src.name, dest.name);
+                    return false;
+                }
+                if (src.valid && src.rex_ex) src.rex_r = true;
+                if (dest.valid && dest.rex_ex) dest.rex_b = true;
+                
+                if (bits > 16 && (src.valid && src.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (src.valid && src.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_MEM_DISP32: { // label, just emit disp32
+                break;
+            }
+            case OPERAND_IMM_TO_REG: {
+                r_reg = &dest;
+                r_rm = &src;
+                if (dest.valid && dest.size < imm) {
+                    printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
+                    return false;
+                }
+                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (bits > 16 && (dest.valid && dest.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (dest.valid && dest.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_MEM_TO_REG: {
+                r_reg = &dest;
+                r_rm = &src;
+                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (bits > 16 && (dest.valid && dest.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (dest.valid && dest.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_REG_TO_MEM: {
+                if (src.valid && src.rex_ex) src.rex_r = true;
+                
+                if (bits > 16 && (src.valid && src.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (src.valid && src.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_IMM32_TO_REG: {
+                r_reg = &dest;
+                r_rm = &src;
+                if (dest.valid && dest.size < imm) {
+                    printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
+                    return false;
+                }
+                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (bits > 16 && (dest.valid && dest.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (dest.valid && dest.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_MEM_DISP8_TO_REG:
+            case OPERAND_MEM_DISP32_TO_REG: {
+                r_reg = &dest;
+                r_rm = &src;
+                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (bits > 16 && (dest.valid && dest.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (dest.valid && dest.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            case OPERAND_REG_TO_MEM_DISP8:
+            case OPERAND_REG_TO_MEM_DISP32: {
+                if (src.valid && src.rex_ex) src.rex_r = true;
+                
+                if (bits > 16 && (src.valid && src.size == 16)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                } else if (bits == 16 && (src.valid && src.size == 32)) {
+                    emit_bytes(out, (uint8_t*)"\x66", 1);
+                }
+                break;
+            }
+            default: break;
         }
+
+        uint8_t rex = make_rex(src, dest);
+        if (rex) emit_bytes(out, &rex, 1);
+
+        int no_bytes = 0;
+
+        uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
 
         if (!opcode_full) {
             fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\n" COLOR_RESET, token_type_to_ogstr(inst.opcode));
             return false;
-        } 
+        }
         for (int i = no_bytes - 1; i >= 0; i--) {
             uint8_t opcode = (opcode_full >> (i * 8)) & 0xFF;
             emit_bytes(out, &opcode, 1);
-            inst_written += 1;
         }
         
-        if (operand_mod == OPERAND_REG_TO_REG) {
-            uint8_t modrm_b = make_modrm(src, dest, MODRM_MOD_REG_TO_REG);
-            emit_bytes(out, &modrm_b, 1);
-            inst_written += 1;
-        } else if (operand_mod == OPERAND_MEM_DISP32) { // label, just emit disp32
-            size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
-
-            add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
-            emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-            inst_written += 4;
-        } else if (operand_mod == OPERAND_IMM_TO_REG) {
-            for (size_t i = 0; i < (dest.size / 8); i++) {
-                uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
-                emit_bytes(out, &imm_part, 1);
-                inst_written += 1;
+        switch (operand_mod) {
+            case OPERAND_REG_TO_REG: {
+                uint8_t modrm_b = make_modrm(*r_reg, *r_rm, MODRM_MOD_REG_TO_REG);
+                emit_bytes(out, &modrm_b, 1);
+                break;
             }
-        } else if (operand_mod == OPERAND_MEM_TO_REG || operand_mod == OPERAND_REG_TO_MEM) {
-            // Since no RIP, we just do NON-RIP Based
-            uint8_t modrm = make_modrm(dest, src, MODRM_MOD_MEMORY);
-            emit_bytes(out, &modrm, 1);
-        } else if (operand_mod == OPERAND_IMM32_TO_REG) {
-            for (size_t i = 0; i < 4; i++) {
-                uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
-                emit_bytes(out, &imm_part, 1);
-                inst_written += 1;
-            }
-        } else if (operand_mod == OPERAND_MEM_DISP32_TO_REG || operand_mod == OPERAND_MEM_DISP8_TO_REG) {
-            uint8_t modrm_bytes = make_modrm(dest, src, operand_mod == OPERAND_MEM_DISP32_TO_REG ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
-            emit_bytes(out, &modrm_bytes, 1);
-            if (is_symbol) {
+            case OPERAND_MEM_DISP32: { // label, just emit disp32
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-                if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
-                    emit_bytes(out, (uint8_t*)"\0", 1);
-                    inst_written += 1;
-                } else {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
-                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-                    inst_written += 4;
-                }
-            } else {
-                if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
-                    emit_bytes(out, (uint8_t*)&imm, 1);
-                    inst_written += 1;
-                } else {
-                    emit_bytes(out, (uint8_t*)&imm, 4);
-                    inst_written += 4;
-                }
+                add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                break;
             }
-        } else if (operand_mod == OPERAND_REG_TO_MEM_DISP32 || operand_mod == OPERAND_REG_TO_MEM_DISP8){
-            uint8_t modrm_bytes = make_modrm(src, dest, operand_mod == OPERAND_REG_TO_MEM_DISP32 ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
-            emit_bytes(out, &modrm_bytes, 1);
-            if (is_symbol) {
-                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+            case OPERAND_IMM_TO_REG: {
+                for (size_t i = 0; i < (dest.size / 8); i++) {
+                    uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                    emit_bytes(out, &imm_part, 1);
+                }
+                break;
+            }
+            case OPERAND_MEM_TO_REG:{
+                bool rip_mode = false;
+                bool rbp_mode = false;
+                if (dest.valid && dest.code == 0b101 && !dest.rex_w) {
+                    printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
+                    return false;
+                }
+                if (src.valid && src.code == 0b101) {
+                    if (src.rex_w) rbp_mode = true;
+                    else rip_mode = true;
+                }
 
-                if (operand_mod == OPERAND_REG_TO_MEM_DISP8) {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                if (rbp_mode) {
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEM_PLUS_DISP8);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
                     emit_bytes(out, (uint8_t*)"\0", 1);
-                    inst_written += 1;
-                } else {
-                    add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                } else if (rip_mode) {
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
-                    inst_written += 4;
-                }
-            } else {
-                if (operand_mod == OPERAND_REG_TO_MEM_DISP8) {
-                    emit_bytes(out, (uint8_t*)&imm, 1);
-                    inst_written += 1;
                 } else {
-                    emit_bytes(out, (uint8_t*)&imm, 4);
-                    inst_written += 4;
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
                 }
+                break;
             }
+            case OPERAND_REG_TO_MEM: {
+                bool rip_mode = false;
+                bool rbp_mode = false;
+                if (src.valid && src.code == 0b101 && !src.rex_w) {
+                    printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
+                    return false;
+                }
+                if (dest.valid && dest.code == 0b101) {
+                    if (dest.rex_w) rbp_mode = true;
+                    else rip_mode = true;
+                }
+
+                if (rbp_mode) {
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEM_PLUS_DISP8);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
+                    emit_bytes(out, (uint8_t*)"\0", 1);
+                } else if (rip_mode) {
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
+                    emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                } else {
+                    uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm, 1);
+                    if (sib_index.valid) {
+                        uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    }
+                }
+                break;
+            }
+            case OPERAND_IMM32_TO_REG: {
+                for (size_t i = 0; i < 4; i++) {
+                    uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                    emit_bytes(out, &imm_part, 1);
+                }
+                break;
+            }
+            case OPERAND_MEM_DISP8_TO_REG:
+            case OPERAND_REG_TO_MEM_DISP8:
+            case OPERAND_REG_TO_MEM_DISP32:
+            case OPERAND_MEM_DISP32_TO_REG: {
+                uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, operand_mod == OPERAND_MEM_DISP32_TO_REG ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
+                emit_bytes(out, &modrm_bytes, 1);
+                if (sib_index.valid) {
+                    uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                    emit_bytes(out, &sib, 1);
+                }
+                if (is_symbol) {
+                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+
+                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                        emit_bytes(out, (uint8_t*)"\0", 1);
+                    } else {
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    }
+                } else {
+                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
+                        emit_bytes(out, (uint8_t*)&imm, 1);
+                    } else {
+                        emit_bytes(out, (uint8_t*)&imm, 4);
+                    }
+                }
+                break;
+            }
+            default: break;
         }
     }
 
     if (inst_written > text_sec->size) {
-        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %llu bytes\n\tReserved Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %lu bytes\n\tReserved Size: %lu bytes\n" COLOR_RESET, inst_written, text_sec->size);
         return false;
     } else if (inst_written < text_sec->size) {
         text_sec->size = ALIGN_UP(inst_written, 16);
+        no_update_inst_written_in_pad = true;
         for (uint64_t i = 0; i < (text_sec->size - inst_written); i++) {
             emit_bytes(out, (uint8_t*)"\x90", 1); // use nop
         }
     }
+    no_update_inst_written_in_pad = false;
 
     flush_everything(out);
 
