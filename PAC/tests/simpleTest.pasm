@@ -1,5 +1,5 @@
 // ==========================================================
-//  Phoenix Assembler Collection (PAC) Example Test
+//  Pheonix Assembler Collection (PAC) Example Test
 //  File: simpleTest.pasm
 //  Description: Tests alignment, sections, labels, and datatypes.
 //  Compatible with PAC dev0.1

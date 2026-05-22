@@ -1,0 +1,38 @@
+{
+	"name": "pac-lsp",
+	"displayName": "PAC Language Server Protocol Extension",
+	"version": "1.0.0",
+	"main": "extension.js",
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"activationEvents": [
+		"onLanguage:pasm"
+	],
+	"contributes": {
+		"languages": [
+			{
+				"id": "pasm",
+				"extensions": [
+					".pasm"
+				],
+				"aliases": [
+					"PAC ASM"
+				]
+			}
+		]
+	},
+	"description": "",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"dependencies": {
+		"vscode-languageclient": "^9.0.1",
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.12"
+	}
+}
