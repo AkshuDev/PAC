@@ -8,7 +8,7 @@
   "Id": "pheonix_studios.pac",
   "Status": "beta",
   "Build": {
-    "Date": "2026-04-23",
+    "Date": "2026-04-24 20:44",
     "AllowedSigners": "keys/allowed_signers",
     "SignatureIdentity": "pheonix-pac"
   },
@@ -36,7 +36,7 @@
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
       "Size": 319247,
-      "Sha256": "b5488d17265dab4084fd505f276593f6dde4a25114170a67d04673e43adda722",
+      "Sha256": "14139d56e0c5c6023b2415c93a2c3b1406402354d2d5d8c29c837ec95b609654",
       "Executable": true
     }
   ],

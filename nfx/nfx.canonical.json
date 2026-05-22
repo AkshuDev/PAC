@@ -24,13 +24,13 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Sha256": "b5488d17265dab4084fd505f276593f6dde4a25114170a67d04673e43adda722",
+      "Sha256": "14139d56e0c5c6023b2415c93a2c3b1406402354d2d5d8c29c837ec95b609654",
       "Size": 319247
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-04-23",
+    "Date": "2026-04-24 20:44",
     "SignatureIdentity": "pheonix-pac"
   },
   "Conflicts": [],

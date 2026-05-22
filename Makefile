@@ -10,7 +10,7 @@ KEY_DIR := keys
 NFX_DIR := nfx
 
 WORK_JSON := $(NFX_DIR)/build.json
-BUILD_DATE := $(shell date +%Y-%m-%d)
+BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
 ZIP := $(BUILD_DIR)/PAC.zip
 CANON_NFX := $(NFX_DIR)/nfx.canonical.json

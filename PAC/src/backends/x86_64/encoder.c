@@ -51,7 +51,7 @@ typedef struct {
     bool rex_ex; // Set by reg encoder to specify reg/rm == extended
     bool rex_b; // Set REX.B
     bool rex_r; // Set REX.R
-    bool rex_x; // Set REX.X (rarely for registers)
+    bool rex_x; // Set REX.X (rarely for registers as it extends RIB.index field)
     bool rex_w; // Set REX.W (64-bit op)
     char name[8]; // Name of register
     uint8_t size; // Operand size (8, 16, 32, 64)
@@ -452,9 +452,9 @@ static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
     uint8_t sib = 0;
     if (!index.valid || !base.valid) return sib;
 
-    sib |= base.code & 0b11111000;
-    sib |= (index.code & 0b11111000) << 3;
-    sib |= (mult & 0b11111100) << 6;
+    sib |= base.code & 0b00000111;
+    sib |= (index.code & 0b00000111) << 3;
+    sib |= (mult & 0b00000011) << 6;
     return sib;
 }
 
@@ -730,6 +730,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 r_reg = &dest;
                 r_rm = &src;
                 if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                if (src.valid && src.code != 0b100 && src.rex_ex) src.rex_b = true;
+                else if (src.valid && src.code == 0b100 && src.rex_ex) src.rex_x = true;
                 
                 if (bits > 16 && (dest.valid && dest.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -740,6 +742,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             }
             case OPERAND_REG_TO_MEM: {
                 if (src.valid && src.rex_ex) src.rex_r = true;
+                if (dest.valid && dest.code != 0b100 && dest.rex_ex) dest.rex_b = true;
+                else if (dest.valid && dest.code == 0b100 && dest.rex_ex) dest.rex_x = true;
                 
                 if (bits > 16 && (src.valid && src.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -769,6 +773,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 r_reg = &dest;
                 r_rm = &src;
                 if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                if (src.valid && src.code != 0b100 && src.rex_ex) src.rex_b = true;
+                else if (src.valid && src.code == 0b100 && src.rex_ex) src.rex_x = true;
                 
                 if (bits > 16 && (dest.valid && dest.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -780,6 +786,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_REG_TO_MEM_DISP8:
             case OPERAND_REG_TO_MEM_DISP32: {
                 if (src.valid && src.rex_ex) src.rex_r = true;
+                if (dest.valid && dest.code != 0b100 && dest.rex_ex) dest.rex_b = true;
+                else if (dest.valid && dest.code == 0b100 && dest.rex_ex) dest.rex_x = true;
                 
                 if (bits > 16 && (src.valid && src.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -791,7 +799,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             default: break;
         }
 
-        uint8_t rex = make_rex(src, dest);
+        uint8_t rex = make_rex(*r_reg, *r_rm);
         if (rex) emit_bytes(out, &rex, 1);
 
         int no_bytes = 0;
@@ -830,6 +838,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_MEM_TO_REG:{
                 bool rip_mode = false;
                 bool rbp_mode = false;
+                bool rsp_sib = false;
                 if (dest.valid && dest.code == 0b101 && !dest.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
                     return false;
@@ -838,6 +847,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (src.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
+                if (src.valid && src.code == 0b100) rsp_sib = true;
 
                 if (rbp_mode) {
                     uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEM_PLUS_DISP8);
@@ -845,13 +855,21 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
                         emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
+                        emit_bytes(out, &sib, 1);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    } else {
+                        emit_bytes(out, (uint8_t*)"\0", 1);
                     }
-                    emit_bytes(out, (uint8_t*)"\0", 1);
                 } else if (rip_mode) {
                     uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
                     emit_bytes(out, &modrm, 1);
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
                         emit_bytes(out, &sib, 1);
                     }
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
@@ -861,6 +879,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
                         emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
+                        emit_bytes(out, &sib, 1);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 }
                 break;
@@ -868,6 +890,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_REG_TO_MEM: {
                 bool rip_mode = false;
                 bool rbp_mode = false;
+                bool rsp_sib = false;
                 if (src.valid && src.code == 0b101 && !src.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
                     return false;
@@ -876,6 +899,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (dest.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
+                if (dest.valid && dest.code == 0b100) rsp_sib = true;
 
                 if (rbp_mode) {
                     uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEM_PLUS_DISP8);
@@ -883,13 +907,21 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
                         emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
+                        emit_bytes(out, &sib, 1);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    } else {
+                        emit_bytes(out, (uint8_t*)"\0", 1);
                     }
-                    emit_bytes(out, (uint8_t*)"\0", 1);
                 } else if (rip_mode) {
                     uint8_t modrm = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
                     emit_bytes(out, &modrm, 1);
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                        emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
                         emit_bytes(out, &sib, 1);
                     }
                     emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
@@ -899,6 +931,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     if (sib_index.valid) {
                         uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
                         emit_bytes(out, &sib, 1);
+                    } else if (rsp_sib) {
+                        uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
+                        emit_bytes(out, &sib, 1);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 }
                 break;
@@ -910,20 +946,35 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 }
                 break;
             }
-            case OPERAND_MEM_DISP8_TO_REG:
             case OPERAND_REG_TO_MEM_DISP8:
-            case OPERAND_REG_TO_MEM_DISP32:
-            case OPERAND_MEM_DISP32_TO_REG: {
-                uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, operand_mod == OPERAND_MEM_DISP32_TO_REG ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
-                emit_bytes(out, &modrm_bytes, 1);
+            case OPERAND_REG_TO_MEM_DISP32: {
+                bool rip_mode = false;
+                bool rsp_sib = false;
+                if (src.valid && src.code == 0b101 && !src.rex_w) {
+                    printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
+                    return false;
+                }
+                if (dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
+                if (dest.valid && dest.code == 0b100) rsp_sib = true;
+
+                if (rip_mode) {
+                    uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm_bytes, 1);
+                } else {
+                    uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, operand_mod == OPERAND_REG_TO_MEM_DISP32 ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
+                    emit_bytes(out, &modrm_bytes, 1);
+                }
                 if (sib_index.valid) {
                     uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                    emit_bytes(out, &sib, 1);
+                } else if (rsp_sib) {
+                    uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
                     emit_bytes(out, &sib, 1);
                 }
                 if (is_symbol) {
                     size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
+                    if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
                         add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
@@ -931,7 +982,51 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {
-                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG) {
+                    if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
+                        emit_bytes(out, (uint8_t*)&imm, 1);
+                    } else {
+                        emit_bytes(out, (uint8_t*)&imm, 4);
+                    }
+                }
+                break;
+            }
+            case OPERAND_MEM_DISP8_TO_REG:
+            case OPERAND_MEM_DISP32_TO_REG: {
+                bool rip_mode = false;
+                bool rsp_sib = false;
+                if (dest.valid && dest.code == 0b101 && !dest.rex_w) {
+                    printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
+                    return false;
+                }
+                if (src.valid && src.code == 0b101 && !src.rex_ex) rip_mode = true;
+                if (src.valid && src.code == 0b100) rsp_sib = true;
+
+                if (rip_mode) {
+                    uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, MODRM_MOD_MEMORY);
+                    emit_bytes(out, &modrm_bytes, 1);
+                } else {
+                    uint8_t modrm_bytes = make_modrm(*r_reg, *r_rm, operand_mod == OPERAND_MEM_DISP32_TO_REG ? MODRM_MOD_MEM_PLUS_DISP32 : MODRM_MOD_MEM_PLUS_DISP8);
+                    emit_bytes(out, &modrm_bytes, 1);
+                }
+                if (sib_index.valid) {
+                    uint8_t sib = make_sib(sib_index, *r_rm, sib_scale);
+                    emit_bytes(out, &sib, 1);
+                } else if (rsp_sib) {
+                    uint8_t sib = make_sib((RegInfo){.code=0b100, .valid=true}, (RegInfo){.valid=true, .code=0b101}, 0);
+                    emit_bytes(out, &sib, 1);
+                }
+                if (is_symbol) {
+                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+
+                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                        emit_bytes(out, (uint8_t*)"\0", 1);
+                    } else {
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                        emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
+                    }
+                } else {
+                    if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
                         emit_bytes(out, (uint8_t*)&imm, 1);
                     } else {
                         emit_bytes(out, (uint8_t*)&imm, 4);
