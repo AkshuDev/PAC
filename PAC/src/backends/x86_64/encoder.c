@@ -282,30 +282,62 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
     bool _8bit = (reg.valid && reg.size == 8) || (rm.valid && rm.size == 8);
     switch (opcode) {
         case ASM_MOV: // Works
-            if (modrm == OPERAND_REG_TO_REG) {
-                *no_bytes = 1;
-                if (_8bit) return 0x88;
-                return 0x89; // reg -> reg
-            } else if (modrm == OPERAND_IMM_TO_REG) {
-                *no_bytes = 1;
-                if (_8bit) return 0x88 + (reg.valid ? reg.code : 0); // al
-                return 0xB8 + (reg.valid ? reg.code : 0); // ax/eax/rax
-            } else if (modrm == OPERAND_MEM_TO_REG || modrm == OPERAND_MEM_DISP32_TO_REG || modrm == OPERAND_MEM_DISP8_TO_REG) {
-                *no_bytes = 1;
-                if (_8bit) return 0x8A;
-                return 0x8B; // mem -> reg
-            } else if (modrm == OPERAND_REG_TO_MEM || modrm == OPERAND_REG_TO_MEM_DISP32 || modrm == OPERAND_REG_TO_MEM_DISP8) {
-                *no_bytes = 1;
-                if (_8bit) return 0x88;
-                return 0x89; // reg -> mem
+            switch (modrm) {
+                case OPERAND_REG_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x88;
+                    return 0x89; // reg -> reg
+                }
+                case OPERAND_IMM_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x88 + (reg.valid ? reg.code : 0); // al
+                    return 0xB8 + (reg.valid ? reg.code : 0); // ax/eax/rax
+                }
+                case OPERAND_MEM_TO_REG:
+                case OPERAND_MEM_DISP32_TO_REG:
+                case OPERAND_MEM_DISP8_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x8A;
+                    return 0x8B; // mem -> reg
+                }
+                case OPERAND_REG_TO_MEM:
+                case OPERAND_REG_TO_MEM_DISP32:
+                case OPERAND_REG_TO_MEM_DISP8: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x88;
+                    return 0x89; // reg -> mem
+                }
+                default: break;
             }
             break;
-
         case ASM_ADD:
-            *no_bytes = 1;
-            if (modrm == OPERAND_REG_TO_REG) return 0x01;
-            if (modrm == OPERAND_REG_TO_MEM) return 0x03;
-            if (modrm == OPERAND_IMM_TO_REG) return 0x05;
+            switch (modrm) {
+                case OPERAND_REG_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x00;
+                    return 0x01; // reg + reg
+                }
+                case OPERAND_IMM_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x80;
+                    return 0x81;
+                }
+                case OPERAND_MEM_TO_REG:
+                case OPERAND_MEM_DISP32_TO_REG:
+                case OPERAND_MEM_DISP8_TO_REG: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x02;
+                    return 0x03; // mem -> reg
+                }
+                case OPERAND_REG_TO_MEM:
+                case OPERAND_REG_TO_MEM_DISP32:
+                case OPERAND_REG_TO_MEM_DISP8: {
+                    *no_bytes = 1;
+                    if (_8bit) return 0x00;
+                    return 0x01; // reg -> mem
+                }
+                default: break;
+            }
             break;
 
         case ASM_SUB:
@@ -713,11 +745,21 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_IMM_TO_REG: {
                 r_reg = &dest;
                 r_rm = &src;
-                if (dest.valid && dest.size < imm) {
+                uint64_t sz = 0xFF;
+                if (dest.size == 16) sz = 0xFFFF;
+                else if (dest.size == 32) sz = 0xFFFFFFFF;
+                else if (dest.size == 64) sz = 0xFFFFFFFFFFFFFFFF;
+                if (dest.valid && sz < (uint64_t)imm) {
                     printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
                     return false;
                 }
-                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (dest.valid && dest.rex_ex) {
+                    switch (inst.opcode) {
+                        case ASM_MOV: dest.rex_r = true; break;
+                        default: dest.rex_b = true; break;
+                    }
+                }
                 
                 if (bits > 16 && (dest.valid && dest.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -755,11 +797,21 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_IMM32_TO_REG: {
                 r_reg = &dest;
                 r_rm = &src;
-                if (dest.valid && dest.size < imm) {
+                uint64_t sz = 0xFF;
+                if (dest.size == 16) sz = 0xFFFF;
+                else if (dest.size == 32) sz = 0xFFFFFFFF;
+                else if (dest.size == 64) sz = 0xFFFFFFFFFFFFFFFF;
+                if (dest.valid && sz < (uint64_t)imm) {
                     printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
                     return false;
                 }
-                if (dest.valid && dest.rex_ex) dest.rex_r = true;
+                
+                if (dest.valid && dest.rex_ex) {
+                    switch (inst.opcode) {
+                        case ASM_MOV: dest.rex_r = true; break;
+                        default: dest.rex_b = true; break;
+                    }
+                }
                 
                 if (bits > 16 && (dest.valid && dest.size == 16)) {
                     emit_bytes(out, (uint8_t*)"\x66", 1);
@@ -806,7 +858,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
         uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
 
-        if (!opcode_full) {
+        if (no_bytes == 0) {
             fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\n" COLOR_RESET, token_type_to_ogstr(inst.opcode));
             return false;
         }
@@ -829,7 +881,18 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 break;
             }
             case OPERAND_IMM_TO_REG: {
-                for (size_t i = 0; i < (dest.size / 8); i++) {
+                size_t sz = dest.size == 64 ? 4 : dest.size / 8;
+                switch (inst.opcode) {
+                    case ASM_ADD:
+                        uint8_t modrm = make_modrm((RegInfo){.code=0,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
+                    case ASM_MOV:
+                        sz = (dest.size / 8);
+                        break;
+                    default: break;
+                }
+                for (size_t i = 0; i < sz; i++) {
                     uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
                     emit_bytes(out, &imm_part, 1);
                 }
@@ -940,6 +1003,13 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 break;
             }
             case OPERAND_IMM32_TO_REG: {
+                switch (inst.opcode) {
+                    case ASM_ADD:
+                        uint8_t modrm = make_modrm((RegInfo){.code=0,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
+                    default: break;
+                }
                 for (size_t i = 0; i < 4; i++) {
                     uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
                     emit_bytes(out, &imm_part, 1);

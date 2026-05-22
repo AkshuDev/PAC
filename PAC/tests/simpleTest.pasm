@@ -46,7 +46,7 @@ const_val!long = 0x1122334455667788
 :section .text
 :global main
 
-main:
+// main: (MOV tests work)
     // mov %al, %bl
     // mov %ax, %bx
     // mov %eax, %ebx
@@ -101,3 +101,95 @@ main:
 
     // mov %r8, %r9
     // mov %r9, %r8
+
+main:
+    add %al, %bl
+    add %ax, %bx
+    add %eax, %ebx
+    add %rax, %rbx
+
+    add %r8b, %r9b
+    add %r8w, %r9w
+    add %r8d, %r9d
+    add %r8,  %r9
+
+    add %r9, %r10
+    add %r10, %r11
+    add %r11, %r12
+    add %r12, %r13
+
+    add %bl, %al
+    add %bx, %ax
+    add %ebx, %eax
+    add %rbx, %rax
+
+    add %r9b, %r8b
+    add %r9w, %r8w
+    add %r9d, %r8d
+    add %r9,  %r8
+
+    add %rax, [%rbx]
+    add %rbx, [%rax]
+    add %rcx, [%rdx]
+    add %r8,  [%r9]
+
+    add [%rbx], %rax
+    add [%rax], %rbx
+    add [%rcx], %rdx
+    add [%rdx], %r8
+
+    add %rdx, [%rcx + 0]
+    add %rdx, [%rcx + 4]
+    add %rdx, [%rcx + 16]
+    add %rdx, [%rcx + 128]
+
+    add %rdx, [%rcx - 4]
+    add %rdx, [%rcx - 16]
+    add %rdx, [%rcx - 128]
+
+    add %rax, [%rbp + 0]
+    add %rax, [%rbp + 8]
+    add %rbp, [%rbp + 0]
+
+    add %rax, [%rip]
+    add %rbx, [%rip + 0]
+    add %rcx, [%rip + 4]
+    add %rdx, [%rip + 8]
+
+    add [%rip], %rax
+    add [%rip + 0], %rbx
+
+    add %al, 1
+    add %ax, 10
+    add %eax, 100
+    add %rax, 1000
+
+    add %r8b, 2
+    add %r8w, 20
+    add %r8d, 200
+    add %r8,  2000
+
+    add %rax, 0x123456
+    add %rbx, 0x7F
+
+    add [%rbx], 1
+    add [%rbx], 2
+    add [%rbx], 4
+    add [%rbx], 8
+
+    add [%rcx + 8], 1
+    add [%rcx + 16], 255
+    add [%rcx - 8], 10
+
+    add %r12b, %r13b
+    add %r14w, %r15w
+    add %r12d, %r13d
+    add %r14,  %r15
+
+    add %r15, %r8
+    add %r8,  %r15
+
+    add %r8,  [%rip + 32]
+    add %r9,  [%rip + 64]
+    add [%rip + 128], %r10
+    add [%rip + 256], %r11
