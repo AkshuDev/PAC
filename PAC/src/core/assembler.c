@@ -29,6 +29,7 @@ void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t ad
     sym->name = strdup(name);
     sym->type = type;
     sym->addr = addr;
+    sym->addr2 = addr;
     sym->value = strdup(value);
     sym->section_index = section_index;
     sym->size = size;
@@ -36,14 +37,13 @@ void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t ad
     sym->is_global = isglobal;
 }
 
-bool symtab_get(SymbolTable *tab, const char *name, Symbol *out)
-{
+bool symtab_get(SymbolTable* tab, const char* name, Symbol** out) {
     for (size_t i = 0; i < tab->count; i++)
     {
         if (strcmp(tab->symbols[i].name, name) == 0)
         {
             if (out)
-                *out = tab->symbols[i];
+                *out = &tab->symbols[i];
             return true;
         }
     }
@@ -685,7 +685,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
 IRList assemble(Assembler *ctx)
 {
-    IRList list = {0};
+	IRList list = {0};
     SymbolTable *symtab = ctx->symbols;
     SectionTable *sectab = ctx->sections;
     ASTNode *root = ctx->current;
@@ -703,6 +703,16 @@ IRList assemble(Assembler *ctx)
             current_offset = ctx->sections->sections[current_section].base;
             continue;
         }
+		if (node->type == AST_DIRECTIVE && node->directive.type == GLOBAL)
+        {
+            Symbol* sym;
+            if (symtab_get(symtab, node->directive.arg, &sym)) {
+                sym->is_global = true;
+            } else {
+				PAC_WARNINGF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
+			}
+			continue;
+        }
 
         if (node->type == AST_LABEL)
         {
@@ -715,10 +725,11 @@ IRList assemble(Assembler *ctx)
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_SectionNotFound);
             }
-            Symbol sym;
+            Symbol* sym;
             if (symtab_get(symtab, node->label.name, &sym))
             {
-                sym.addr = current_offset;
+                sym->addr = current_offset;
+                sym->addr2 = current_offset;
             }
             continue;
         }
@@ -746,7 +757,7 @@ IRList assemble(Assembler *ctx)
 
                 if (op->type == OPERAND_LABEL || op->type == OPERAND_IDENTIFIER)
                 {
-                    Symbol sym;
+                    Symbol* sym;
                     char *label = NULL;
 
                     if (op->type == OPERAND_LABEL)
@@ -768,7 +779,7 @@ IRList assemble(Assembler *ctx)
                     if (got_sym)
                     {
                         char buf[128];
-                        snprintf(buf, sizeof(buf), "0x%llX", (long long)sym.addr);
+                        snprintf(buf, sizeof(buf), "0x%llX", (long long)sym->addr);
                         ir.operands[j] = strdup(buf);
                     }
                     else
@@ -822,11 +833,11 @@ IRList assemble(Assembler *ctx)
                                 free_ast(ctx->parser->root);
                                 exit(PAC_Error_InvalidIdentifier);
                             }
-                            Symbol sym;
+                            Symbol* sym;
                             bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
                             if (got_sym)
                             {
-                                snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym.addr);
+                                snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym->addr);
                             }
                             else
                             {
@@ -870,12 +881,12 @@ IRList assemble(Assembler *ctx)
                                 free_ast(ctx->parser->root);
                                 exit(PAC_Error_InvalidIdentifier);
                             }
-                            Symbol sym;
+                            Symbol* sym;
                             bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
                             if (got_sym)
                             {
-                                if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym.addr, (unsigned long long)opmem_disp->int_val);
-                                else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym.addr, (long long)opmem_disp->int_val);
+                                if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
+                                else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
                             }
                             else
                             {

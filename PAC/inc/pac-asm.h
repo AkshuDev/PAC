@@ -16,6 +16,7 @@ typedef struct {
     char* name;
     SymbolType type;
     uint64_t addr; // address
+    uint64_t addr2; // secondry read-only addr
     char* value; // constant value
     size_t section_index; // section the symbol belongs to
     uint64_t size; // size
@@ -86,7 +87,7 @@ void symtab_init(SymbolTable* tab);
 void symtab_free(SymbolTable* tab);
 void section_free(SectionTable* table);
 Section *section_get(SectionTable *table, const char *name);
-bool symtab_get(SymbolTable *tab, const char *name, Symbol *out);
+bool symtab_get(SymbolTable* tab, const char* name, Symbol** out);
 void add_reloc(Section* sec, uint64_t offset, uint32_t symbol, uint32_t type, int64_t addend);
 void free_reloc(Section* sec);
 void free_relocs(SectionTable* sectab);

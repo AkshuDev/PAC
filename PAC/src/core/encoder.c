@@ -27,7 +27,67 @@ static int get_max_inst_size(enum Architecture arch) {
 }
 
 bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch) {
-    FILE* out = fopen(output_file, "wb");
+    // Sort Symbols
+	size_t local_symbols = ctx->symbols->count;
+	size_t global_symbols = 0;
+
+	if (ctx->symbols->count > 0) {
+		Symbol* st_local = (Symbol*)malloc(16 * sizeof(Symbol));
+		size_t st_lcap = 16;
+		size_t st_lcount = 0;
+		Symbol* st_global = (Symbol*)malloc(16 * sizeof(Symbol));
+		size_t st_gcap = 16;
+		size_t st_gcount = 0;
+		if (!st_global) { free(st_local); st_local = NULL; st_global = NULL; }
+		if (st_local && st_global) {
+			for (size_t i = 0; i < ctx->symbols->count; i++) {
+				Symbol* sym = &ctx->symbols->symbols[i];
+				if (sym->is_global) {
+					if (st_gcount + 1 >= st_gcap) {
+						Symbol* n = (Symbol*)realloc(st_global, (st_gcap + 16) * sizeof(Symbol));
+						if (!n) {
+							free(st_local);
+							free(st_global);
+							break;
+						}
+						st_global = n;
+						st_gcap += 16;
+					}
+
+					st_global[st_gcount++] = *sym;
+				} else {
+					if (st_lcount + 1 >= st_lcap) {
+						Symbol* n = (Symbol*)realloc(st_local, (st_lcap + 16) * sizeof(Symbol));
+						if (!n) {
+							free(st_local);
+							free(st_global);
+							break;
+						}
+						st_local = n;
+						st_lcap += 16;
+					}
+					
+					st_local[st_lcount++] = *sym;
+				}
+			}
+		
+			if (st_lcount + st_gcount == ctx->symbols->count) {
+				for (size_t i = 0; i < st_lcount + st_gcount; i++) {
+					Symbol* sym = i >= st_lcount ? &st_global[i - st_lcount] : &st_local[i];
+
+					memcpy(&ctx->symbols->symbols[i], sym, sizeof(Symbol));
+				}
+			}
+
+			free(st_local);
+			free(st_global);
+
+			local_symbols = st_lcount;
+			global_symbols = st_gcount;
+		}
+	}
+	
+	FILE* out = fopen(output_file, "wb");
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);
         return false;
@@ -69,7 +129,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     eh.e_type = ET_REL;
     eh.e_machine = machine;
     eh.e_version = EV_CURRENT;
-    eh.e_entry = (Elf64_Addr)(ctx->entry ? ctx->entry : 0);
+    eh.e_entry = 0;
     eh.e_phoff = 0; // no program header
     eh.e_shoff = 0;
     eh.e_flags = 0;
@@ -114,7 +174,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     shdrs[1].sh_entsize = sizeof(Elf64_Sym);
     shdrs[1].sh_size = (ctx->symbols->count + 1) * sizeof(Elf64_Sym);
     shdrs[1].sh_link = 2;
-    shdrs[1].sh_info = ctx->symbols->count + 1;
+    shdrs[1].sh_info = local_symbols + 1;
     shdrs[1].sh_offset = sizeof(Elf64_Ehdr) + (section_count * sizeof(Elf64_Shdr)) + shstrtab_size + strtab_size;
 
     memcpy(shstrtab + shstrtab_off, ".symtab", 8);
@@ -384,6 +444,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     shdrs[4].sh_size = (Elf64_Xword)(text_sec->reloc_count * sizeof(Elf64_Rela));
     shdrs[4].sh_addralign = 1;
 
+	// Push entry
     fwrite(&eh, sizeof(eh), 1, out);
     fwrite(shdrs, sizeof(Elf64_Shdr), section_count, out);
 
