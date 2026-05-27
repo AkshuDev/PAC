@@ -1358,11 +1358,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         emit_bytes(out, &modrm, 1);
                         break;
 					case ASM_INC:
-						modrm = make_modrm(dest, (RegInfo){.code=0, .valid=true}, MODRM_MOD_MEMORY);
+						modrm = make_modrm((RegInfo){.code=0, .valid=true}, (RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
                         emit_bytes(out, &modrm, 1);
                         break;
 					case ASM_DEC:
-						modrm = make_modrm(dest, (RegInfo){.code=1, .valid=true}, MODRM_MOD_MEMORY);
+						modrm = make_modrm((RegInfo){.code=1, .valid=true}, (RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
                         emit_bytes(out, &modrm, 1);
                         break;
 					default: {

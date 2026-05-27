@@ -7,27 +7,19 @@
     foodchar!ubyte[] = "*", 0
 
 :section .data
-    snake_x!byte = 10
-    snake_y!byte = 10
+    snake_x!uint = 10
+    snake_y!uint = 10
 
-    food_x!byte = 20
-    food_y!byte = 12
+    food_x!uint = 20
+    food_y!uint = 12
 
-    direction!byte = 0
+    direction!uint = 0
 
 :section .bss
-    :res input_buffer!byte[8]
+    :res input_buffer!uint[8]
 
 :section .text
     :global _start
-
-_start:
-    call $print_startup
-    // call $game_loop
-
-    mov %rax, 60
-    xor %rdi, %rdi
-    syscall
 
 .func print_startup
     mov %rax, 1
@@ -149,3 +141,11 @@ delay:
     jmp $game_loop.loop
 
 .endfunc
+
+_start:
+    call $print_startup
+    // call $game_loop
+
+    mov %rax, 60
+    xor %rdi, %rdi
+    syscall
