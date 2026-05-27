@@ -18,6 +18,7 @@ typedef enum {
     AST_COMMENT,
     AST_DECLIDENTIFIER,
     AST_RESERVE,
+	AST_FILE_CHANGE,
 } ASTNodeType;
 
 typedef enum {
@@ -45,6 +46,12 @@ typedef struct ASTOperand {
     };
     size_t mem_opr_count;
 } ASTOperand;
+
+typedef struct ASTFileChange {
+    char* file_path;
+	char* src;
+	size_t len;
+} ASTFileChange;
 
 typedef struct ASTInstruction {
     TokenType opcode; // The ASM_* token type from lexer
@@ -94,6 +101,9 @@ typedef struct ASTComment {
 typedef struct ASTReserve {
     char* name;
     TokenType type;
+	
+    bool is_array;
+    int array_size;
 } ASTReserve;
 
 typedef struct ASTNode {
@@ -108,6 +118,7 @@ typedef struct ASTNode {
         ASTComment comment;
         ASTDeclIdentifier decl_identifier;
         ASTReserve reserve;
+		ASTFileChange file_change;
     };
     int line; 
     int col;
@@ -121,6 +132,9 @@ typedef struct {
     Token previous;
     bool had_error;
     ASTNode* root;
+
+	char** inc_dirs;
+	size_t inc_dir_count;
 } Parser;
 
 ASTNode* create_node(ASTNodeType type, Parser* p);

@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <elf.h>
 
 #include <pac-lexer.h>
@@ -220,6 +221,11 @@ static size_t instruction_length(enum Architecture arch)
 
 void assembler_collect_symbols(Assembler *ctx, char* filename)
 {
+	ctx->no_instructions = false;
+	ctx->cur_file = (char*)ctx->lex->file;
+	ctx->cur_file_src = (char*)ctx->lex->src;
+	ctx->cur_file_len = (size_t)ctx->lex->len;
+
     ASTNode *root = ctx->current;
     SectionTable *sectab = ctx->sections;
     SymbolTable *symtab = ctx->symbols;
@@ -238,6 +244,12 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
         switch (node->type)
         {
+		case AST_FILE_CHANGE:
+			ctx->cur_file = node->file_change.file_path;
+			ctx->cur_file_src = node->file_change.src;
+			ctx->cur_file_len = node->file_change.len;
+			break;
+			
         case AST_DIRECTIVE:
             if (node->directive.type == SECTION)
             {
@@ -257,8 +269,8 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                         cursec.size = sectab->sections[current_section].size; // ensure it updated
                         if ((uint64_t)section_node->directive.size < cursec.size)
                         {
-                            PAC_ERRORF(ctx->lex->file, section_node->line, section_node->col, ctx->lex->src, ctx->lex->len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
-                            PAC_TIPF(ctx->lex->file, section_node->line, section_node->col, ctx->lex->src, ctx->lex->len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
+                            PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
+                            PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
                             symtab_free(symtab);
                             section_free(sectab);
                             free_ast(ctx->parser->root);
@@ -283,7 +295,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                     {
                         if (cvaddr > (size_t)node->directive.start)
                         {
-                            PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->directive.arg, strlen(node->directive.arg), "value provided using ':start' overlaps current virtual address, try an higher value!");
+                            PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "value provided using ':start' overlaps current virtual address, try an higher value!");
                             symtab_free(symtab);
                             section_free(sectab);
                             free_ast(ctx->parser->root);
@@ -314,7 +326,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
         case AST_LABEL:
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -331,7 +343,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
         case AST_DECLIDENTIFIER:
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to define data in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to define data in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -341,6 +353,13 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             TokenType type = node->decl_identifier.type;
             size_t size = 0;
             char* value = (char*)malloc(100);
+			if (!value) {
+				PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation Failed!");
+				symtab_free(symtab);
+				section_free(sectab);
+				free_ast(ctx->parser->root);
+				exit(PAC_Error_MemoryAllocationFailed);
+			}
             size_t val_size = 0;
             size_t val_max_size = 100;
             if (type >= LIT_INT && type <= LIT_FLOAT)
@@ -350,7 +369,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             else if (type == LIT_STRING)
             {
                 if (node->decl_identifier.is_array == false) {
-                    PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "You need to specify an array to define strings!");
+                    PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "You need to specify an array to define strings!");
                     symtab_free(symtab);
                     section_free(sectab);
                     free_ast(ctx->parser->root);
@@ -371,7 +390,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             }
             else
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot resolve type's size!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot resolve type's size!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -383,14 +402,35 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             case LIT_INT:
             case LIT_BIN:
             case LIT_HEX:
+				if (node->child_count < 1) {
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
+					symtab_free(symtab);
+					section_free(sectab);
+					free_ast(ctx->parser->root);
+					exit(PAC_Error_InvalidDirectiveToken);
+				}
                 type = T_INT;
                 sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
                 break;
             case LIT_CHAR:
+				if (node->child_count < 1) {
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
+					symtab_free(symtab);
+					section_free(sectab);
+					free_ast(ctx->parser->root);
+					exit(PAC_Error_InvalidDirectiveToken);
+				}
                 type = T_BYTE;
                 sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
                 break;
             case LIT_FLOAT:
+				if (node->child_count < 1) {
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
+					symtab_free(symtab);
+					section_free(sectab);
+					free_ast(ctx->parser->root);
+					exit(PAC_Error_InvalidDirectiveToken);
+				}
                 type = T_FLOAT;
                 sprintf(value, "%f", node->children[0]->literal.float_val);
                 break;
@@ -424,7 +464,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                             }
                             littype = node->decl_identifier.array_values[i]->literal.type;
                             if ((littype < LIT_INT || littype > LIT_BIN) && littype != LIT_CHAR) {
-                                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
+                                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
                                 symtab_free(symtab);
                                 section_free(sectab);
                                 free_ast(ctx->parser->root);
@@ -438,7 +478,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                             if (!done) done = true;
                             break;
                         case LIT_FLOAT:
-                            PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot create a float array!");
+                            PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot create a float array!");
                             symtab_free(symtab);
                             section_free(sectab);
                             free_ast(ctx->parser->root);
@@ -473,7 +513,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                                         val_size += strlen(value);
                                         break;
                                     default:
-                                        PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
+                                        PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
                                         symtab_free(symtab);
                                         section_free(sectab);
                                         free_ast(ctx->parser->root);
@@ -499,7 +539,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             {
                 if (type != node->decl_identifier.opt_specified_type && type > node->decl_identifier.opt_specified_type)
                 {
-                    PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Cast!");
+                    PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Cast!");
                     symtab_free(symtab);
                     section_free(sectab);
                     free_ast(ctx->parser->root);
@@ -534,7 +574,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                         // Already handled
                         break;
                     default:
-                        PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+                        PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
                         symtab_free(symtab);
                         section_free(sectab);
                         free_ast(ctx->parser->root);
@@ -554,7 +594,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
         case AST_RESERVE:
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -564,7 +604,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             Section cursec = sectab->sections[current_section];
             if (strcmp(cursec.name, ".bss") != 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in non bss section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in non bss section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -608,15 +648,19 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             case T_ULONG:
                 size = 8;
                 break;
-            case T_ARRAY:
-                size = 8;
-                break;
+			case T_ARRAY:
+				size = 1;
+				break;
             default:
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->reserve.name, strlen(node->reserve.name), "Unknown Type!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Unknown Type of reserve?");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_TypeResolutionFailed);
+            }
+
+			if (node->reserve.is_array) {
+                size *= node->reserve.array_size;
             }
 
             symtab_add(symtab, node->reserve.name, SYM_IDENTIFIER, cvaddr, "\0", current_section, (uint64_t)size, node->reserve.type, false);
@@ -628,7 +672,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
         case AST_INSTRUCTION:
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, "", 0, "Tried to define instructions in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -659,8 +703,8 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
             cursec.size = sectab->sections[current_section].size; // ensure it updated
             if ((uint64_t)section_node->directive.size < cursec.size)
             {
-                PAC_ERRORF(ctx->lex->file, section_node->line, section_node->col, ctx->lex->src, ctx->lex->len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
-                PAC_TIPF(ctx->lex->file, section_node->line, section_node->col, ctx->lex->src, ctx->lex->len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
+                PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
+                PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -679,12 +723,19 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
     if (ctx->entry_label == NULL)
     {
         fprintf(stderr, COLOR_YELLOW "Warning: No entry point specified, defaulting to the first label/func!\n" COLOR_RESET);
-        ctx->entry_label = first_label_node->label.name;
-    }
+        if (first_label_node) { ctx->entry_label = first_label_node->label.name; }
+		else { fprintf(stderr, COLOR_YELLOW "Warning: No Assembly in file?\n" COLOR_RESET); ctx->no_instructions = true; }
+    } else {
+		if (!first_label_node) { fprintf(stderr, COLOR_YELLOW "Warning: No Assembly in file?\n" COLOR_RESET); ctx->no_instructions = true; }
+	}
 }
 
 IRList assemble(Assembler *ctx)
 {
+	ctx->cur_file = (char*)ctx->lex->file;
+	ctx->cur_file_src = (char*)ctx->lex->src;
+	ctx->cur_file_len = (size_t)ctx->lex->len;
+
 	IRList list = {0};
     SymbolTable *symtab = ctx->symbols;
     SectionTable *sectab = ctx->sections;
@@ -696,6 +747,12 @@ IRList assemble(Assembler *ctx)
     for (size_t i = 0; i < root->child_count; i++)
     {
         ASTNode *node = root->children[i];
+		if (node->type == AST_FILE_CHANGE) {
+			ctx->cur_file = node->file_change.file_path;
+			ctx->cur_file_src = node->file_change.src;
+			ctx->cur_file_len = node->file_change.len;
+			continue;
+		}
         if (node->type == AST_DIRECTIVE && node->directive.type == SECTION)
         {
             Section *sec = section_get(ctx->sections, node->directive.arg);
@@ -709,7 +766,7 @@ IRList assemble(Assembler *ctx)
             if (symtab_get(symtab, node->directive.arg, &sym)) {
                 sym->is_global = true;
             } else {
-				PAC_WARNINGF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
+				PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
 			}
 			continue;
         }
@@ -719,7 +776,7 @@ IRList assemble(Assembler *ctx)
             // assign label addr = current offset in section
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -738,7 +795,7 @@ IRList assemble(Assembler *ctx)
         {
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, "", 0, "Tried to define instructions in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -766,7 +823,7 @@ IRList assemble(Assembler *ctx)
                     {
                         if (op->identifier->type != AST_IDENTIFIER)
                         {
-                            PAC_ERRORF(ctx->lex->file, node->line, node->col, ctx->lex->src, ctx->lex->len, "", 0, "Identifier doesn't have type AST_Identifier!");
+                            PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
                             symtab_free(symtab);
                             section_free(sectab);
                             free_ast(ctx->parser->root);
@@ -953,7 +1010,7 @@ void print_ir(const IRInstruction *ir)
 
 void print_ir_list(const IRList *list)
 {
-    printf(COLOR_CYAN "NOTE: Addresses provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding\n" COLOR_RESET);
+    printf(COLOR_CYAN "NOTE: Addresses/Sizes provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding\n" COLOR_RESET);
     printf(COLOR_YELLOW "=== IR Dump (%zu instructions) ===\n" COLOR_RESET, list->count);
     for (size_t i = 0; i < list->count; i++)
     {
@@ -972,6 +1029,8 @@ char *symtype_to_str(SymbolType type)
         return "IDENTIFIER";
     case SYM_SECTION:
         return "SECTION";
+	case SYM_FILE:
+		return "FILE";
     default:
         return "UNKNOWN";
     }
@@ -984,13 +1043,26 @@ void print_symtab(SymbolTable *symtab, SectionTable *sectab)
     for (size_t i = 0; i < symtab->count; i++)
     {
         Symbol sym = symtab->symbols[i];
+		if (sym.type == SYM_FILE) {
+			printf(COLOR_GREEN "[FILE] " COLOR_RESET "%s\n", sym.name);
+			continue;
+		}
         if ((signed long long)sym.section_index < 0)
         {
             printf(COLOR_GREEN "[%s] %s at 0x%llX => %s in section: Undefined\n" COLOR_RESET, symtype_to_str(sym.type), sym.name, (unsigned long long)sym.addr, sym.value);
             continue;
         }
-        printf(COLOR_GREEN "[%s] " COLOR_RESET "%s " COLOR_GREEN "at 0x%llX " COLOR_YELLOW "=> " COLOR_RESET "%s " COLOR_GREEN "in section: %s\n" COLOR_RESET, symtype_to_str(sym.type), sym.name, (unsigned long long)sym.addr, strcmp(sym.value, "") != 0 ? sym.value : "null", sectab->sections[sym.section_index].name);
+        printf(COLOR_GREEN "[%s] " COLOR_RESET "%s " COLOR_GREEN "at 0x%llX " COLOR_YELLOW "=> " COLOR_RESET, symtype_to_str(sym.type), sym.name, (unsigned long long)sym.addr);
+		char* val = strcmp(sym.value, "") != 0 ? sym.value : "null";
+		for (char* p = val; *p; p++) {
+			if (isprint(*p))
+				printf("%c", *p);
+			else
+				printf("\\x%d", *p);
+		}
+		printf(" " COLOR_GREEN "in section: %s\n" COLOR_RESET, sectab->sections[sym.section_index].name);
     }
+
     printf(COLOR_YELLOW "=== End Symbol ===\n" COLOR_RESET);
 }
 

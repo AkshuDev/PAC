@@ -122,73 +122,77 @@ void free_ast(ASTNode* node) {
     for (size_t i = 0; i < node->child_count; i++) {
         free_ast(node->children[i]);
     }
-    free(node->children);
+    if (node->children) free(node->children);
     switch(node->type) {
         case AST_INSTRUCTION:
             for(size_t i = 0; i < node->inst.operand_count; i++) {
                 ASTOperand* op = node->inst.operands[i];
                 
                 if (op->type == OPERAND_LABEL) {
-                    free(op->label);
+                    if (op->label) free(op->label);
                 } else if (op->type == OPERAND_REGISTER) {
-                    free(op->reg);
+                    if (op->reg) free(op->reg);
                 } else if (op->type == OPERAND_IDENTIFIER) {
-                    free_ast(op->identifier);
+                    if (op->identifier) free_ast(op->identifier);
                 } else if (op->type == OPERAND_MEMORY) {
                     for(size_t i = 0; i < op->mem_opr_count; i++) {
                         ASTOperand* opr = op->mem_addr[i];
                         
                         if (opr->type == OPERAND_LABEL) {
-                            free(opr->label);
+                            if (opr->label) free(opr->label);
                         } else if (opr->type == OPERAND_REGISTER) {
-                            free(opr->reg);
+                            if (opr->reg) free(opr->reg);
                         } else if (opr->type == OPERAND_IDENTIFIER) {
-                            free_ast(opr->identifier);
+                            if (opr->identifier) free_ast(opr->identifier);
                         }
-                        free(opr);
+                        if (opr) free(opr);
                     }
-                    free(op->mem_addr);
+                    if (op->mem_addr) free(op->mem_addr);
                 }
-                free(op);
+                if (op) free(op);
             }
-            free(node->inst.operands);
+            if (node->inst.operands) free(node->inst.operands);
             break;
         case AST_DIRECTIVE:
-            free(node->directive.arg);
+            if (node->directive.arg) free(node->directive.arg);
             break;
         case AST_COMMENT:
-            free(node->comment.value);
+            if (node->comment.value) free(node->comment.value);
             break;
         case AST_LABEL:
-            free(node->label.name);
+            if (node->label.name) free(node->label.name);
             break;
         case AST_LITERAL:
-            if (node->literal.type == LIT_STRING) {
+            if (node->literal.type == LIT_STRING && node->literal.str_val) {
                 free(node->literal.str_val);
             }
             break;
         case AST_IDENTIFIER:
-            free(node->identifier.name);
+            if (node->identifier.name) free(node->identifier.name);
             break;
         case AST_DECLIDENTIFIER:
-            free(node->decl_identifier.name);
+            if (node->decl_identifier.name) free(node->decl_identifier.name);
             if (node->decl_identifier.array_value_count > 0 && node->decl_identifier.is_array) {
                 for (size_t i = 0; i < node->decl_identifier.array_value_count; i++) {
-                    free_ast(node->decl_identifier.array_values[i]);
+                    if (node->decl_identifier.array_values[i]) free_ast(node->decl_identifier.array_values[i]);
                 }
-                free(node->decl_identifier.array_values);
+                if (node->decl_identifier.array_values) free(node->decl_identifier.array_values);
             }
             break;
         case AST_RESERVE:
-            free(node->reserve.name);
+            if (node->reserve.name) free(node->reserve.name);
             break;
+		case AST_FILE_CHANGE:
+			if (node->file_change.file_path) free(node->file_change.file_path);
+			if (node->file_change.src) free(node->file_change.src);
+			break;
         case AST_PROGRAM:
             free_macros();
             break;
         default:
             break;
     }
-    free(node);
+    if (node) free(node);
 }
 
 static ASTOperand* parse_operand(Parser* p) {
@@ -571,47 +575,186 @@ static ASTNode* parse_identifier(Parser* p) {
 }
 
 void parse_preprocessors(Parser* p) {
-    if (p->current.type == PP_DEF) {
-        parser_advance(p);
-        if (p->current.type != IDENTIFIER_TOK) {
-            free_ast(p->root);
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only define Identifiers!");
-            exit(PAC_Error_InvalidIdentifier);
-        }
+	switch (p->current.type) {
+		case PP_DEF: {
+			parser_advance(p);
+			if (p->current.type != IDENTIFIER_TOK) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Please use a identifier to specify macro");
+				exit(PAC_Error_InvalidIdentifier);
+			}
 
-        char* name = (char*)malloc(strlen(p->current.lexeme) + 1);
-        name[strlen(p->current.lexeme)] = '\0';
-        pac_strdup(p->current.lexeme, name);
+			char* name = (char*)malloc(strlen(p->current.lexeme) + 1);
+			name[strlen(p->current.lexeme)] = '\0';
+			pac_strdup(p->current.lexeme, name);
 
-        parser_advance(p);
-        if (p->current.type < LIT_INT || p->current.type > LIT_CHAR) {
-            free_ast(p->root);
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only define Identifiers with literal values!");
-            exit(PAC_Error_InvalidIdentifier);
-        }
-        char value[256];
-        if (parser_check(p, LIT_CHAR)) {
-            snprintf(value, sizeof(value), "%c", *p->current.lexeme);
-        } else if (parser_check(p, LIT_INT)) {
-            long long out = strtoll(p->current.lexeme, NULL, 10);
-            snprintf(value, sizeof(value), "%lld", out);
-        } else if (parser_check(p, LIT_BIN)) {
-            long long out = strtoll(p->current.lexeme, NULL, 2);
-            snprintf(value, sizeof(value), "%lld", out);
-        } else if (parser_check(p, LIT_HEX)) {
-            long long out = strtoll(p->current.lexeme, NULL, 16);
-            snprintf(value, sizeof(value), "%lld", out);
-        } else if (parser_check(p, LIT_STRING)) {
-            snprintf(value, sizeof(value), "%s", p->current.lexeme);
-        } else if (parser_check(p, LIT_FLOAT)) {
-            float out = strtof(p->current.lexeme, NULL);
-            snprintf(value, sizeof(value), "%f", out);
-        }
+			parser_advance(p);
+			if (p->current.type < LIT_INT || p->current.type > LIT_CHAR) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only define Identifiers with literal values!");
+				exit(PAC_Error_InvalidIdentifier);
+			}
+			char value[256];
+			if (parser_check(p, LIT_CHAR)) {
+				snprintf(value, sizeof(value), "%c", *p->current.lexeme);
+			} else if (parser_check(p, LIT_INT)) {
+				long long out = strtoll(p->current.lexeme, NULL, 10);
+				snprintf(value, sizeof(value), "%lld", out);
+			} else if (parser_check(p, LIT_BIN)) {
+				long long out = strtoll(p->current.lexeme, NULL, 2);
+				snprintf(value, sizeof(value), "%lld", out);
+			} else if (parser_check(p, LIT_HEX)) {
+				long long out = strtoll(p->current.lexeme, NULL, 16);
+				snprintf(value, sizeof(value), "%lld", out);
+			} else if (parser_check(p, LIT_STRING)) {
+				snprintf(value, sizeof(value), "%s", p->current.lexeme);
+			} else if (parser_check(p, LIT_FLOAT)) {
+				float out = strtof(p->current.lexeme, NULL);
+				snprintf(value, sizeof(value), "%f", out);
+			}
 
-        new_macro(name, value);
-        free(name);
-        parser_advance(p);
-    }
+			new_macro(name, value);
+			free(name);
+			parser_advance(p);
+			break;
+		}
+		case PP_UNDEF: {
+			parser_advance(p);
+			if (p->current.type != IDENTIFIER_TOK) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Please use a identifier to specify macro");
+				exit(PAC_Error_InvalidIdentifier);
+			}
+			rm_macro(p->current.lexeme);
+			parser_advance(p);
+			break;
+		}
+		case PP_INC: {
+			parser_advance(p);
+			if (p->current.type != LIT_STRING) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Please use a string to specify file");
+				exit(PAC_Error_InvalidIdentifier);
+			}
+
+			char nf[512] = {0};
+			char* file = p->current.lexeme;
+
+			FILE* fp = fopen(file, "r");
+			if (!fp) {
+				for (size_t i = 0; i < p->inc_dir_count; i++) {
+					char* incDir = p->inc_dirs[i];
+					bool bslash = false;
+					for (char* p = incDir; *p; p++) {
+						bool final = *(char*)(p + 1) == 0 ? true : false;
+						switch (*p) {
+							case '/': {
+								if (final) 
+									*p = '\0';
+								break;
+							}
+							case '\\': {
+								if (final) 
+									*p = '\0';
+								bslash = true;
+								break;
+							}
+							default: break;
+						}
+					}
+					if (bslash) {
+						snprintf(nf, sizeof(nf), "%s\\%s", incDir, file);
+					} else {
+						snprintf(nf, sizeof(nf), "%s/%s", incDir, file);
+					}
+
+					fp = fopen(nf, "r");
+					if (fp) break;
+				}
+			}
+			if (!fp) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Could not open the specified file!");
+				exit(PAC_Error_IncludeFileNotFound);
+			}
+
+			fseek(fp, 0, SEEK_END);
+			size_t len = ftell(fp);
+			fseek(fp, 0, SEEK_SET);
+
+			if (len <= 0) {
+				fclose(fp);
+				return;
+			}
+
+			char* data = (char*)malloc(len + 1);
+			if (!data) {
+				fclose(fp);
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Could not allocate for reading data in the specified file!");
+				exit(PAC_Error_MemoryAllocationFailed);
+			}
+			if (fread(data, 1, len, fp) <= 0) {
+				fclose(fp);
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Could not read the specified file!");
+				exit(PAC_Error_FileReadFailed);
+			}
+			fclose(fp);
+
+			data[len] = '\0';
+
+			ASTNode* incAst = create_node(AST_FILE_CHANGE, p);
+			ASTFileChange* fchange = &incAst->file_change;
+			if (nf[0] != '\0') {
+				fchange->file_path = (char*)malloc(strlen(nf) + 1);
+				if (fchange->file_path) strcpy(fchange->file_path, nf);
+				else fchange->file_path = NULL;
+			} else {
+				fchange->file_path = NULL;
+			}
+			fchange->src = data;
+			fchange->len = len;
+			add_child(p->root, incAst);
+
+			Lexer il = init_lexer(data, len, p->current.lexeme);
+			Parser ip = init_parser(&il);
+			ip.inc_dirs = p->inc_dirs;
+			ip.inc_dir_count = p->inc_dir_count;
+			parse_symbols(&ip);
+			il = init_lexer(data, len, p->current.lexeme);
+			ip = init_parser(&il);
+			ip.inc_dirs = p->inc_dirs;
+			ip.inc_dir_count = p->inc_dir_count;
+
+			ASTNode* iroot = parse_program(&ip);
+			if (!iroot) {
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Could not parse the specified file!");
+				exit(PAC_Error_FileReadFailed);
+			}
+			for (size_t i = 0; i < iroot->child_count; i++) {
+				ASTNode* child = iroot->children[i];
+				add_child(p->root, child);
+				*(ASTNode**)(&iroot->children[i]) = NULL;
+			}
+			iroot->child_count = 0;
+			free_ast(iroot);
+
+			incAst = create_node(AST_FILE_CHANGE, p);
+			fchange = &incAst->file_change;
+			fchange->file_path = (char*)malloc(strlen(p->lexer->file) + 1);
+			if (fchange->file_path) strcpy(fchange->file_path, p->lexer->file);
+			else fchange->file_path = NULL;
+			fchange->src = (char*)malloc(strlen(p->lexer->src) + 1);
+			if (fchange->src) strcpy(fchange->src, p->lexer->src);
+			else fchange->src = NULL;
+			fchange->len = p->lexer->len;
+			add_child(p->root, incAst);
+			break;
+		}
+		default: break;
+	}
 }
 
 ASTNode* parse_reserve(Parser* p) {
@@ -635,16 +778,48 @@ ASTNode* parse_reserve(Parser* p) {
     }
 
     parser_advance(p);
+	
+	node->reserve.type = p->current.type;
 
     if (p->current.type < T_BYTE || p->current.type > T_PTR) {
         PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected a Type!");
         free_ast(p->root);
         exit(PAC_Error_UnexpectedToken);
     }
+	parser_advance(p);
+	bool is_array = false;
+	size_t array_len = 0;
+	if (p->current.type == LBRACKET) {
+		// Array
+		is_array = true;
+		array_len = 1;
+		parser_advance(p);
+		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
+			ASTNode* arrsize_node = parse_literal(p);
+			array_len = arrsize_node->literal.int_val;
+			free_ast(arrsize_node);
+		} else if (p->current.type == RBRACKET) {
+			PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Size of Array not specified, defaulting to 1");
+		} else {
+			free_ast(p->root);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
+			exit(PAC_Error_TypeResolutionFailed);
+		}
 
-    node->reserve.type = p->current.type;
+		if (p->current.type == RBRACKET) {
+			// Parse Array Values
+			parser_advance(p);
+		} else {
+			free_ast(p->root);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Forgot to close array size specifier '[]' ?");
+			exit(PAC_Error_TypeResolutionFailed);
+		}
+		parser_advance(p);
+	}
+
+	node->reserve.is_array = is_array;
+	node->reserve.array_size = array_len;
     new_macro(node->reserve.name, NULL);
-    parser_advance(p);
     return node;
 }
 

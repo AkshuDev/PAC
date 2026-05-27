@@ -309,19 +309,21 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         fprintf(stderr, COLOR_YELLOW "Warning: Failed to extend file!\n" COLOR_RESET);
     }
 
-    switch (arch) {
-        case x86_64:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
-            break;
-        case x86:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
-            break;
-        case PVCPU:
-            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
-            break;
-        default:
-            break;
-    }
+	if (!ctx->no_instructions) {
+		switch (arch) {
+			case x86_64:
+				ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
+				break;
+			case x86:
+				ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
+				break;
+			case PVCPU:
+				ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec, symbol_list, symbol_list_size);
+				break;
+			default:
+				break;
+		}
+	}
 
     free(symbol_list);
 
@@ -508,17 +510,20 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     fseek(out, shdrs[4].sh_offset, SEEK_SET);
     
     // add relocs of .text section
-    for (size_t i = 0; i < text_sec->reloc_count; i++) {
-        Relocation* reloc = &text_sec->relocs[i];
-        Elf64_Rela r = {0};
+	if (!ctx->no_instructions) {
+		for (size_t i = 0; i < text_sec->reloc_count; i++) {
+			Relocation* reloc = &text_sec->relocs[i];
+			Elf64_Rela r = {0};
 
-        r.r_addend = reloc->addend;
-        r.r_offset = reloc->offset - text_sh->sh_offset;
-        r.r_info = ELF64_R_INFO(reloc->symbol + 1, reloc->type);
-        
-        fwrite(&r, sizeof(r), 1, out);
-    }
+			r.r_addend = reloc->addend;
+			r.r_offset = reloc->offset - text_sh->sh_offset;
+			r.r_info = ELF64_R_INFO(reloc->symbol + 1, reloc->type);
+			
+			fwrite(&r, sizeof(r), 1, out);
+		}
+	}
 
+	fflush(out);
     fclose(out);
     free(shdrs);
 
@@ -548,19 +553,21 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
 
     text_sec = &ctx->sections->sections[text_sec_idx];
 
-    switch (arch) {
-        case x86_64:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
-            break;
-        case x86:
-            ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
-            break;
-        case PVCPU:
-            ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
-            break;
-        default:
-            break;
-    }
+	if (!ctx->no_instructions) {
+		switch (arch) {
+			case x86_64:
+				ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
+				break;
+			case x86:
+				ret = encode_x86_64(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
+				break;
+			case PVCPU:
+				ret = encode_pvcpu(ctx, out, irlist, bits, unlocked, text_off, text_sec, NULL, 0);
+				break;
+			default:
+				break;
+		}
+	}
 
     offset = ALIGN_UP(ftell(out), 16);
 
@@ -614,6 +621,7 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
     }
 
     free_relocs(ctx->sections);
+	fflush(out);
     fclose(out);
 
     return ret;

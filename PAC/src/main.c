@@ -21,6 +21,8 @@ typedef struct {
     char* output_file;
     char** input_files;
     int input_count;
+	char** inc_dirs;
+	int inc_dirs_count;
     bool verbose;
     bool debug_symbols;
     enum Architecture arch;
@@ -69,6 +71,8 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->lexout = false;
     args->parseout = false;
     args->asmout = false;
+	args->inc_dirs = (char**)calloc(4, sizeof(char*));
+	args->inc_dirs_count = 0;
     #ifdef __WIN32
     args->base = 0x140000000;
     #else
@@ -79,6 +83,8 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->linkformat = ELF64;
     args->only_asm = false;
     args->unlocked = false;
+
+	int inc_dir_cap = 4;
 
     // Define long options
     static struct option long_options[] = {
@@ -98,13 +104,14 @@ bool parse_args(int argc, char** argv, Args* args) {
         {"format", required_argument, 0, 'f'},
         {"only-asm", no_argument, 0, 1005},
         {"unlock", no_argument, 0, 1006},
+		{"includes", required_argument, 0, 'I'},
         {0, 0, 0, 0}
     };
 
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "o:vhda:b:t:e:f:", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "o:vhda:b:t:e:f:I:", long_options, &option_index)) != -1) {
         switch (opt) {
             case 'o':
                 args->output_file = optarg;
@@ -114,6 +121,7 @@ bool parse_args(int argc, char** argv, Args* args) {
                 break;
             case 'h':
                 print_usage(argv[0]);
+				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
                 exit(PAC_Success);
             case 'd':
                 args->debug_symbols = true;
@@ -121,6 +129,7 @@ bool parse_args(int argc, char** argv, Args* args) {
             case 'a':
                 args->arch = archs_to_archenum(optarg);
                 if (args->arch == UNKNOWN_ARCH) {
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Unknown Architecture [%s]\n" COLOR_RESET, optarg);
                     return false;
                 }
@@ -128,6 +137,7 @@ bool parse_args(int argc, char** argv, Args* args) {
             case 'b':
                 args->bits = atoi(optarg);
                 if (args->bits != 16 && args->bits != 32 && args->bits != 64) {
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Bits must be 16/32/64\n" COLOR_RESET);
                     return false;
                 }
@@ -151,11 +161,13 @@ bool parse_args(int argc, char** argv, Args* args) {
                 args->entry_label = optarg;
                 break;
             case 1004:
+				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
                 printf(COLOR_GREEN __PAC_FULL_INFO__ COLOR_RESET);
                 exit(PAC_Success);
             case 'f':
                 args->linkformat = str_to_linker_format(optarg);
                 if (args->linkformat == (LinkerFormat)-1) {
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Unknown Output format: %s\n" COLOR_CYAN "Tip: Supported Output formats are: elf64/elf32/win64/win32\n" COLOR_RESET, optarg);
                     exit(PAC_Error_UnsupportedObjectFormat);
                 }
@@ -166,12 +178,28 @@ bool parse_args(int argc, char** argv, Args* args) {
             case 1006:
                 args->unlocked = true;
                 break;
+			case 'I':
+				if (args->inc_dirs_count + 1 >= inc_dir_cap) {
+					char** np = realloc(args->inc_dirs, sizeof(char*) * (inc_dir_cap + 4));
+					if (!np) {
+						fprintf(stderr, COLOR_YELLOW "Warning: Failed to reallocate include dirs, %d entries will be used\n" COLOR_RESET, args->inc_dirs_count);
+					} else {
+						args->inc_dirs = np;
+						inc_dir_cap += 4;
+					}
+				}
+				if (args->inc_dirs_count + 1 < inc_dir_cap) {
+					args->inc_dirs[args->inc_dirs_count++] = optarg;
+				}
+				break;
             case '?': // unknown option
             default:
                 print_usage(argv[0]);
                 return false;
         }
     }
+
+	if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0; args->inc_dirs = NULL; }
 
     // Remaining arguments are input files
     args->input_count = argc - optind;
@@ -195,7 +223,7 @@ char* read_file(const char* path, size_t* len) {
     FILE* f = fopen(path, "r");
     if (!f) {
         fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
-        exit(PAC_Error_FileOpenFailed);
+        return NULL;
     }
     fseek(f, 0, SEEK_END);
     size_t size = ftell(f);
@@ -209,33 +237,38 @@ char* read_file(const char* path, size_t* len) {
     return buffer;
 }
 
-void write_file(const char* path, void* data, size_t len) {
+bool write_file(const char* path, void* data, size_t len) {
     FILE* f = fopen(path, "wb");
     if (!f) {
         fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
-        exit(PAC_Error_FileOpenFailed);
+        return false;
     }
     fseek(f, 0, SEEK_SET);
     fwrite(data, 1, len, f);
     fflush(f);
     fclose(f);
+	return true;
 }
 
 FILE* open_file(const char* path, const char* mode) {
     FILE* f = fopen(path, mode);
     if (!f) {
         fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
-        exit(PAC_Error_FileOpenFailed);
+        return NULL;
     }
     fseek(f, 0, SEEK_SET);
     return f;
 }
 
-void perform_lexout(char** file_l, int idx, int count) {
+void perform_lexout(Args* args, char** file_l, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Lexing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
+	if (!src) {
+		if (args->inc_dirs) free(args->inc_dirs);
+		exit(PAC_Error_FileReadFailed);
+	}
     Lexer lx = init_lexer(src, len, file);
     Token tk;
 
@@ -253,21 +286,29 @@ void perform_lexout(char** file_l, int idx, int count) {
     free(src);
     
     if (count > idx + 1) {
-        perform_lexout(file_l, idx + 1, count);
+        perform_lexout(args, file_l, idx + 1, count);
     }
 }
 
-void perform_parseout(char** file_l, int idx, int count) {
+void perform_parseout(Args* args, char** file_l, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Parsing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
+	if (!src) {
+		if (args->inc_dirs) free(args->inc_dirs);
+		exit(PAC_Error_FileReadFailed);
+	}
     Lexer lx = init_lexer(src, len, file);
     Parser parser = init_parser(&lx);
+	parser.inc_dirs = args->inc_dirs;
+	parser.inc_dir_count = args->inc_dirs_count;
     parse_symbols(&parser); // get all symbols first
 
     lx = init_lexer(src, len, file);
     parser = init_parser(&lx);
+	parser.inc_dirs = args->inc_dirs;
+	parser.inc_dir_count = args->inc_dirs_count;
     ASTNode* root = parse_program(&parser);
 
     char output[512];
@@ -281,7 +322,7 @@ void perform_parseout(char** file_l, int idx, int count) {
     free(src);
 
     if (count > idx + 1) {
-        perform_parseout(file_l, idx + 1, count);
+        perform_parseout(args, file_l, idx + 1, count);
     }
 }
 
@@ -290,13 +331,21 @@ void perform_asmout(char** file_l, Args* args, int idx, int count) {
     printf(COLOR_CYAN "Assembling file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
+	if (!src) {
+		if (args->inc_dirs) free(args->inc_dirs);
+		exit(PAC_Error_FileReadFailed);
+	}
 
     Lexer lx = init_lexer(src, len, file);
     Parser parser = init_parser(&lx);
+	parser.inc_dirs = args->inc_dirs;
+	parser.inc_dir_count = args->inc_dirs_count;
 
     parse_symbols(&parser); // get all symbols first
     lx = init_lexer(src, len, file);
     parser = init_parser(&lx);
+	parser.inc_dirs = args->inc_dirs;
+	parser.inc_dir_count = args->inc_dirs_count;
 
     ASTNode* root = parse_program(&parser);
 
@@ -314,6 +363,10 @@ void perform_asmout(char** file_l, Args* args, int idx, int count) {
 
     if (args->savetemps) {
         FILE* f = open_file("asave.paci", "w");
+		if (!f) {
+			if (args->inc_dirs) free(args->inc_dirs);
+			exit(PAC_Error_FileOpenFailed);
+		}
         char buf[512];
         for (size_t i = 0; i < sectable.count; i++) {
             Section sec = sectable.sections[i];
@@ -359,17 +412,19 @@ int main(int argc, char** argv) {
     }
 
     if (args.lexout) {
-        perform_lexout(args.input_files, 0, args.input_count);
+        perform_lexout(&args, args.input_files, 0, args.input_count);
         return PAC_Success;
     }
 
     if (args.parseout) {
-        perform_parseout(args.input_files, 0, args.input_count);
+        perform_parseout(&args, args.input_files, 0, args.input_count);
+		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 
     if (args.asmout) {
         perform_asmout(args.input_files, &args, 0, args.input_count);
+		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 
@@ -378,13 +433,21 @@ int main(int argc, char** argv) {
     for (int i = 0; i < args.input_count; i++){    
         size_t len = 0;
         char* src = read_file(args.input_files[i], &len);
+		if (!src) {
+			if (args.inc_dirs) free(args.inc_dirs);
+			exit(PAC_Error_FileReadFailed);
+		}
 
         Lexer lexer = init_lexer(src, len, args.input_files[i]);
         Parser parser = init_parser(&lexer);
+		parser.inc_dirs = args.inc_dirs;
+		parser.inc_dir_count = args.inc_dirs_count;
         
         parse_symbols(&parser);
         lexer = init_lexer(src, len, args.input_files[i]);
         parser = init_parser(&lexer);
+		parser.inc_dirs = args.inc_dirs;
+		parser.inc_dir_count = args.inc_dirs_count;
 
         ASTNode* root = parse_program(&parser);
 
@@ -420,6 +483,7 @@ int main(int argc, char** argv) {
                 section_free(&sectab);
                 for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
                 free(encoded_files);
+				if (args.inc_dirs) free(args.inc_dirs);
                 return PAC_Error_Unknown;
             }
         } else {
@@ -431,6 +495,7 @@ int main(int argc, char** argv) {
                 section_free(&sectab);
                 for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
                 free(encoded_files);
+				if (args.inc_dirs) free(args.inc_dirs);
                 return PAC_Error_Unknown;
             }
         }
@@ -460,6 +525,7 @@ int main(int argc, char** argv) {
     }
 
     free(encoded_files);
+	if (args.inc_dirs) free(args.inc_dirs);
 
     return PAC_Success;
 }

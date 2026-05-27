@@ -5,6 +5,8 @@
 
 #include <pac-extra.h>
 
+#include <stdbool.h>
+
 typedef enum {
     SYM_LABEL,
     SYM_IDENTIFIER,
@@ -58,13 +60,23 @@ typedef struct {
 typedef struct {
     Lexer* lex;
     Parser* parser;
-    ASTNode* current; // No previous
-    size_t bits;
+    
+	ASTNode* current; // No previous
+    
+	size_t bits;
     enum Architecture arch;
-    SymbolTable* symbols;
+    
+	SymbolTable* symbols;
     SectionTable* sections;
-    size_t entry;
+    
+	size_t entry;
     char* entry_label;
+
+	bool no_instructions;
+
+	char* cur_file;
+	char* cur_file_src;
+	size_t cur_file_len;
 } Assembler;
 
 typedef struct {
