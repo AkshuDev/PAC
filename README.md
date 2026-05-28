@@ -144,7 +144,11 @@ To Access a label inside a function, you have to use this format '**$Function Na
 ```
 
 #### Labels
-Labels are your average Assembly functions, nothing special here!
+Labels are your average Assembly functions, nothing special here! Example -
+```pac-asm
+mylabel:
+	// Assembly goes here
+```
 
 ### Preprocessing
 All preprocessor statements start with a '@'
@@ -158,6 +162,12 @@ Defines a macro. Example -
 Undefines a Defined macro. Example -
 ```pac-asm
     @undef myMacro
+```
+
+#### Include
+Includes another file. Example -
+```pac-asm
+    @inc "myfile.pasm"
 ```
 
 ### Linking, information
