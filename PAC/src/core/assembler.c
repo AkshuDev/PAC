@@ -19,7 +19,7 @@ void symtab_init(SymbolTable *tab)
     tab->capacity = 0;
 }
 
-void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t addr, char *value, size_t section_index, uint64_t size, TokenType type_of_data, bool isglobal)
+void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t addr, char *value, size_t val_size, size_t section_index, uint64_t size, TokenType type_of_data, bool isglobal)
 {
     if (tab->count >= tab->capacity)
     {
@@ -31,8 +31,16 @@ void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t ad
     sym->type = type;
     sym->addr = addr;
     sym->addr2 = addr;
-    sym->value = strdup(value);
-    sym->section_index = section_index;
+    sym->value = (char*)malloc(val_size + 1);
+	if (!sym->value) {
+		tab->count--;
+		if (sym->name) free(sym->name);
+		return;
+	}
+    memcpy(sym->value, value, val_size);
+	sym->val_size = val_size;
+	sym->value[val_size] = '\0';
+	sym->section_index = section_index;
     sym->size = size;
     sym->type_of_data = type_of_data;
     sym->is_global = isglobal;
@@ -219,6 +227,28 @@ static size_t instruction_length(enum Architecture arch)
     return length;
 }
 
+static size_t token_type_size(TokenType t) {
+    switch (t) {
+        case T_BYTE:
+        case T_UBYTE:
+            return 1;
+        case T_SHORT:
+        case T_USHORT:
+            return 2;
+        case T_INT:
+        case T_UINT:
+        case T_FLOAT:
+            return 4;
+        case T_LONG:
+        case T_ULONG:
+        case T_DOUBLE:
+        case T_PTR:
+            return 8;
+        default:
+            return 1;
+    }
+}
+
 void assembler_collect_symbols(Assembler *ctx, char* filename)
 {
 	ctx->no_instructions = false;
@@ -236,7 +266,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
     ASTNode *section_node = NULL;
 
-    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 0, 0, (TokenType)-1, false);
+    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 1, 0, 0, (TokenType)-1, false);
 
     for (size_t i = 0; i < root->child_count; i++)
     {
@@ -332,7 +362,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_SectionNotFound);
             }
-            symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", current_section, 0, (TokenType)-1, false);
+            symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", 1, current_section, 0, (TokenType)-1, false);
             if (first_label == NULL)
             {
                 first_label = &symtab->symbols[symtab->count - 1];
@@ -362,228 +392,129 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 			}
             size_t val_size = 0;
             size_t val_max_size = 100;
-            if (type >= LIT_INT && type <= LIT_FLOAT)
-            {
-                size = 4;
-            }
-            else if (type == LIT_STRING)
-            {
-                if (node->decl_identifier.is_array == false) {
-                    PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "You need to specify an array to define strings!");
-                    symtab_free(symtab);
-                    section_free(sectab);
-                    free_ast(ctx->parser->root);
-                    exit(PAC_Error_TypeResolutionFailed);
-                }
-                if (node->child_count == 0)
-                {
-                    size = sizeof(void *);
-                }
-                else
-                {
-                    size = strlen(node->children[0]->literal.str_val);
-                }
-            }
-            else if (type == LIT_CHAR)
-            {
-                size = 1;
-            }
-            else
-            {
-                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot resolve type's size!");
-                symtab_free(symtab);
-                section_free(sectab);
-                free_ast(ctx->parser->root);
-                exit(PAC_Error_TypeResolutionFailed);
-            }
-
-            switch (type)
-            {
-            case LIT_INT:
-            case LIT_BIN:
-            case LIT_HEX:
-				if (node->child_count < 1) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
-					symtab_free(symtab);
-					section_free(sectab);
-					free_ast(ctx->parser->root);
-					exit(PAC_Error_InvalidDirectiveToken);
-				}
-                type = T_INT;
-                sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
-                break;
-            case LIT_CHAR:
-				if (node->child_count < 1) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
-					symtab_free(symtab);
-					section_free(sectab);
-					free_ast(ctx->parser->root);
-					exit(PAC_Error_InvalidDirectiveToken);
-				}
-                type = T_BYTE;
-                sprintf(value, "%lld", (long long int)node->children[0]->literal.int_val);
-                break;
-            case LIT_FLOAT:
-				if (node->child_count < 1) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Directive!");
-					symtab_free(symtab);
-					section_free(sectab);
-					free_ast(ctx->parser->root);
-					exit(PAC_Error_InvalidDirectiveToken);
-				}
-                type = T_FLOAT;
-                sprintf(value, "%f", node->children[0]->literal.float_val);
-                break;
-            case LIT_STRING:
-                type = T_ARRAY;
-                break;
-            default:
-                break;
-            }
 
             if (node->decl_identifier.is_array) {
-                type = T_ARRAY;
-                char* val2 = (char*)calloc(100, 1);
-                size_t cur_size = 0;
-                size_t cur_max_size = 100;
-                bool done = false;
-                TokenType littype = (TokenType)-1;
+                type = node->decl_identifier.opt_specified_type;
                 for (size_t i = 0; i < node->decl_identifier.array_value_count; i++) {
-                    switch (node->decl_identifier.type) {
-                        case LIT_INT:
-                        case LIT_BIN:
-                        case LIT_HEX:
-                        case LIT_CHAR:
-                            if (cur_size > cur_max_size) {
-                                val2 = (char*)realloc(val2, cur_max_size * 2);
-                                cur_max_size = cur_max_size * 2;
-                            }
-                            if (val_size > val_max_size) {
-                                value = (char*)realloc(value, val_max_size * 2);
-                                val_max_size = val_max_size * 2;
-                            }
-                            littype = node->decl_identifier.array_values[i]->literal.type;
-                            if ((littype < LIT_INT || littype > LIT_BIN) && littype != LIT_CHAR) {
-                                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
-                                symtab_free(symtab);
-                                section_free(sectab);
-                                free_ast(ctx->parser->root);
-                                exit(PAC_Error_SyntaxInvalidOperandType);
-                            }
-                            sprintf(value, "%s%ld", val2, node->decl_identifier.array_values[i]->literal.int_val);
-                            sprintf(val2, "%s", value);
-                            cur_size = strlen(val2);
-                            val_size = strlen(value);
-                            size += 1;
-                            if (!done) done = true;
-                            break;
-                        case LIT_FLOAT:
-                            PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Cannot create a float array!");
-                            symtab_free(symtab);
-                            section_free(sectab);
-                            free_ast(ctx->parser->root);
-                            exit(PAC_Error_TypeResolutionFailed);
-                        case LIT_STRING:
-                            if (size > cur_max_size) {
-                                val2 = realloc(val2, cur_max_size * 2);
-                                cur_max_size = cur_max_size * 2;
-                            }
-                            if (val_size > val_max_size) {
-                                value = (char*)realloc(value, val_max_size * 2);
-                                val_max_size = val_max_size * 2;
-                            }
-                            if (node->decl_identifier.array_values[i]->literal.type != LIT_STRING) {
-                                littype = node->decl_identifier.array_values[i]->literal.type;
-                                switch (littype) {
-                                    case LIT_INT:
-                                    case LIT_CHAR:
-                                        if (val_size + 2 > val_max_size) {
-                                            value = (char*)realloc(value, val_max_size * 2);
-                                            val_max_size = val_max_size * 2;
-                                        }
-                                        if (cur_size + 2 > cur_max_size) {
-                                            val2 = (char*)realloc(val2, cur_max_size * 2);
-                                            cur_max_size = cur_max_size * 2;
-                                        }
-                                        size_t value_cur_size = strlen(value);
-                                        value[value_cur_size] = (unsigned char)node->decl_identifier.array_values[i]->literal.int_val;
-                                        value[value_cur_size + 1] = '\0';
-                                        sprintf(val2, "%s", value);
-                                        cur_size += strlen(val2);
-                                        val_size += strlen(value);
-                                        break;
-                                    default:
-                                        PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to use a different type!");
-                                        symtab_free(symtab);
-                                        section_free(sectab);
-                                        free_ast(ctx->parser->root);
-                                        exit(PAC_Error_SyntaxInvalidOperandType);
-                                }
-                                break;
-                            }
-                            sprintf(value, "%s%s", val2, node->decl_identifier.array_values[i]->literal.str_val);
-                            sprintf(val2, "%s", value);
-                            cur_size = strlen(val2);
-                            val_size = strlen(value);
-                            break;
+					char* tmp = NULL;
 
-                        default:
-                            break;
-                    }
-                }
-                free(val2);
-                if (!done) size = strlen(value);
-            }
+					uint64_t num = 0;
+					size_t elem_size = 0;
 
-            if (node->decl_identifier.opt_specified_type != (TokenType)-1 && node->decl_identifier.opt_specified_type >= T_BYTE && node->decl_identifier.opt_specified_type <= T_PTR)
-            {
-                if (type != node->decl_identifier.opt_specified_type && type > node->decl_identifier.opt_specified_type)
-                {
-                    PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Invalid Cast!");
-                    symtab_free(symtab);
-                    section_free(sectab);
-                    free_ast(ctx->parser->root);
-                    exit(PAC_Error_InvalidCast);
-                }
-                if (type < node->decl_identifier.opt_specified_type)
-                {
-                    switch (node->decl_identifier.opt_specified_type)
-                    {
-                    case T_BYTE:
-                    case T_UBYTE:
-                        size = 1;
-                        break;
-                    case T_SHORT:
-                    case T_USHORT:
-                        size = 2;
-                        break;
-                    case T_INT:
-                    case T_UINT:
-                    case T_FLOAT:
-                    case T_DOUBLE:
-                        size = 8;
-                        break;
-                    case T_PTR:
-                        size = sizeof(void *);
-                        break;
-                    case T_LONG:
-                    case T_ULONG:
-                        size = 8;
-                        break;
-                    case T_ARRAY:
-                        // Already handled
-                        break;
-                    default:
-                        PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
-                        symtab_free(symtab);
-                        section_free(sectab);
-                        free_ast(ctx->parser->root);
-                        exit(PAC_Error_TypeResolutionFailed);
-                    }
-                }
-            }
+					char* str = NULL;
+					size_t len = 0;
 
-            symtab_add(symtab, node->decl_identifier.name, SYM_IDENTIFIER, cvaddr, value, current_section, (uint64_t)size, type, false);
+					TokenType littype = node->decl_identifier.array_values[i]->literal.type;
+
+					switch (littype) {
+						case LIT_INT:
+						case LIT_BIN:
+						case LIT_HEX:
+        				case LIT_CHAR:
+							num = (uint64_t)node->decl_identifier.array_values[i]->literal.int_val;
+							elem_size = token_type_size(node->decl_identifier.opt_specified_type);
+							if (val_size + elem_size >= val_max_size) {
+								val_max_size *= 2;
+								tmp = realloc(value, val_max_size);
+								if (!tmp) {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_MemoryAllocationFailed);
+								} else {
+									value = tmp;
+								}
+							}
+
+							memcpy(value + val_size, &num, elem_size);
+							val_size += elem_size;
+							size += elem_size;
+							break;
+						case LIT_STRING:
+							str = node->decl_identifier.array_values[i]->literal.str_val;
+							len = strlen(str);
+
+							if (val_size + len >= val_max_size) {
+								while (val_size + len >= val_max_size)
+									val_max_size *= 2;
+
+								tmp = realloc(value, val_max_size);
+								if (!tmp) {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_MemoryAllocationFailed);
+								} else {
+									value = tmp;
+								}
+							}
+
+							memcpy(value + val_size, str, len);
+
+							val_size += len;
+							size += len;
+							break;
+						default:
+							PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+							symtab_free(symtab);
+							section_free(sectab);
+							free_ast(ctx->parser->root);
+							exit(PAC_Error_TypeResolutionFailed);
+					}
+                }
+            } else {
+				ASTNode* val = node->children[0];
+
+				size = token_type_size(node->decl_identifier.opt_specified_type);
+				switch (node->decl_identifier.type) {
+					case LIT_INT:
+					case LIT_BIN:
+					case LIT_HEX:
+					case LIT_CHAR: {
+						uint64_t num = (uint64_t)val->literal.int_val;
+						memcpy(value, &num, size);
+						break;
+					}
+
+					case LIT_FLOAT: {
+						double f = val->literal.float_val;
+						memcpy(value, &f, size);
+						break;
+					}
+
+					case LIT_STRING: {
+						char* str = val->literal.str_val;
+						size = strlen(str);
+
+						if (size >= val_max_size) {
+							char* tmp = realloc(value, size + 1);
+
+							if (!tmp) {
+								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+								symtab_free(symtab);
+								section_free(sectab);
+								free_ast(ctx->parser->root);
+								exit(PAC_Error_MemoryAllocationFailed);
+							}
+							value = tmp;
+						}
+
+						memcpy(value, str, size);
+						break;
+					}
+
+					default:
+						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+						symtab_free(symtab);
+						section_free(sectab);
+						free_ast(ctx->parser->root);
+						exit(PAC_Error_TypeResolutionFailed);
+				}
+			}
+
+            symtab_add(symtab, node->decl_identifier.name, SYM_IDENTIFIER, cvaddr, value, size, current_section, (uint64_t)size, type, false);
 
             free(value);
             cvaddr += size;
@@ -663,7 +594,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                 size *= node->reserve.array_size;
             }
 
-            symtab_add(symtab, node->reserve.name, SYM_IDENTIFIER, cvaddr, "\0", current_section, (uint64_t)size, node->reserve.type, false);
+            symtab_add(symtab, node->reserve.name, SYM_IDENTIFIER, cvaddr, "\0", 1, current_section, (uint64_t)size, node->reserve.type, false);
             cvaddr += size;
             sectab->sections[current_section].size += size;
 
@@ -817,33 +748,53 @@ IRList assemble(Assembler *ctx)
                     Symbol* sym;
                     char *label = NULL;
 
-                    if (op->type == OPERAND_LABEL)
+					bool done = false;
+
+                    if (op->type == OPERAND_LABEL) {
                         label = op->label;
-                    if (op->type == OPERAND_IDENTIFIER)
-                    {
-                        if (op->identifier->type != AST_IDENTIFIER)
-                        {
-                            PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
-                            symtab_free(symtab);
-                            section_free(sectab);
-                            free_ast(ctx->parser->root);
-                            exit(PAC_Error_InvalidIdentifier);
-                        }
-                        label = op->identifier->identifier.name;
+						done = true;
+					} else if (op->type == OPERAND_IDENTIFIER) {
+						if (op->identifier->type == AST_LITERAL) {
+							char buf[128];
+							switch (op->identifier->literal.type) {
+								case LIT_INT:
+									done = false;
+									snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+									ir.operands[j] = strdup(buf);
+									break;
+								default:
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_InvalidIdentifier);
+							}
+						} else if (op->identifier->type != AST_IDENTIFIER) {
+							PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
+							symtab_free(symtab);
+							section_free(sectab);
+							free_ast(ctx->parser->root);
+							exit(PAC_Error_InvalidIdentifier);
+						} else {
+							label = op->identifier->identifier.name;
+							done = true;
+						}
                     }
 
-                    bool got_sym = symtab_get(symtab, label, &sym);
-                    if (got_sym)
-                    {
-                        char buf[128];
-                        snprintf(buf, sizeof(buf), "0x%llX", (long long)sym->addr);
-                        ir.operands[j] = strdup(buf);
-                    }
-                    else
-                    {
-                        ir.operands[j] = strdup("UNRESOLVED");
-                    }
-                }
+					if (done) {
+						bool got_sym = symtab_get(symtab, label, &sym);
+						if (got_sym)
+						{
+							char buf[128];
+							snprintf(buf, sizeof(buf), "0x%llX", (long long)sym->addr);
+							ir.operands[j] = strdup(buf);
+						}
+						else
+						{
+							ir.operands[j] = strdup("UNRESOLVED");
+						}
+					}
+				}
                 else if (op->type == OPERAND_REGISTER)
                 {
                     ir.operands[j] = strdup(op->reg);
@@ -1053,14 +1004,24 @@ void print_symtab(SymbolTable *symtab, SectionTable *sectab)
             continue;
         }
         printf(COLOR_GREEN "[%s] " COLOR_RESET "%s " COLOR_GREEN "at 0x%llX " COLOR_YELLOW "=> " COLOR_RESET, symtype_to_str(sym.type), sym.name, (unsigned long long)sym.addr);
-		char* val = strcmp(sym.value, "") != 0 ? sym.value : "null";
-		for (char* p = val; *p; p++) {
-			if (isprint(*p))
-				printf("%c", *p);
-			else
-				printf("\\x%d", *p);
+		char* val = sym.value ? sym.value : "(null)";
+		for (char* p = val; (size_t)(p - val) < sym.val_size; p++) {
+			if (isprint(*p)) {
+				switch (*p) {
+					case '\\': {
+						printf("\\\\");
+						break;
+					}
+					default: {
+						printf("%c", *p);
+						break;
+					}
+				}
+			} else {
+				printf("\\x%02X", (unsigned char)*p);
+			}
 		}
-		printf(" " COLOR_GREEN "in section: %s\n" COLOR_RESET, sectab->sections[sym.section_index].name);
+		printf(" " COLOR_GREEN "in section: %s of size " COLOR_RESET "0x%lX \n", sectab->sections[sym.section_index].name, sym.size);
     }
 
     printf(COLOR_YELLOW "=== End Symbol ===\n" COLOR_RESET);

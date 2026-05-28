@@ -20,6 +20,7 @@ typedef struct {
     uint64_t addr; // address
     uint64_t addr2; // secondry read-only addr
     char* value; // constant value
+	size_t val_size;
     size_t section_index; // section the symbol belongs to
     uint64_t size; // size
     TokenType type_of_data;

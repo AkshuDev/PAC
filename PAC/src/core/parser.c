@@ -8,6 +8,7 @@
 #include <pac-lexer.h>
 #include <pac-parser.h>
 #include <pac-err.h>
+#include <pac-extra.h>
 
 static char* macros_str[256];
 static char* macros_val[256];
@@ -460,8 +461,8 @@ static ASTNode* parse_identifier(Parser* p) {
     if (parser_check(p, OP_NOT)) {
         parser_advance(p);
         if (p->current.type >= T_BYTE && p->current.type <= T_PTR) {
+			opt_specified_type = p->current.type;
             parser_advance(p);
-            opt_specified_type = p->current.type;
         }
         if (p->current.type == LBRACKET) {
             // Array
@@ -514,7 +515,7 @@ static ASTNode* parse_identifier(Parser* p) {
             if (!is_array) {
                 continue_loop = false;
             } else if (is_array && i == 0){
-                opt_specified_type = p->current.type;
+                node->decl_identifier.type = p->current.type;
             }
             if (p->current.type == IDENTIFIER_TOK) {
                 child = parse_identifier(p);
@@ -550,11 +551,30 @@ static ASTNode* parse_identifier(Parser* p) {
     int ret;
     char* value = find_macro(name, &ret);
     if (ret == 0) {
+		size_t len = strlen(value);
+		char* str = value;
+		bool hex = false;
+		bool octal = false;
+		if (str[0] != '\0') {
+			if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+				str = value + 2;
+				hex = true;
+			} else if (str[0] == '\\' && str[1] == '0') {
+				str = value + 2;
+				octal = true;
+			}
+		}
         ASTNode* node = create_node(AST_LITERAL, p);
-        node->literal.type = LIT_STRING; // Only string for now
-        node->literal.str_val = (char*)malloc(strlen(value) + 1);
-        node->literal.str_val[strlen(value)] = '\0';
-        pac_strdup(value, node->literal.str_val);
+        
+		if (is_sdigit(str)) {
+			node->literal.type = LIT_INT;
+			node->literal.int_val = strtol(str, NULL, hex ? 16 : octal ? 8 : 10);
+		} else {
+			node->literal.type = LIT_STRING;
+			node->literal.str_val = (char*)malloc(len + 1);
+			node->literal.str_val[len] = '\0';
+			pac_strdup(value, node->literal.str_val);
+		}
         free(name);
         return node;
     } else if (ret == -2) { // value found but NULL
@@ -1103,12 +1123,21 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
             snprintf(out, maxsize, "[Identifier] %s", node->identifier.name);
             return;
         case AST_DECLIDENTIFIER:
-            if (node->child_count < 1) {
-                strcpy(out, "Invalid DeclIdentifier!");
-                return;
-            }
-            ast_to_str(node->children[0], operand, sizeof(operand));
-            snprintf(out, maxsize, "[DeclIdentifier] %s => %s", node->decl_identifier.name, operand);
+			if (!node->decl_identifier.is_array) {
+				if (node->child_count < 1) {
+					strcpy(out, "Invalid DeclIdentifier!");
+					return;
+				}
+				ast_to_str(node->children[0], operand, sizeof(operand));
+				snprintf(out, maxsize, "[DeclIdentifier] %s => %s", node->decl_identifier.name, operand);
+			} else {
+				if (node->decl_identifier.array_size < 1 && node->decl_identifier.array_size != -1) {
+					strcpy(out, "Invalid DeclIdentifier Array!");
+					return;
+				}
+				strcpy(out, "Sadly DeclIdentifier Array is not yet supported.");
+				return;
+			}
             return;
         case AST_RESERVE:
             snprintf(out, maxsize, "[Reserve] [%s] %s", token_type_to_str(node->reserve.type), node->reserve.name);

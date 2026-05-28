@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string.h>
+#include <ctype.h>
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_BOLD    "\033[1m"
@@ -201,4 +202,16 @@ static inline void* recalloc(void* ptr, size_t old_count, size_t new_count, size
 
 static inline size_t max(size_t a, size_t b) {
     return (a > b) ? a : b;
+}
+
+static inline bool is_sdigit(const char *str) {
+    if (*str == '\0') return false;
+
+    while (*str) {
+        if (!isdigit((unsigned char)*str)) {
+            return false;
+        }
+        str++;
+    }
+    return true;
 }

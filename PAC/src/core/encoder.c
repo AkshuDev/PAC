@@ -30,6 +30,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     // Sort Symbols
 	size_t local_symbols = ctx->symbols->count;
 	size_t global_symbols = 0;
+	(void)global_symbols;
 
 	if (ctx->symbols->count > 0) {
 		Symbol* st_local = (Symbol*)malloc(16 * sizeof(Symbol));
@@ -390,23 +391,14 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             Symbol* sym = &ctx->symbols->symbols[j];
             if (sym->section_index != i) continue;
             if (sym->type != SYM_IDENTIFIER) continue; // Only for identifier/allocated stuff
-            
-            size_t off = sym->addr - sec.base;
 
-            fseek(out, sh->sh_offset + off, SEEK_SET);
+            fseek(out, sh->sh_offset + sym->addr, SEEK_SET);
 
-            long long intval = 0;
-            double floatval = 0;
-
-            if (sym->type_of_data >= T_BYTE && sym->type_of_data <= T_ULONG) {
-                intval = atoll(sym->value);
-                fwrite(&intval, sym->size, 1, out);
-            } else if (sym->type_of_data >= T_FLOAT && sym->type_of_data <= T_DOUBLE) {
-                floatval = atof(sym->value);
-                fwrite(&floatval, sym->size, 1, out);
-            } else if (sym->type_of_data == T_ARRAY) {
-                fwrite(sym->value, 1, sym->size, out);
-            }
+			size_t vsize = sym->val_size > sym->size ? sym->size : sym->val_size;
+            fwrite(sym->value, vsize, 1, out);
+			for (size_t padi=0; padi < vsize - sym->size; padi++) {
+				fwrite("\0", 1, 1, out);
+			}
             written += sym->size;
         }
 
@@ -591,18 +583,11 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
 
             fseek(out, offset + off, SEEK_SET);
 
-            long long intval = 0;
-            double floatval = 0;
-
-            if (sym->type_of_data >= T_BYTE && sym->type_of_data <= T_ULONG) {
-                intval = atoll(sym->value);
-                fwrite(&intval, sym->size, 1, out);
-            } else if (sym->type_of_data >= T_FLOAT && sym->type_of_data <= T_DOUBLE) {
-                floatval = atof(sym->value);
-                fwrite(&floatval, sym->size, 1, out);
-            } else if (sym->type_of_data == T_ARRAY) {
-                fwrite(sym->value, 1, sym->size, out);
-            }
+			size_t vsize = sym->val_size > sym->size ? sym->size : sym->val_size;
+            fwrite(sym->value, vsize, 1, out);
+			for (size_t padi=0; padi < vsize - sym->size; padi++) {
+				fwrite("\0", 1, 1, out);
+			}
             written += sym->size;
         }
 
