@@ -17,13 +17,13 @@
 	nl_char!ubyte = 0xa
 
 :section .data
-    snake_x!uint = 5
-    snake_y!uint = 5
+    snake_x!ulong = 5
+    snake_y!ulong = 5
 
-    food_x!uint = 0
-    food_y!uint = 0
+    food_x!ulong = 0
+    food_y!ulong = 0
 
-    direction!uint = 0
+    direction!ulong = 255
 
 	sleep_time!ulong[2] = 0, 100000000
 
@@ -115,6 +115,40 @@ restore:
     ret
 .endfunc
 
+.func update_snake
+    mov %al, [direction]
+
+    cmp %al, 255
+    je $update_snake.done
+
+    cmp %al, 0
+    jne $update_snake.down
+
+    dec [snake_y]
+    ret
+
+down:
+    cmp %al, 1
+    jne $update_snake.left
+
+    inc [snake_y]
+    ret
+
+left:
+    cmp %al, 2
+    jne $update_snake.right
+
+    dec [snake_x]
+    ret
+
+right:
+    inc [snake_x]
+    ret
+
+done:
+    ret
+.endfunc
+
 .func read_input
 	mov %rax, [snake_x]
 	mov %rbx, [snake_y]
@@ -189,34 +223,6 @@ check_d:
     mov [direction], 3
 
 done:
-    ret
-.endfunc
-
-.func update_snake
-    mov %al, [direction]
-
-    cmp %al, 0
-    jne $update_snake.down
-
-    dec [snake_y]
-    ret
-
-down:
-    cmp %al, 1
-    jne $update_snake.left
-
-    inc [snake_y]
-    ret
-
-left:
-    cmp %al, 2
-    jne $update_snake.right
-
-    dec [snake_x]
-    ret
-
-right:
-    inc [snake_x]
     ret
 .endfunc
 
