@@ -507,7 +507,7 @@ int main(int argc, char** argv) {
         section_free(&sectab);
     }
 
-    if (!args.only_asm) pac_link(args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
+    if (!args.only_asm) pac_link(args.entry_label, args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
 
     if (args.input_count > 1) {
         for (int i = 0; i < args.input_count; i++) {
