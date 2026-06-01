@@ -110,6 +110,7 @@ typedef enum {
     ASM_SHL,
     ASM_SHR,
     ASM_SYSCALL,
+	ASM_INT,
     ASM_LEA,
     ASM_LOAD,
     ASM_STORE,

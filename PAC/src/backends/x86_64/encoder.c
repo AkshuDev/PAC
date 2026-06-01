@@ -101,96 +101,104 @@ static void flush_everything(FILE* out) {
     fflush(out);
 }
 
-static RegInfo encode_register(const char *reg) {
+static RegInfo encode_register(int bits, const char *reg) {
     RegInfo r = {0};
 
     r.valid = true;
     strncpy(r.name, reg, sizeof(r.name));
 
     // 64-bit (Need REX.W=1)
-    if (strcmp(reg, "rax") == 0) { r.code=0; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rcx") == 0) { r.code=1; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rdx") == 0) { r.code=2; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rbx") == 0) { r.code=3; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rsp") == 0) { r.code=4; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rbp") == 0) { r.code=5; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rsi") == 0) { r.code=6; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    if (strcmp(reg, "rdi") == 0) { r.code=7; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-    // Extended 64-bit (Need REX.W=1 and REX.B=1)
-    if (strcmp(reg, "r8") == 0)  { r.code=0; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9") == 0)  { r.code=1; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10") == 0)  { r.code=2; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11") == 0)  { r.code=3; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12") == 0)  { r.code=4; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13") == 0)  { r.code=5; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14") == 0)  { r.code=6; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15") == 0)  { r.code=7; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
-    // Special 64-bit
-    if (strcmp(reg, "rip") == 0) { r.code=5, r.rex_b=0; r.rex_w=0; r.size=64; r.rex_needed=0; return r; }
+	if (bits == 64) {
+		if (strcmp(reg, "rax") == 0) { r.code=0; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rcx") == 0) { r.code=1; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rdx") == 0) { r.code=2; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rbx") == 0) { r.code=3; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rsp") == 0) { r.code=4; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rbp") == 0) { r.code=5; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rsi") == 0) { r.code=6; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rdi") == 0) { r.code=7; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		// Extended 64-bit (Need REX.W=1 and REX.B=1)
+		if (strcmp(reg, "r8") == 0)  { r.code=0; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r9") == 0)  { r.code=1; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r10") == 0)  { r.code=2; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r11") == 0)  { r.code=3; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r12") == 0)  { r.code=4; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r13") == 0)  { r.code=5; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r14") == 0)  { r.code=6; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r15") == 0)  { r.code=7; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
+		// Special 64-bit
+		if (strcmp(reg, "rip") == 0) { r.code=5, r.rex_b=0; r.rex_w=0; r.size=64; r.rex_needed=0; return r; }
+	}
 
     // 32-bit
-    if (strcmp(reg, "eax") == 0) { r.code=0; r.size=32; return r; }
-    if (strcmp(reg, "ecx") == 0) { r.code=1; r.size=32; return r; }
-    if (strcmp(reg, "edx") == 0) { r.code=2; r.size=32; return r; }
-    if (strcmp(reg, "ebx") == 0) { r.code=3; r.size=32; return r; }
-    if (strcmp(reg, "esp") == 0) { r.code=4; r.size=32; return r; }
-    if (strcmp(reg, "ebp") == 0) { r.code=5; r.size=32; return r; }
-    if (strcmp(reg, "esi") == 0) { r.code=6; r.size=32; return r; }
-    if (strcmp(reg, "edi") == 0) { r.code=7; r.size=32; return r; }
-    // Extended 32-bit (Need REX.B=1)
-    if (strcmp(reg, "r8d") == 0) { r.code=0; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9d") == 0) { r.code=1; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10d") == 0) { r.code=2; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11d") == 0) { r.code=3; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12d") == 0) { r.code=4; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13d") == 0) { r.code=5; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14d") == 0) { r.code=6; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15d") == 0) { r.code=7; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
-    
+	else if (bits >= 32 || bits == 16) {
+		if (strcmp(reg, "eax") == 0) { r.code=0; r.size=32; return r; }
+		if (strcmp(reg, "ecx") == 0) { r.code=1; r.size=32; return r; }
+		if (strcmp(reg, "edx") == 0) { r.code=2; r.size=32; return r; }
+		if (strcmp(reg, "ebx") == 0) { r.code=3; r.size=32; return r; }
+		if (strcmp(reg, "esp") == 0) { r.code=4; r.size=32; return r; }
+		if (strcmp(reg, "ebp") == 0) { r.code=5; r.size=32; return r; }
+		if (strcmp(reg, "esi") == 0) { r.code=6; r.size=32; return r; }
+		if (strcmp(reg, "edi") == 0) { r.code=7; r.size=32; return r; }
+		// Extended 32-bit (Need REX.B=1)
+		if (strcmp(reg, "r8d") == 0) { r.code=0; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r9d") == 0) { r.code=1; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r10d") == 0) { r.code=2; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r11d") == 0) { r.code=3; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r12d") == 0) { r.code=4; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r13d") == 0) { r.code=5; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r14d") == 0) { r.code=6; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r15d") == 0) { r.code=7; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
+	}
+
     // 16-bit (Need prefix=0x66)
-    if (strcmp(reg, "ax") == 0) { r.code=0; r.size=16; return r; }
-    if (strcmp(reg, "cx") == 0) { r.code=1; r.size=16; return r; }
-    if (strcmp(reg, "dx") == 0) { r.code=2; r.size=16; return r; }
-    if (strcmp(reg, "bx") == 0) { r.code=3; r.size=16; return r; }
-    if (strcmp(reg, "sp") == 0) { r.code=4; r.size=16; return r; }
-    if (strcmp(reg, "bp") == 0) { r.code=5; r.size=16; return r; }
-    if (strcmp(reg, "si") == 0) { r.code=6; r.size=16; return r; }
-    if (strcmp(reg, "di") == 0) { r.code=7; r.size=16; return r; }
-    // Extended 16-bit (Need prefix=0x66 and REX.B=1)
-    if (strcmp(reg, "r8w") == 0){ r.code=0; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9w") == 0){ r.code=1; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10w") == 0){ r.code=2; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11w") == 0){ r.code=3; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12w") == 0){ r.code=4; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13w") == 0){ r.code=5; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14w") == 0){ r.code=6; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15w") == 0){ r.code=7; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+	else if (bits >= 16) {
+		if (strcmp(reg, "ax") == 0) { r.code=0; r.size=16; return r; }
+		if (strcmp(reg, "cx") == 0) { r.code=1; r.size=16; return r; }
+		if (strcmp(reg, "dx") == 0) { r.code=2; r.size=16; return r; }
+		if (strcmp(reg, "bx") == 0) { r.code=3; r.size=16; return r; }
+		if (strcmp(reg, "sp") == 0) { r.code=4; r.size=16; return r; }
+		if (strcmp(reg, "bp") == 0) { r.code=5; r.size=16; return r; }
+		if (strcmp(reg, "si") == 0) { r.code=6; r.size=16; return r; }
+		if (strcmp(reg, "di") == 0) { r.code=7; r.size=16; return r; }
+		// Extended 16-bit (Need prefix=0x66 and REX.B=1)
+		if (strcmp(reg, "r8w") == 0){ r.code=0; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r9w") == 0){ r.code=1; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r10w") == 0){ r.code=2; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r11w") == 0){ r.code=3; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r12w") == 0){ r.code=4; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r13w") == 0){ r.code=5; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r14w") == 0){ r.code=6; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r15w") == 0){ r.code=7; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
+	}
 
     // 8-bit
-    if (strcmp(reg, "al") == 0) { r.code=0; r.size=8; return r; }
-    if (strcmp(reg, "cl") == 0) { r.code=1; r.size=8; return r; }
-    if (strcmp(reg, "dl") == 0) { r.code=2; r.size=8; return r; }
-    if (strcmp(reg, "bl") == 0) { r.code=3; r.size=8; return r; }
-    // High 8-bit, only w/o REX
-    if (strcmp(reg, "ah") == 0) { r.code=4; r.size=8; return r; }
-    if (strcmp(reg, "ch") == 0) { r.code=5; r.size=8; return r; }
-    if (strcmp(reg, "dh") == 0) { r.code=6; r.size=8; return r; }
-    if (strcmp(reg, "bh") == 0) { r.code=7; r.size=8; return r; }
+	else if (bits >= 8) {
+		if (strcmp(reg, "al") == 0) { r.code=0; r.size=8; return r; }
+		if (strcmp(reg, "cl") == 0) { r.code=1; r.size=8; return r; }
+		if (strcmp(reg, "dl") == 0) { r.code=2; r.size=8; return r; }
+		if (strcmp(reg, "bl") == 0) { r.code=3; r.size=8; return r; }
+		// High 8-bit, only w/o REX
+		if (strcmp(reg, "ah") == 0) { r.code=4; r.size=8; return r; }
+		if (strcmp(reg, "ch") == 0) { r.code=5; r.size=8; return r; }
+		if (strcmp(reg, "dh") == 0) { r.code=6; r.size=8; return r; }
+		if (strcmp(reg, "bh") == 0) { r.code=7; r.size=8; return r; }
 
-    // New 8-bit
-    if (strcmp(reg, "spl") == 0){ r.code=4; r.size=8; r.rex_needed=1; return r; }
-    if (strcmp(reg, "bpl") == 0){ r.code=5; r.size=8; r.rex_needed=1; return r; }
-    if (strcmp(reg, "sil") == 0){ r.code=6; r.size=8; r.rex_needed=1; return r; }
-    if (strcmp(reg, "dil") == 0){ r.code=7; r.size=8; r.rex_needed=1; return r; }
-    // Extended 8-bit (Need REX.B=1)
-    if (strcmp(reg, "r8b") == 0){ r.code=0; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r9b") == 0){ r.code=1; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r10b") == 0){ r.code=2; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r11b") == 0){ r.code=3; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r12b") == 0){ r.code=4; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r13b") == 0){ r.code=5; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r14b") == 0){ r.code=6; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
-    if (strcmp(reg, "r15b") == 0){ r.code=7; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		// New 8-bit
+		if (strcmp(reg, "spl") == 0){ r.code=4; r.size=8; r.rex_needed=1; return r; }
+		if (strcmp(reg, "bpl") == 0){ r.code=5; r.size=8; r.rex_needed=1; return r; }
+		if (strcmp(reg, "sil") == 0){ r.code=6; r.size=8; r.rex_needed=1; return r; }
+		if (strcmp(reg, "dil") == 0){ r.code=7; r.size=8; r.rex_needed=1; return r; }
+		// Extended 8-bit (Need REX.B=1)
+		if (strcmp(reg, "r8b") == 0){ r.code=0; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r9b") == 0){ r.code=1; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r10b") == 0){ r.code=2; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r11b") == 0){ r.code=3; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r12b") == 0){ r.code=4; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r13b") == 0){ r.code=5; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+		if (strcmp(reg, "r14b") == 0){ r.code=6; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+    	if (strcmp(reg, "r15b") == 0){ r.code=7; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
+	}
 
     fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
     r.code = 0xFF;
@@ -274,7 +282,7 @@ static uint8_t make_modrm(RegInfo reg, RegInfo rm, uint8_t mod) {
     return modrm;
 }
 
-static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, RegInfo reg, RegInfo rm) {
+static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* operand_mod, RegInfo reg, RegInfo rm) {
     int modrm = *operand_mod;
     bool _8bit = (reg.valid && reg.size == 8) || (rm.valid && rm.size == 8);
     switch (opcode) {
@@ -833,9 +841,19 @@ static uint64_t get_opcode(TokenType opcode, int* no_bytes, int* operand_mod, Re
             break;
 
         case ASM_SYSCALL: // Works
+			if (bits != 64) break;
             *operand_mod = OPERAND_ONLY_OPCODE;
             *no_bytes = 2;
             return 0x0F05;
+
+		case ASM_INT: // Works
+			switch (modrm) {
+				case OPERAND_IMM8_TO_REG: {
+					return 0xCD;
+				}
+				default: break;
+			}
+			break;
 
         case ASM_LEA: // Works
             switch (modrm) {
@@ -880,7 +898,7 @@ static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
     return sib;
 }
 
-static bool parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
+static bool parse_memory_operand(int bits, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
@@ -929,7 +947,7 @@ static bool parse_memory_operand(const char* op, bool* issrc, RegInfo* src, RegI
         if (term[0] == '\0') continue;
 
         if (isalpha(term[0])) {
-            RegInfo r = encode_register(term);
+            RegInfo r = encode_register(bits, term);
             if (base_r.valid) {
                 if (r.valid) {
                     *sib_index = r;
@@ -1072,8 +1090,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
             switch (optype) {
                 case OPERAND_REGISTER:
-                    if (issrc) { src = encode_register(operand); issrc = false; }
-                    else {dest = encode_register(operand); issrc = true; }
+                    if (issrc) { src = encode_register(bits, operand); issrc = false; }
+                    else {dest = encode_register(bits, operand); issrc = true; }
                     break;
                 case OPERAND_LIT_INT:
                     if (operand_mod == OPERAND_REG_TO_REG) {
@@ -1090,7 +1108,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					}
 					break;
                 case OPERAND_MEMORY:
-                    if (!parse_memory_operand(operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) return false;
+                    if (!parse_memory_operand(bits, operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) return false;
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
@@ -1305,7 +1323,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
         int no_bytes = 0;
 
-        uint64_t opcode_full = get_opcode(inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
+        uint64_t opcode_full = get_opcode(bits, inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
 
         if (no_bytes == 0) {
             fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\nInstruction: " COLOR_RESET, token_type_to_ogstr(inst.opcode));
@@ -1354,15 +1372,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					case ASM_JZ:
 					case ASM_CALL: break;
 					case ASM_NOT:
-						modrm = make_modrm((RegInfo){.code=2, .valid=true}, (RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
+						modrm = make_modrm((RegInfo){.code=2, .valid=true},(RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
                         emit_bytes(out, &modrm, 1);
                         break;
 					case ASM_INC:
-						modrm = make_modrm((RegInfo){.code=0, .valid=true}, (RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
+						modrm = make_modrm((RegInfo){.code=0, .valid=true},(RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
                         emit_bytes(out, &modrm, 1);
                         break;
 					case ASM_DEC:
-						modrm = make_modrm((RegInfo){.code=1, .valid=true}, (RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
+						modrm = make_modrm((RegInfo){.code=1, .valid=true},(RegInfo){.code=0b101, .valid=true}, MODRM_MOD_MEMORY);
                         emit_bytes(out, &modrm, 1);
                         break;
 					default: {
@@ -1373,7 +1391,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 }
                 size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
-                add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                add_reloc(text_sec, inst_written + text_off, symindex, bits == 64 ? R_X86_64_PC32 : R_X86_64_32, bits == 64 ? -4 : 0);
                 emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                 break;
             }
@@ -1460,11 +1478,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rbp_mode = false;
                 bool rsp_sib = false;
-                if (dest.valid && dest.code == 0b101 && !dest.rex_w) {
+                if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
                     return false;
                 }
-                if (src.valid && src.code == 0b101) {
+                if (bits == 64 && src.valid && src.code == 0b101) {
                     if (src.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -1545,11 +1563,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rbp_mode = false;
                 bool rsp_sib = false;
-                if (src.valid && src.code == 0b101 && !src.rex_w) {
+                if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
                     return false;
                 }
-                if (dest.valid && dest.code == 0b101) {
+                if (bits == 64 && dest.valid && dest.code == 0b101) {
                     if (dest.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -1664,11 +1682,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
                 bool rip_mode = false;
                 bool rsp_sib = false;
-                if (src.valid && src.code == 0b101 && !src.rex_w) {
+                if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
                     return false;
                 }
-                if (dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
+                if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
                 if (dest.valid && dest.code == 0b100) rsp_sib = true;
 
                 if (rip_mode) {
@@ -1689,10 +1707,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                     if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {
@@ -1708,11 +1726,11 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_MEM_DISP32_TO_REG: {
                 bool rip_mode = false;
                 bool rsp_sib = false;
-                if (dest.valid && dest.code == 0b101 && !dest.rex_w) {
+                if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_w) {
                     printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
                     return false;
                 }
-                if (src.valid && src.code == 0b101 && !src.rex_ex) rip_mode = true;
+                if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_ex) rip_mode = true;
                 if (src.valid && src.code == 0b100) rsp_sib = true;
 
                 if (rip_mode) {
@@ -1733,10 +1751,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                     if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {
@@ -1774,7 +1792,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rbp_mode = false;
                 bool rsp_sib = false;
-                if (dest.valid && dest.code == 0b101) {
+                if (bits == 64 && dest.valid && dest.code == 0b101) {
                     if (dest.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -1856,10 +1874,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
 
                     if (operand_mod == OPERAND_IMM_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_PC32, -4);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {

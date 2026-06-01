@@ -170,17 +170,14 @@ Includes another file. Example -
     @inc "myfile.pasm"
 ```
 
+#### Important Notice
+PAC has many reserved keywords which may be an exact match of the instruction your trying to run and so, in those cases prefixing 'i:' before it, will fix the isse.
+
+Examples (includes all instructions which need this prefix) -
+```pac-asm
+	// x86/x64
+	i:int 0x0
+```
+
 ### Linking, information
 When using PAC's inbuilt linker, unlike normal linkers, the format of sections defined by the user in their first passed file is followed!
-```
-```
-```
-```
-```
-```
-```
-```
-```
-```
-```
-```

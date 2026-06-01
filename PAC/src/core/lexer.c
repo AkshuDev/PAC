@@ -123,6 +123,7 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "shl") == 0) return ASM_SHL;
     if (strcmp(str, "shr") == 0) return ASM_SHR;
     if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
+	if (strcmp(str, "i:int") == 0) return ASM_INT;
     if (strcmp(str, "lea") == 0) return ASM_LEA;
     if (strcmp(str, "load") == 0) return ASM_LOAD;
     if (strcmp(str, "store") == 0) return ASM_STORE;

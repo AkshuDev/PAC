@@ -616,6 +616,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
     // Resolve symbols
     size_t total_symbols = 0;
+	(void)total_symbols;
     for (size_t i = 0; i < objfile_count; i++)
         total_symbols += objfiles[i].symbol_count;
 
@@ -958,10 +959,852 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     return true;
 }
 
+static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
+    if (input_files == NULL || input_file_count == 0) {
+        fprintf(stderr, COLOR_RED "Linker Error: No input files provided!\n" COLOR_RESET);
+        return false;
+    }
+
+    ObjectFile* objfiles = NULL;
+    size_t objfile_count = 0;
+    SectionOrder order = {0};
+
+    size_t machine;
+    
+    // Read all files
+    for (size_t i = 0; i < input_file_count; i++) {
+        size_t flen = 0;
+        char* fdata = linker_read_file(input_files[i], &flen);
+        if (fdata == NULL) {
+            perror(COLOR_RED "Linker Error: Unknown IO Error!\n");
+			printf(COLOR_RESET);
+            free_objfile(objfiles, objfile_count);
+            return false;
+        }
+
+        // Read and fill ObjectFile structure
+        Elf64_Ehdr* eh = (Elf64_Ehdr*)(fdata);
+
+        if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0) {
+            free_objfile(objfiles, objfile_count);
+            fprintf(stderr, COLOR_RED "Linker Error: %s file has the wrong ELF Magic! This is not a valid Elf file!\n" COLOR_RESET, input_files[i]);
+            return false;
+        }
+
+        if (i == 0) machine = eh->e_machine;
+        if (eh->e_shnum == 0) continue;
+
+        objfiles = realloc(objfiles, (objfile_count + 1) * sizeof(ObjectFile));
+        if (!objfiles) {
+            free_objfile(objfiles, objfile_count);
+            perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
+            return false;
+        }
+        objfile_count++;
+        ObjectFile* ofile = &objfiles[objfile_count - 1];
+        
+        memset(ofile, 0, sizeof(ObjectFile));
+		ofile->name = input_files[i];
+        ofile->data = fdata;
+		ofile->data_len = flen;
+
+        ofile->section_count = eh->e_shnum;
+        ofile->sections = calloc(ofile->section_count, sizeof(InSection));
+
+        Elf64_Shdr* shstrtab_sec = (Elf64_Shdr*)(fdata + eh->e_shoff + (eh->e_shstrndx * sizeof(Elf64_Shdr)));
+        char* shstrtab = fdata + shstrtab_sec->sh_offset;
+        
+        for (size_t j = 0; j < eh->e_shnum; j++) {
+            // Resolve Sections
+            Elf64_Shdr* sh = (Elf64_Shdr*)(fdata + eh->e_shoff + (j * sizeof(Elf64_Shdr)));
+			
+            char* name = (char*)(shstrtab + sh->sh_name);
+
+            InSection* sec = &ofile->sections[j];
+            sec->name = name;
+            sec->sh = *sh;
+
+            if (sh->sh_flags & SHF_ALLOC && i == 0) {
+                // load the order of the first file
+                order.names = realloc(order.names, sizeof(char*) * (order.count + 1));
+                order.names[order.count] = strdup(name);
+                order.count++;
+            } else if (sh->sh_flags & SHF_ALLOC) {
+                bool found = false;
+                for (size_t k = 0; k < order.count; k++) {
+                    if (strcmp(name, order.names[k]) == 0) { found = true; break; }
+                }
+                if (!found) {
+                    order.names = realloc(order.names, sizeof(char*) * (order.count + 1));
+                    order.names[order.count] = strdup(name);
+                    order.count++;
+                }
+            }
+
+            if (!(sh->sh_type & SHT_NOBITS) && sh->sh_size > 0) sec->data = (uint8_t*)(fdata + sh->sh_offset);
+            else sec->data = NULL;
+
+            // Load symbol table
+            if (sh->sh_type == SHT_SYMTAB) {
+                ofile->symbols = (Elf64_Sym*)(fdata + sh->sh_offset);
+                ofile->symbol_count = sh->sh_size / sh->sh_entsize;
+
+                Elf64_Shdr* strsec = (Elf64_Shdr*)(fdata + eh->e_shoff + sh->sh_link * eh->e_shentsize);
+                ofile->strtab = fdata + strsec->sh_offset;
+            }
+
+            if (sh->sh_type == SHT_RELA) {
+				InRelocation* irel = &ofile->relas[ofile->rela_count++];
+                irel->rela = (Elf64_Rela*)(fdata + sh->sh_offset);
+				irel->rela_count = sh->sh_size / sh->sh_entsize;
+				irel->sec = sh;
+				irel->isec = sec;
+            }
+        }
+    }
+
+    size_t total_sections = order.count + 4; // Sections + NULL, SHSTRTAB, SYMTAB, STRTAB
+
+    OutSection* outsecs = calloc(order.count, sizeof(OutSection));
+    size_t section_count = order.count;
+    size_t vaddr = base_vaddr + PAGE_SIZE;
+    size_t file_off = sizeof(Elf64_Ehdr) + (total_sections * sizeof(Elf64_Shdr));
+
+    // Precompute all addresses
+    for (size_t i = 0; i < order.count; i++) {
+        const char* name = order.names[i];
+        OutSection* osec = &outsecs[i];
+        osec->name = (char*)name;
+
+		bool alloc = true;
+
+        // Compute total size and merge
+		size_t off = 0;
+        for (size_t a = 0; a < objfile_count; a++) {
+            for (size_t b = 0; b < objfiles[a].section_count; b++) {
+                InSection* s = &objfiles[a].sections[b];
+                if (strcmp(s->name, name) == 0) {
+					osec->size += s->sh.sh_size;
+					if (s->sh.sh_type == SHT_NOBITS) alloc = false;
+
+					osec->max_align = max(osec->max_align, s->sh.sh_addralign);
+                    osec->padded_size = off;
+                    osec->sh_flags = s->sh.sh_flags;
+                    osec->sh_type = s->sh.sh_type;
+					osec->memalign = osec->max_align;
+
+                    s->loaded_off = align_up(file_off, osec->memalign) + off;
+                    s->loaded_vaddr = align_up(vaddr, osec->memalign) + off;
+                    
+                    off += s->sh.sh_size;
+				}
+            }
+        }
+
+        if (osec->size == 0) continue;
+
+        // allocate
+        if (alloc) osec->buffer = malloc(osec->size);
+		else osec->buffer = NULL;
+
+        // finalize output offsets
+		vaddr = align_up(vaddr, osec->memalign);
+		file_off = align_up(file_off, osec->memalign);
+		
+        osec->padded_size = align_up(osec->size, osec->max_align);
+        osec->out_offset = file_off;
+        osec->out_vaddr = vaddr;
+        file_off += osec->padded_size;
+
+        vaddr += off;
+    }
+
+	// Precompute PHdrs Count and Recompute Memory Alignment
+	size_t phdr_count = 1;
+	Elf32_Phdr* program_headers = calloc(order.count+1, sizeof(Elf32_Phdr)); // +1 For headers
+
+	if (!program_headers) {
+        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+        free(outsecs);
+        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+        free(order.names);
+
+        free_objfile(objfiles, objfile_count);
+
+        perror(COLOR_RED "Linker Error: Allocation Failed!\n" COLOR_RESET);
+        return false;
+	}
+	bool page_align_next = true;
+	for (size_t i = 0; i < order.count; i++) { // Broken PHdrs used only for the sole purpose of precomputation, its overwritten later with proper phdrs
+		OutSection* osec = &outsecs[i];
+		Elf32_Phdr ophdr_R = {0};
+		Elf32_Phdr* ophdr = &ophdr_R;
+
+		if (page_align_next) {
+			osec->memalign = align_up(osec->max_align, PAGE_SIZE);
+			page_align_next = false;
+		}
+
+		if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_EXECINSTR && osec->sh_type == SHT_PROGBITS) {
+			// Force Current Page Alignment
+			osec->memalign = align_up(osec->max_align, PAGE_SIZE);
+			
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_X | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+
+			page_align_next = true;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = 0;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = 0;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else {
+			continue;
+		}
+
+		bool merged = false;
+		for (size_t j = 1; j < phdr_count; j++) {
+			Elf32_Phdr* p = &program_headers[j];
+			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
+				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
+					// .bss merged
+					p->p_memsz += ophdr->p_memsz;
+					p->p_align = max(p->p_align, ophdr->p_align);
+					merged = true;
+				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
+					p->p_align = max(p->p_align, ophdr->p_align);
+					p->p_memsz += ophdr->p_memsz;
+					p->p_filesz += ophdr->p_filesz;
+					merged = true;
+				}
+			} 
+		}
+		if (!merged)
+			program_headers[phdr_count++] = ophdr_R;
+	}
+
+	// Pass-2 to fix Section Offsets and Virtual Addresses
+	file_off = sizeof(Elf32_Ehdr) + (total_sections * sizeof(Elf32_Shdr)) + (phdr_count * sizeof(Elf32_Phdr));
+	vaddr = base_vaddr + PAGE_SIZE;
+	for (size_t i = 0; i < order.count; i++) {
+        OutSection* osec = &outsecs[i];
+
+        size_t off = 0;
+        for (size_t a = 0; a < objfile_count; a++) {
+            for (size_t b = 0; b < objfiles[a].section_count; b++) {
+                InSection* s = &objfiles[a].sections[b];
+                if (strcmp(s->name, osec->name) == 0) {
+                    s->loaded_off = align_up(file_off, osec->memalign) + off;
+                    s->loaded_vaddr = align_up(vaddr, osec->memalign) + off;
+                    
+                    off += s->sh.sh_size;
+                }
+            }
+        }
+
+        // finalize output offsets
+		vaddr = align_up(vaddr, osec->memalign);
+		file_off = align_up(file_off, osec->memalign);
+
+        osec->out_offset = file_off;
+        osec->out_vaddr = vaddr;
+		
+        file_off += osec->padded_size;
+        vaddr += off;
+    }
+
+	// Resolve Relocations
+	for (size_t i = 0; i < objfile_count; i++) {
+		ObjectFile* ofile = &objfiles[i];
+		if (ofile->rela_count <= 0) continue;
+		for (size_t j = 0; j < ofile->rela_count; j++) {
+			InRelocation* irel = &ofile->relas[j];
+			for (size_t k = 0; k < irel->rela_count; k++) {
+				Elf64_Rela* reloc = &irel->rela[k];
+				
+				if (irel->sec->sh_info > ofile->section_count) {
+					printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' needs relocation written to an unknown section, skipping\n" COLOR_RESET, k, j, ofile->name);
+					continue;
+				} 
+
+				InSection* isec = &ofile->sections[irel->sec->sh_info];
+				if (reloc->r_offset > isec->sh.sh_size) {
+					printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside section, skipping\n" COLOR_RESET, k, j, ofile->name);
+					continue;
+				}
+
+				size_t rsym = ELF64_R_SYM(reloc->r_info);
+				size_t rtype = ELF64_R_TYPE(reloc->r_info);
+
+				if (rsym + 1 > ofile->symbol_count) {
+					printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' requires unknown symbol, skipping\n" COLOR_RESET, k, j, ofile->name);
+					continue;
+				}
+
+				Elf64_Sym* sym = &ofile->symbols[rsym];
+				if (ELF64_ST_TYPE(sym->st_info) != STT_OBJECT && ELF64_ST_TYPE(sym->st_info) != STT_FUNC) {
+					printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' uses symbol whose type is neither Func or Object, skipping\n" COLOR_RESET, k, j, ofile->name);
+					continue;
+				} else if (sym->st_shndx > ofile->section_count) {
+					printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' uses symbol which is placed in an unknown section, skipping\n" COLOR_RESET, k, j, ofile->name);
+					continue;
+				}
+
+				InSection* sec = &ofile->sections[sym->st_shndx];
+				int64_t addr = sym->st_value + sec->loaded_vaddr + reloc->r_addend;
+				size_t off = reloc->r_offset + isec->sh.sh_offset;
+				switch (rtype) {
+					case R_X86_64_8: {
+						if (off + sizeof(uint8_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7F) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						*(uint8_t*)(&ofile->data[off]) = (uint8_t)addr;
+						break;
+					}
+					case R_X86_64_16: {
+						if (off + sizeof(uint16_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint16_t));
+						break;
+					}
+					case R_X86_64_32: {
+						if (off + sizeof(uint32_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFFFFFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint32_t));
+						break;
+					}
+					case R_X86_64_64: {
+						if (off + sizeof(uint64_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFFFFFFFFFFFFFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint64_t));
+						break;
+					}
+					case R_X86_64_PC8: {
+						addr = addr - (isec->loaded_vaddr + reloc->r_offset);
+						if (off + sizeof(uint8_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7F) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						*(uint8_t*)(&ofile->data[off]) = (uint8_t)addr;
+						break;
+					}
+					case R_X86_64_PC16: {
+						addr = addr - (isec->loaded_vaddr + reloc->r_offset);
+						if (off + sizeof(uint16_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint16_t));
+						break;
+					}
+					case R_X86_64_PC32: {
+						addr = addr - (isec->loaded_vaddr + reloc->r_offset);
+						if (off + sizeof(uint32_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFFFFFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint32_t));
+						break;
+					}
+					case R_X86_64_PC64: {
+						addr = addr - (isec->loaded_vaddr + reloc->r_offset);
+						if (off + sizeof(uint64_t) > ofile->data_len) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						} else if (addr > 0x7FFFFFFFFFFFFFFF) {
+							printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+							continue;
+						}
+						memcpy(&ofile->data[off], &addr, sizeof(uint64_t));
+						break;
+					}
+					default: {
+						printf(COLOR_YELLOW "Warning: Relocation %lu within Reloc Section %lu file '%s' has invalid/unsupported type, skipping\n" COLOR_RESET, k, j, ofile->name);
+						continue;
+					}
+				}
+			}		
+		}
+	}
+
+	// Merge
+	for (size_t i = 0; i < order.count; i++) {
+        OutSection* osec = &outsecs[i];
+
+		if (osec->sh_type == SHT_NOBITS || !osec->buffer) continue;
+
+        size_t off = 0;
+        for (size_t a = 0; a < objfile_count; a++) {
+            for (size_t b = 0; b < objfiles[a].section_count; b++) {
+                InSection* s = &objfiles[a].sections[b];
+                if (strcmp(s->name, osec->name) == 0) {
+                    if (s->data) memcpy(osec->buffer + off, s->data, s->sh.sh_size);
+                    off += s->sh.sh_size;
+                }
+            }
+        }
+    }
+
+    size_t shstrtab_size = 1;
+    for (size_t i = 0; i < section_count; i++) {
+        shstrtab_size += strlen(outsecs[i].name) + 1;
+    }
+    shstrtab_size += 10 + 8 + 8; // .shstrtab, .symtab, .strtab
+    char* shstrtab = malloc(shstrtab_size);
+    if (!shstrtab) {
+        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+        free(outsecs);
+        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+        free(order.names);
+
+        free_objfile(objfiles, objfile_count);
+        perror(COLOR_RED "Linker Error: Allocation Failed!\n");
+		printf(COLOR_RESET);
+        return false;
+    }
+    shstrtab[0] = '\0';
+    size_t shstrtab_off = 1;
+
+    size_t strtab_size = 1; // first byte is null
+    for (size_t i = 0; i < objfile_count; i++) {
+        for (size_t j = 0; j < objfiles[i].symbol_count; j++) {
+            const char* name = objfiles[i].strtab + objfiles[i].symbols[j].st_name;
+            strtab_size += strlen(name) + 1;
+        }
+    }
+    char* strtab = malloc(strtab_size);
+    strtab[0] = '\0';
+    size_t strtab_off = 1;
+
+    for (size_t i = 0; i < section_count; i++) {
+        strcpy(&shstrtab[shstrtab_off], outsecs[i].name);
+        outsecs[i].sh_name_off = shstrtab_off;
+        shstrtab_off += strlen(outsecs[i].name) + 1;
+    }
+
+    OutSection shstr_section = {0};
+    shstr_section.name = ".shstrtab";
+    shstr_section.buffer = (uint8_t*)shstrtab;
+    shstr_section.size = shstrtab_size;
+    shstr_section.padded_size = shstrtab_size;
+    shstr_section.max_align = 1;
+    shstr_section.sh_name_off = shstrtab_off;
+    shstr_section.sh_type = SHT_STRTAB;
+    strcpy(&shstrtab[shstrtab_off], ".shstrtab");
+    shstrtab_off += 10;
+    size_t shstr_index = section_count+1; // index in section header table
+
+    file_off = align_up(file_off, shstr_section.max_align);
+    shstr_section.out_offset = file_off;
+    file_off += shstr_section.padded_size;
+
+    // Resolve symbols
+    size_t total_symbols = 0;
+	(void)total_symbols;
+    for (size_t i = 0; i < objfile_count; i++)
+        total_symbols += objfiles[i].symbol_count;
+
+    Elf32_Sym* outsyms = calloc(total_symbols, sizeof(Elf32_Sym));
+
+    size_t sym_index = 0;
+	uint64_t entry_vaddr = 0;
+	bool found_entry = false;
+	if (entry == NULL) {
+		entry = "_start";
+		printf(COLOR_YELLOW "Linker Warning: No Entry Label Specified, Defaulting to '_start'\n" COLOR_RESET);
+	}
+    for (size_t i = 0; i < objfile_count; i++) {
+        ObjectFile* ofile = &objfiles[i];
+        for (size_t j = 0; j < ofile->symbol_count; j++) {
+            Elf64_Sym* insym = &ofile->symbols[j];
+            Elf32_Sym* outsym = &outsyms[sym_index];
+
+            // copy basic fields
+            outsym->st_info = insym->st_info;
+            outsym->st_other = insym->st_other;
+            outsym->st_size = insym->st_size;
+
+            // remap section index
+            if (insym->st_shndx < SHN_LORESERVE) {
+                // find the output section that matches input section
+                InSection* sec = &ofile->sections[insym->st_shndx];
+                for (size_t k = 0; k < section_count; k++) {
+                    if (strcmp(sec->name, outsecs[k].name) == 0) {
+                        outsym->st_shndx = k + 1;
+                        break;
+                    }
+                }
+            } else {
+                outsym->st_shndx = insym->st_shndx; // e.g., SHN_UNDEF
+            }
+
+            // remap symbol value
+            if (outsym->st_shndx != SHN_UNDEF)
+                outsym->st_value = ofile->sections[insym->st_shndx].loaded_vaddr + insym->st_value;
+            else
+                outsym->st_value = 0;
+
+            // copy name to output strtab
+            const char* name = ofile->strtab + insym->st_name;
+            outsym->st_name = strtab_off;
+            strcpy(&strtab[strtab_off], name);
+            strtab_off += strlen(name) + 1;
+
+			if (insym->st_shndx < SHN_LORESERVE && strcmp(name, entry) == 0 && !found_entry) {
+				entry_vaddr = ofile->sections[insym->st_shndx].loaded_vaddr + insym->st_value;
+				found_entry = true;
+			}
+
+            sym_index++;
+        }
+    }
+
+	if (!found_entry) {
+		char* esname = NULL;
+		for (size_t i = 0; i < order.count; i++) {
+			OutSection* osec = &outsecs[i];
+			if (osec->sh_type == SHT_PROGBITS) {
+				entry_vaddr = osec->out_vaddr;
+				esname = osec->name;
+				break;
+			}
+		}
+		if (esname)
+			printf(COLOR_YELLOW "Warning: Could not find any entry that matches '%s', using base virtual address of '%s' section\n" COLOR_RESET, entry, esname);
+		else
+			printf(COLOR_YELLOW "Warning: Could not find any entry that matches '%s' or any PROGBITS section, using base virtual address of executable\n" COLOR_RESET, entry);
+	}
+
+    OutSection sym_section = {0};
+    sym_section.name = ".symtab";
+    sym_section.buffer = (uint8_t*)outsyms;
+    sym_section.size = total_symbols * sizeof(Elf32_Sym);
+    sym_section.padded_size = sym_section.size;
+    sym_section.max_align = 8; // ELF32 alignment for symbols
+    sym_section.sh_name_off = shstrtab_off;
+    sym_section.sh_type = SHT_SYMTAB;
+    sym_section.capacity = total_symbols; // used as total count
+    strcpy(&shstrtab[shstrtab_off], ".symtab");
+    shstrtab_off += 8;
+    file_off = align_up(file_off, sym_section.max_align);
+    sym_section.out_offset = file_off;
+    file_off += sym_section.padded_size;
+    size_t symtab_idx = shstr_index + 1;
+
+    OutSection str_section = {0};
+    str_section.name = ".strtab";
+    str_section.buffer = (uint8_t*)strtab;
+    str_section.size = strtab_size;
+    str_section.padded_size = strtab_size;
+    str_section.max_align = 1;
+    str_section.sh_name_off = shstrtab_off;
+    str_section.sh_type = SHT_STRTAB;
+    strcpy(&shstrtab[shstrtab_off], ".strtab");
+    shstrtab_off += 8;
+    file_off = align_up(file_off, str_section.max_align);
+    str_section.out_offset = file_off;
+    file_off += str_section.padded_size;
+    size_t strtab_idx = symtab_idx + 1;
+
+	// Program Headers
+	phdr_count = 0;
+	
+	Elf32_Phdr* hdr_phdr = &program_headers[phdr_count++];
+	hdr_phdr->p_type = PT_LOAD;
+	hdr_phdr->p_offset = 0x0;
+	hdr_phdr->p_vaddr = 0x400000;
+	hdr_phdr->p_paddr = 0;
+	hdr_phdr->p_flags = PF_R;
+	hdr_phdr->p_align = PAGE_SIZE;
+
+	size_t total_size = 0;
+	for (size_t i = 0; i < order.count; i++) {
+		OutSection* osec = &outsecs[i];
+		total_size += osec->padded_size;
+		Elf32_Phdr ophdr_R = {0};
+		Elf32_Phdr* ophdr = &ophdr_R;
+
+		if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_EXECINSTR && osec->sh_type == SHT_PROGBITS) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_X | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = 0;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = 0;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else {
+			continue;
+		}
+
+		bool merged = false;
+		for (size_t j = 1; j < phdr_count; j++) {
+			Elf32_Phdr* p = &program_headers[j];
+			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
+				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
+					// .bss merged
+					p->p_memsz += ophdr->p_memsz;
+					p->p_align = max(p->p_align, ophdr->p_align);
+					merged = true;
+				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
+					p->p_align = max(p->p_align, ophdr->p_align);
+					p->p_memsz += ophdr->p_memsz;
+					p->p_filesz += ophdr->p_filesz;
+					merged = true;
+				}
+			} 
+		}
+		if (!merged)
+			program_headers[phdr_count++] = ophdr_R;
+	}
+
+	// EHdr
+    Elf32_Ehdr eh = {0};
+    memcpy(eh.e_ident, ELFMAG, SELFMAG);
+    eh.e_ident[EI_CLASS] = ELFCLASS32;
+    eh.e_ident[EI_DATA] = ELFDATA2LSB;
+    eh.e_ident[EI_VERSION] = EV_CURRENT;
+    eh.e_type = ET_EXEC;
+    eh.e_machine = (Elf32_Half)machine;
+    eh.e_version = EV_CURRENT;
+    eh.e_entry = entry_vaddr; // entry point
+    eh.e_ehsize = sizeof(Elf32_Ehdr);
+    eh.e_shentsize = sizeof(Elf32_Shdr);
+    eh.e_shnum = total_sections;
+    eh.e_shoff = sizeof(Elf32_Ehdr) + (sizeof(Elf32_Phdr) * phdr_count);
+    eh.e_shstrndx = shstr_index;
+	eh.e_phentsize = sizeof(Elf32_Phdr);
+	eh.e_phnum = phdr_count;
+	eh.e_phoff = sizeof(Elf32_Ehdr);
+
+	hdr_phdr->p_filesz = sizeof(Elf32_Ehdr) + (sizeof(Elf32_Phdr) * phdr_count);
+	hdr_phdr->p_memsz = align_up(sizeof(Elf32_Ehdr) + (sizeof(Elf32_Phdr) * phdr_count), 0x10);
+    
+    FILE* f = fopen(outfile, "wb");
+    if (!f) {
+        free(shstrtab);
+        free(outsyms);
+		free(program_headers);
+        free(strtab);
+
+        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+        free(outsecs);
+        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+        free(order.names);
+
+        free_objfile(objfiles, objfile_count);
+
+        perror(COLOR_RED "Linker Error: Failed to open output file!\n" COLOR_RESET);
+        return false;
+    }
+
+    fwrite(&eh, sizeof(eh), 1, f);
+
+	fwrite(program_headers, sizeof(Elf32_Phdr), phdr_count, f);
+	free(program_headers);
+
+    Elf32_Shdr* shdrs = calloc(total_sections, sizeof(Elf32_Shdr));
+    if (!shdrs) {
+        fclose(f);
+        free(shstrtab);
+        free(outsyms);
+        free(strtab);
+
+        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+        free(outsecs);
+        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+        free(order.names);
+
+        free_objfile(objfiles, objfile_count);
+
+        perror(COLOR_RED "Linker Error: Allocation Failed!\n" COLOR_RESET);
+        return false;
+    }
+	fwrite(shdrs, sizeof(Elf32_Shdr), total_sections, f);
+
+    for (size_t i = 0; i < section_count; i++) {
+        fseek(f, outsecs[i].out_offset, SEEK_SET);
+        if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
+        if (outsecs[i].padded_size > outsecs[i].size) {
+            for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
+                fwrite("\0", 1, 1, f);
+            }
+        }
+    }
+
+    fseek(f, shstr_section.out_offset, SEEK_SET);
+    fwrite(shstr_section.buffer, 1, shstr_section.size, f);
+    if (shstr_section.padded_size > shstr_section.size) {
+        for (size_t i = 0; i < (shstr_section.padded_size - shstr_section.size); i++) {
+            fwrite("\0", 1, 1, f);
+        }
+    }
+
+    fseek(f, sym_section.out_offset, SEEK_SET);
+    fwrite(sym_section.buffer, 1, sym_section.size, f);
+    if (sym_section.padded_size > sym_section.size) {
+        for (size_t i = 0; i < (sym_section.padded_size - sym_section.size); i++) {
+            fwrite("\0", 1, 1, f);
+        }
+    }
+
+    fseek(f, str_section.out_offset, SEEK_SET);
+    fwrite(str_section.buffer, 1, str_section.size, f);
+    if (str_section.padded_size > str_section.size) {
+        for (size_t i = 0; i < (str_section.padded_size - str_section.size); i++) {
+            fwrite("\0", 1, 1, f);
+        }
+    }
+
+    for (size_t i = 1; i < section_count+1; i++) {
+        shdrs[i].sh_name = outsecs[i-1].sh_name_off;
+        shdrs[i].sh_type = outsecs[i-1].sh_type;
+        shdrs[i].sh_flags = outsecs[i-1].sh_flags;
+        shdrs[i].sh_offset = outsecs[i-1].out_offset;
+        shdrs[i].sh_addr = outsecs[i-1].out_vaddr;
+        shdrs[i].sh_size = outsecs[i-1].padded_size;
+        shdrs[i].sh_addralign = outsecs[i-1].max_align;
+    }
+	
+    // .shstrtab header
+    shdrs[shstr_index].sh_name = shstr_section.sh_name_off;
+    shdrs[shstr_index].sh_type = shstr_section.sh_type;
+    shdrs[shstr_index].sh_flags = shstr_section.sh_flags;
+    shdrs[shstr_index].sh_offset = shstr_section.out_offset;
+    shdrs[shstr_index].sh_addr = shstr_section.out_vaddr;
+    shdrs[shstr_index].sh_size = shstr_section.padded_size;
+    shdrs[shstr_index].sh_addralign = shstr_section.max_align;
+
+    // .symtab header
+    shdrs[symtab_idx].sh_name = sym_section.sh_name_off;
+    shdrs[symtab_idx].sh_type = sym_section.sh_type;
+    shdrs[symtab_idx].sh_flags = sym_section.sh_flags;
+    shdrs[symtab_idx].sh_offset = sym_section.out_offset;
+    shdrs[symtab_idx].sh_addr = sym_section.out_vaddr;
+    shdrs[symtab_idx].sh_size = sym_section.padded_size;
+    shdrs[symtab_idx].sh_addralign = sym_section.max_align;
+    shdrs[symtab_idx].sh_link = strtab_idx;
+    shdrs[symtab_idx].sh_info = sym_section.capacity;
+    shdrs[symtab_idx].sh_entsize = sizeof(Elf32_Sym);
+
+    // .strtab header
+    shdrs[strtab_idx].sh_name = str_section.sh_name_off;
+    shdrs[strtab_idx].sh_type = str_section.sh_type;
+    shdrs[strtab_idx].sh_flags = str_section.sh_flags;
+    shdrs[strtab_idx].sh_offset = str_section.out_offset;
+    shdrs[strtab_idx].sh_addr = str_section.out_vaddr;
+    shdrs[strtab_idx].sh_size = str_section.padded_size;
+    shdrs[strtab_idx].sh_addralign = str_section.max_align;
+
+    fseek(f, eh.e_shoff, SEEK_SET);
+    fwrite(shdrs, sizeof(Elf32_Shdr), total_sections, f);
+
+    fclose(f);
+
+    free(shdrs);
+    free(shstrtab);
+    free(outsyms);
+    free(strtab);
+
+    for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+    free(outsecs);
+    for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+    free(order.names);
+
+    free_objfile(objfiles, objfile_count);
+
+    return true;
+}
+
 bool pac_link(char* entry, char* outfile, char** input_files, size_t input_file_count, LinkerFormat outformat, size_t base_vaddr) {
     switch (outformat) {
         case ELF64:
             return pac_link_elf64(entry, outfile, input_files, input_file_count, base_vaddr);
+		case ELF32:
+            return pac_link_elf32(entry, outfile, input_files, input_file_count, base_vaddr);
         default:
             printf(COLOR_RED "Error: Unknown/Unsupported Link Format: %s\n", linker_format_to_str(outformat));
             return false;

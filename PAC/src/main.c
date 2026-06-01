@@ -53,6 +53,7 @@ void print_usage(const char* prog) {
     printf("\t--savetemp                Pause after core stages such as Assembling and save contents into a file in current dir named asave.<extension>\n");
     printf("\t--only-asm                Stop after encoding and do not link\n");
 	printf("\t--only-link               Do not do any sort of assembly, direcly link input files\n");
+	printf("\t            - Important Note, the inbuilt linker only supports Linking ELF64 Object files to supported formats such as ELF32\n");
     printf("\t-a, --arch <architecture> Target architecture (default: x86_64)\n");
     printf("\t-b, --bits <16|32|64>     Target bits (default: 64)\n");
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
@@ -201,6 +202,7 @@ bool parse_args(int argc, char** argv, Args* args) {
                 break;
             case '?': // unknown option
             default:
+				free(args->inc_dirs);
                 print_usage(argv[0]);
                 return false;
         }
