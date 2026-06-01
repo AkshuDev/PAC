@@ -10,6 +10,8 @@
 #include <pac-asm.h>
 #include <pac-extra.h>
 
+#define PAGE_SIZE 0x1000
+
 typedef struct {
     char* name;
     Elf64_Shdr sh;
@@ -26,6 +28,7 @@ typedef struct {
     size_t out_offset; // final offset in output ELF
     size_t out_vaddr; // final virtual addr
     size_t max_align;
+	size_t memalign; // vaddr Memory Alignment
     size_t padded_size;
     char* name;
     size_t sh_name_off;
@@ -220,10 +223,12 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         }
     }
 
+    size_t total_sections = order.count + 4; // Sections + NULL, SHSTRTAB, SYMTAB, STRTAB
+
     OutSection* outsecs = calloc(order.count, sizeof(OutSection));
     size_t section_count = order.count;
-    size_t vaddr = base_vaddr;
-    size_t file_off = sizeof(Elf64_Ehdr) + (order.count * sizeof(Elf64_Shdr));
+    size_t vaddr = base_vaddr + PAGE_SIZE;
+    size_t file_off = sizeof(Elf64_Ehdr) + (total_sections * sizeof(Elf64_Shdr));
 
     // Precompute all addresses
     for (size_t i = 0; i < order.count; i++) {
@@ -233,13 +238,25 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
 		bool alloc = true;
 
-        // Compute total size
+        // Compute total size and merge
+		size_t off = 0;
         for (size_t a = 0; a < objfile_count; a++) {
             for (size_t b = 0; b < objfiles[a].section_count; b++) {
                 InSection* s = &objfiles[a].sections[b];
                 if (strcmp(s->name, name) == 0) {
 					osec->size += s->sh.sh_size;
 					if (s->sh.sh_type == SHT_NOBITS) alloc = false;
+
+					osec->max_align = max(osec->max_align, s->sh.sh_addralign);
+                    osec->padded_size = off;
+                    osec->sh_flags = s->sh.sh_flags;
+                    osec->sh_type = s->sh.sh_type;
+					osec->memalign = osec->max_align;
+
+                    s->loaded_off = align_up(file_off, osec->memalign) + off;
+                    s->loaded_vaddr = align_up(vaddr, osec->memalign) + off;
+                    
+                    off += s->sh.sh_size;
 				}
             }
         }
@@ -250,36 +267,137 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         if (alloc) osec->buffer = malloc(osec->size);
 		else osec->buffer = NULL;
 
-        // merge
+        // finalize output offsets
+		vaddr = align_up(vaddr, osec->memalign);
+		file_off = align_up(file_off, osec->memalign);
+		
+        osec->padded_size = align_up(osec->size, osec->max_align);
+        osec->out_offset = file_off;
+        osec->out_vaddr = vaddr;
+        file_off += osec->padded_size;
+
+        vaddr += off;
+    }
+
+	// Precompute PHdrs Count and Recompute Memory Alignment
+	size_t phdr_count = 1;
+	Elf64_Phdr* program_headers = calloc(order.count+1, sizeof(Elf64_Phdr)); // +1 For headers
+
+	if (!program_headers) {
+        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
+        free(outsecs);
+        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
+        free(order.names);
+
+        free_objfile(objfiles, objfile_count);
+
+        perror(COLOR_RED "Linker Error: Allocation Failed!\n" COLOR_RESET);
+        return false;
+	}
+	bool page_align_next = true;
+	for (size_t i = 0; i < order.count; i++) { // Broken PHdrs used only for the sole purpose of precomputation, its overwritten later with proper phdrs
+		OutSection* osec = &outsecs[i];
+		Elf64_Phdr ophdr_R = {0};
+		Elf64_Phdr* ophdr = &ophdr_R;
+
+		if (page_align_next) {
+			osec->memalign = align_up(osec->max_align, PAGE_SIZE);
+			page_align_next = false;
+		}
+
+		if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_EXECINSTR && osec->sh_type == SHT_PROGBITS) {
+			// Force Current Page Alignment
+			osec->memalign = align_up(osec->max_align, PAGE_SIZE);
+			
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_X | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+
+			page_align_next = true;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = 0;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = 0;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_W | PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else if (osec->sh_flags & SHF_ALLOC) {
+			ophdr->p_type = PT_LOAD;
+			ophdr->p_offset = osec->out_offset;
+			ophdr->p_vaddr = osec->out_vaddr;
+			ophdr->p_paddr = 0;
+			ophdr->p_filesz = osec->size;
+			ophdr->p_memsz = osec->padded_size;
+			ophdr->p_flags = PF_R;
+			ophdr->p_align = PAGE_SIZE;
+		} else {
+			continue;
+		}
+
+		bool merged = false;
+		for (size_t j = 1; j < phdr_count; j++) {
+			Elf64_Phdr* p = &program_headers[j];
+			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
+				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
+					// .bss merged
+					p->p_memsz += ophdr->p_memsz;
+					p->p_align = max(p->p_align, ophdr->p_align);
+					merged = true;
+				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
+					p->p_align = max(p->p_align, ophdr->p_align);
+					p->p_memsz += ophdr->p_memsz;
+					p->p_filesz += ophdr->p_filesz;
+					merged = true;
+				}
+			} 
+		}
+		if (!merged)
+			program_headers[phdr_count++] = ophdr_R;
+	}
+
+	// Pass-2 to fix Section Offsets and Virtual Addresses
+	file_off = sizeof(Elf64_Ehdr) + (total_sections * sizeof(Elf64_Shdr)) + (phdr_count * sizeof(Elf64_Phdr));
+	vaddr = base_vaddr + PAGE_SIZE;
+	for (size_t i = 0; i < order.count; i++) {
+        OutSection* osec = &outsecs[i];
+
         size_t off = 0;
         for (size_t a = 0; a < objfile_count; a++) {
             for (size_t b = 0; b < objfiles[a].section_count; b++) {
                 InSection* s = &objfiles[a].sections[b];
-                if (strcmp(s->name, name) == 0) {
-                    size_t align = s->sh.sh_addralign;
-                    off = align_up(off, align);
-
-                    s->loaded_off = file_off + off;
-                    s->loaded_vaddr = vaddr + off;
+                if (strcmp(s->name, osec->name) == 0) {
+                    s->loaded_off = align_up(file_off, osec->memalign) + off;
+                    s->loaded_vaddr = align_up(vaddr, osec->memalign) + off;
                     
                     off += s->sh.sh_size;
-
-                    osec->max_align = max(osec->max_align, s->sh.sh_addralign);
-                    osec->padded_size = off;
-                    osec->sh_flags = s->sh.sh_flags;
-                    osec->sh_type = s->sh.sh_type;
                 }
             }
         }
 
         // finalize output offsets
-        osec->padded_size = align_up(osec->size, osec->max_align);
-        file_off = align_up(file_off, osec->max_align);
+		vaddr = align_up(vaddr, osec->memalign);
+		file_off = align_up(file_off, osec->memalign);
+
         osec->out_offset = file_off;
         osec->out_vaddr = vaddr;
+		
         file_off += osec->padded_size;
-
-        vaddr = align_up(vaddr, osec->max_align);
         vaddr += off;
     }
 
@@ -436,11 +554,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
             for (size_t b = 0; b < objfiles[a].section_count; b++) {
                 InSection* s = &objfiles[a].sections[b];
                 if (strcmp(s->name, osec->name) == 0) {
-                    size_t align = s->sh.sh_addralign;
-                    off = align_up(off, align);
-
                     if (s->data) memcpy(osec->buffer + off, s->data, s->sh.sh_size);
-                    
                     off += s->sh.sh_size;
                 }
             }
@@ -490,15 +604,11 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     shstr_section.size = shstrtab_size;
     shstr_section.padded_size = shstrtab_size;
     shstr_section.max_align = 1;
-    shstr_section.out_offset = 0; // will compute later
-    shstr_section.out_vaddr = 0; // not loaded in memory
     shstr_section.sh_name_off = shstrtab_off;
     shstr_section.sh_type = SHT_STRTAB;
     strcpy(&shstrtab[shstrtab_off], ".shstrtab");
     shstrtab_off += 10;
     size_t shstr_index = section_count+1; // index in section header table
-
-    size_t total_sections = section_count + 2; // 1 for NULL section
 
     file_off = align_up(file_off, shstr_section.max_align);
     shstr_section.out_offset = file_off;
@@ -590,7 +700,6 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     sym_section.sh_type = SHT_SYMTAB;
     sym_section.capacity = total_symbols; // used as total count
     strcpy(&shstrtab[shstrtab_off], ".symtab");
-    sym_section.out_vaddr = 0;
     shstrtab_off += 8;
     file_off = align_up(file_off, sym_section.max_align);
     sym_section.out_offset = file_off;
@@ -607,33 +716,21 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     str_section.sh_type = SHT_STRTAB;
     strcpy(&shstrtab[shstrtab_off], ".strtab");
     shstrtab_off += 8;
-    str_section.out_vaddr = 0;
     file_off = align_up(file_off, str_section.max_align);
     str_section.out_offset = file_off;
     file_off += str_section.padded_size;
     size_t strtab_idx = symtab_idx + 1;
 
-    total_sections += 2;
-
 	// Program Headers
-	size_t phdr_count = 0;
-	Elf64_Phdr* program_headers = calloc(order.count, sizeof(Elf64_Phdr));
-
-	if (!program_headers) {
-		free(shstrtab);
-        free(outsyms);
-        free(strtab);
-
-        for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
-        free(outsecs);
-        for (size_t i = 0; i < order.count; i++) free(order.names[i]);
-        free(order.names);
-
-        free_objfile(objfiles, objfile_count);
-
-        perror(COLOR_RED "Linker Error: Allocation Failed!\n" COLOR_RESET);
-        return false;
-	}
+	phdr_count = 0;
+	
+	Elf64_Phdr* hdr_phdr = &program_headers[phdr_count++];
+	hdr_phdr->p_type = PT_LOAD;
+	hdr_phdr->p_offset = 0x0;
+	hdr_phdr->p_vaddr = 0x400000;
+	hdr_phdr->p_paddr = 0;
+	hdr_phdr->p_flags = PF_R;
+	hdr_phdr->p_align = PAGE_SIZE;
 
 	size_t total_size = 0;
 	for (size_t i = 0; i < order.count; i++) {
@@ -650,7 +747,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			ophdr->p_filesz = osec->size;
 			ophdr->p_memsz = osec->padded_size;
 			ophdr->p_flags = PF_X | PF_R;
-			ophdr->p_align = osec->max_align;
+			ophdr->p_align = PAGE_SIZE;
 		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
 			ophdr->p_type = PT_LOAD;
 			ophdr->p_offset = 0;
@@ -659,7 +756,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			ophdr->p_filesz = 0;
 			ophdr->p_memsz = osec->padded_size;
 			ophdr->p_flags = PF_W | PF_R;
-			ophdr->p_align = osec->max_align;
+			ophdr->p_align = PAGE_SIZE;
 		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
 			ophdr->p_type = PT_LOAD;
 			ophdr->p_offset = osec->out_offset;
@@ -668,7 +765,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			ophdr->p_filesz = osec->size;
 			ophdr->p_memsz = osec->padded_size;
 			ophdr->p_flags = PF_W | PF_R;
-			ophdr->p_align = osec->max_align;
+			ophdr->p_align = PAGE_SIZE;
 		} else if (osec->sh_flags & SHF_ALLOC) {
 			ophdr->p_type = PT_LOAD;
 			ophdr->p_offset = osec->out_offset;
@@ -677,15 +774,15 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			ophdr->p_filesz = osec->size;
 			ophdr->p_memsz = osec->padded_size;
 			ophdr->p_flags = PF_R;
-			ophdr->p_align = osec->max_align;
+			ophdr->p_align = PAGE_SIZE;
 		} else {
 			continue;
 		}
 
 		bool merged = false;
-		for (size_t j = 0; j < phdr_count; j++) {
+		for (size_t j = 1; j < phdr_count; j++) {
 			Elf64_Phdr* p = &program_headers[j];
-			if (p->p_vaddr + p->p_memsz == ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
+			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
 				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
 					// .bss merged
 					p->p_memsz += ophdr->p_memsz;
@@ -716,11 +813,14 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     eh.e_ehsize = sizeof(Elf64_Ehdr);
     eh.e_shentsize = sizeof(Elf64_Shdr);
     eh.e_shnum = total_sections;
-    eh.e_shoff = sizeof(Elf64_Ehdr);
+    eh.e_shoff = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Phdr) * phdr_count);
     eh.e_shstrndx = shstr_index;
 	eh.e_phentsize = sizeof(Elf64_Phdr);
 	eh.e_phnum = phdr_count;
-	eh.e_phoff = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * total_sections) + total_size;
+	eh.e_phoff = sizeof(Elf64_Ehdr);
+
+	hdr_phdr->p_filesz = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Phdr) * phdr_count);
+	hdr_phdr->p_memsz = align_up(sizeof(Elf64_Ehdr) + (sizeof(Elf64_Phdr) * phdr_count), 0x10);
     
     FILE* f = fopen(outfile, "wb");
     if (!f) {
@@ -742,13 +842,15 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
     fwrite(&eh, sizeof(eh), 1, f);
 
+	fwrite(program_headers, sizeof(Elf64_Phdr), phdr_count, f);
+	free(program_headers);
+
     Elf64_Shdr* shdrs = calloc(total_sections, sizeof(Elf64_Shdr));
     if (!shdrs) {
         fclose(f);
         free(shstrtab);
         free(outsyms);
         free(strtab);
-		free(program_headers);
 
         for (size_t i = 0; i < order.count; i++) free(outsecs[i].buffer);
         free(outsecs);
@@ -838,10 +940,6 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
     fseek(f, eh.e_shoff, SEEK_SET);
     fwrite(shdrs, sizeof(Elf64_Shdr), total_sections, f);
-
-	fseek(f, sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr)*total_sections) + total_size, SEEK_SET);
-	fwrite(program_headers, sizeof(Elf64_Phdr), phdr_count, f);
-	free(program_headers);
 
     fclose(f);
 

@@ -32,6 +32,7 @@ typedef struct {
     bool asmout;
     bool savetemps;
     bool only_asm;
+	bool only_link;
     bool unlocked;
     size_t base;
     char* entry_label;
@@ -51,6 +52,7 @@ void print_usage(const char* prog) {
     printf("\t--asmout                  Stop after assembling and print IR Instructions\n");
     printf("\t--savetemp                Pause after core stages such as Assembling and save contents into a file in current dir named asave.<extension>\n");
     printf("\t--only-asm                Stop after encoding and do not link\n");
+	printf("\t--only-link               Do not do any sort of assembly, direcly link input files\n");
     printf("\t-a, --arch <architecture> Target architecture (default: x86_64)\n");
     printf("\t-b, --bits <16|32|64>     Target bits (default: 64)\n");
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
@@ -82,6 +84,7 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->entry_label = NULL;
     args->linkformat = ELF64;
     args->only_asm = false;
+	args->only_link = false;
     args->unlocked = false;
 
 	int inc_dir_cap = 4;
@@ -105,6 +108,7 @@ bool parse_args(int argc, char** argv, Args* args) {
         {"only-asm", no_argument, 0, 1005},
         {"unlock", no_argument, 0, 1006},
 		{"includes", required_argument, 0, 'I'},
+		{"only-link", no_argument, 0, 1007},
         {0, 0, 0, 0}
     };
 
@@ -192,6 +196,9 @@ bool parse_args(int argc, char** argv, Args* args) {
 					args->inc_dirs[args->inc_dirs_count++] = optarg;
 				}
 				break;
+			case 1007:
+                args->only_link = true;
+                break;
             case '?': // unknown option
             default:
                 print_usage(argv[0]);
@@ -427,6 +434,12 @@ int main(int argc, char** argv) {
 		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
+
+	if (args.only_link) {
+		if (!pac_link(args.entry_label, args.output_file, args.input_files, (size_t)args.input_count, args.linkformat, args.base))
+			return PAC_Error_Unknown;
+		return PAC_Success;
+	}
 
     char** encoded_files = calloc(args.input_count, 128);
     

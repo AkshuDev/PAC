@@ -15,6 +15,8 @@
 #define COLOR_CYAN    "\033[1;36m"
 #define COLOR_GRAY    "\033[1;90m"
 
+#define align_up(val, to) (((val) + (to) - 1) & ~((to) - 1))
+
 enum Architecture {
     x86_64,
     ARM64,
@@ -180,10 +182,6 @@ static inline void rmchr(char* str, char c) {
 static inline void pac_strdup(char* src, char* dest) {
     if (src == NULL || dest == NULL) return;
     strcpy(dest, src);
-}
-
-static inline size_t align_up(size_t val, size_t to) {
-    return (val + to - 1) & ~(to - 1);
 }
 
 static inline void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size) {
