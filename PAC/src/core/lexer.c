@@ -123,7 +123,7 @@ TokenType check_keyword(const char* str) {
     if (strcmp(str, "shl") == 0) return ASM_SHL;
     if (strcmp(str, "shr") == 0) return ASM_SHR;
     if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
-	if (strcmp(str, "i:int") == 0) return ASM_INT;
+	if (strcmp(str, "inst.int") == 0) return ASM_INT;
     if (strcmp(str, "lea") == 0) return ASM_LEA;
     if (strcmp(str, "load") == 0) return ASM_LOAD;
     if (strcmp(str, "store") == 0) return ASM_STORE;
@@ -637,6 +637,7 @@ const char* token_type_to_str(TokenType type) {
         case ASM_SHL: return "ASM_SHL";
         case ASM_SHR: return "ASM_SHR";
         case ASM_SYSCALL: return "ASM_SYSCALL";
+		case ASM_INT: return "ASM_INT";
         case ASM_LEA: return "ASM_LEA";
         case ASM_LOAD: return "ASM_LOAD";
         case ASM_STORE: return "ASM_STORE";
@@ -872,6 +873,7 @@ const char* token_type_to_ogstr(TokenType type) {
         case ASM_SHL: return "shl";
         case ASM_SHR: return "shr";
         case ASM_SYSCALL: return "syscall";
+		case ASM_INT: return "int";
         case ASM_LEA: return "lea";
         case ASM_LOAD: return "load";
         case ASM_STORE: return "store";

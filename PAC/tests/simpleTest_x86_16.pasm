@@ -5,13 +5,12 @@
 	:global _start
 
 _start:
-	mov %ax, 0 // Uselss but fun
-	mov %eax, 4
-	mov %ebx, 1
-	lea %ecx, [msg]
-	mov %edx, 17
+	mov %ax, 4
+	mov %bx, 1
+	lea %cx, [msg]
+	mov %dx, 17
 	inst.int 0x80
 
-	mov %eax, 1
-	mov %ebx, 0
+	mov %ax, 1
+	mov %bx, 0
 	inst.int 0x80

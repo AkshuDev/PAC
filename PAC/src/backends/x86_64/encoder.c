@@ -101,9 +101,10 @@ static void flush_everything(FILE* out) {
     fflush(out);
 }
 
-static RegInfo encode_register(int bits, const char *reg) {
+static RegInfo encode_register(int bits, const char *reg, bool* error) {
     RegInfo r = {0};
 
+	*error = false;
     r.valid = true;
     strncpy(r.name, reg, sizeof(r.name));
 
@@ -131,7 +132,7 @@ static RegInfo encode_register(int bits, const char *reg) {
 	}
 
     // 32-bit
-	else if (bits >= 32 || bits == 16) {
+	if (bits >= 32 || bits == 16) {
 		if (strcmp(reg, "eax") == 0) { r.code=0; r.size=32; return r; }
 		if (strcmp(reg, "ecx") == 0) { r.code=1; r.size=32; return r; }
 		if (strcmp(reg, "edx") == 0) { r.code=2; r.size=32; return r; }
@@ -152,7 +153,7 @@ static RegInfo encode_register(int bits, const char *reg) {
 	}
 
     // 16-bit (Need prefix=0x66)
-	else if (bits >= 16) {
+	if (bits >= 16) {
 		if (strcmp(reg, "ax") == 0) { r.code=0; r.size=16; return r; }
 		if (strcmp(reg, "cx") == 0) { r.code=1; r.size=16; return r; }
 		if (strcmp(reg, "dx") == 0) { r.code=2; r.size=16; return r; }
@@ -173,7 +174,7 @@ static RegInfo encode_register(int bits, const char *reg) {
 	}
 
     // 8-bit
-	else if (bits >= 8) {
+	if (bits >= 8) {
 		if (strcmp(reg, "al") == 0) { r.code=0; r.size=8; return r; }
 		if (strcmp(reg, "cl") == 0) { r.code=1; r.size=8; return r; }
 		if (strcmp(reg, "dl") == 0) { r.code=2; r.size=8; return r; }
@@ -203,6 +204,7 @@ static RegInfo encode_register(int bits, const char *reg) {
     fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
     r.code = 0xFF;
     r.valid = false;
+	*error = true;
     return r;
 }
 
@@ -849,6 +851,7 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
 		case ASM_INT: // Works
 			switch (modrm) {
 				case OPERAND_IMM8_TO_REG: {
+					*no_bytes = 1;
 					return 0xCD;
 				}
 				default: break;
@@ -947,7 +950,9 @@ static bool parse_memory_operand(int bits, const char* op, bool* issrc, RegInfo*
         if (term[0] == '\0') continue;
 
         if (isalpha(term[0])) {
-            RegInfo r = encode_register(bits, term);
+			bool err = false;
+            RegInfo r = encode_register(bits, term, &err);
+			if (err) return false;
             if (base_r.valid) {
                 if (r.valid) {
                     *sib_index = r;
@@ -1044,6 +1049,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
     inst_buf_capacity = MAX_INST_BUF_SIZE;
     inst_buf = (uint8_t*)malloc(inst_buf_capacity);
+	if (!inst_buf) {
+		fprintf(stderr, COLOR_RED "Error: Allocation failed!\n" COLOR_RESET);
+		return false;
+	}
     inst_buf_init = true;
     inst_buf_off = 0;
     inst_text_off = 0;
@@ -1090,8 +1099,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
             switch (optype) {
                 case OPERAND_REGISTER:
-                    if (issrc) { src = encode_register(bits, operand); issrc = false; }
-                    else {dest = encode_register(bits, operand); issrc = true; }
+					bool err = false;
+                    if (issrc) { src = encode_register(bits, operand, &err); issrc = false; }
+                    else {dest = encode_register(bits, operand, &err); issrc = true; }
+
+					if (err) {
+						printf(COLOR_RED "Error At: \n\t" COLOR_RESET);
+						print_ir(&inst);
+						return false;
+					}
                     break;
                 case OPERAND_LIT_INT:
                     if (operand_mod == OPERAND_REG_TO_REG) {
@@ -1914,6 +1930,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
     no_update_inst_written_in_pad = false;
 
     flush_everything(out);
+	if (inst_buf) free(inst_buf);
 
     return true;
 }

@@ -489,7 +489,7 @@ int main(int argc, char** argv) {
             args.bits = 32;
         }
 
-        if (args.linkformat == BINARY) {
+        if (args.linkformat == BINARY && args.input_count == 1) {
             if (!encode_binary(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
                 free(src);
                 free_relocs(&sectab);
