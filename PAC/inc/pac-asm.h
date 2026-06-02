@@ -88,6 +88,9 @@ typedef struct {
     uint8_t bytes[16]; // machine code output
     size_t byte_count;
     size_t vaddr;
+
+	int line;
+	int col;
 } IRInstruction;
 
 typedef struct {

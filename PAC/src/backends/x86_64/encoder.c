@@ -345,7 +345,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     if (_8bit) return 0x80;
                     return 0x83;
                 }
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
                     *no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
@@ -381,7 +384,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     if (_8bit) return 0x80;
                     return 0x83;
                 }
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
                     *no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
@@ -603,12 +609,15 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     return 0x81;
 				}
 				case OPERAND_IMM32_TO_REG:
+				case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_MEM_DISP8:
                 case OPERAND_IMM_TO_REG: {
 					*no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
                 }
-                default: break;
+				default: break;
             }
 			break;
 
@@ -637,7 +646,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     return 0xF7;
 				}
 				case OPERAND_IMM32_TO_REG:
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
 					*no_bytes = 1;
                     if (_8bit) return 0xF6;
                     return 0xF7;
@@ -659,7 +671,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     return 0x81;
                 }
 				case OPERAND_IMM32_TO_REG:
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
                     *no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
@@ -696,7 +711,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     return 0x81;
                 }
 				case OPERAND_IMM32_TO_REG:
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
                     *no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
@@ -733,7 +751,10 @@ static uint64_t get_opcode(int bits, TokenType opcode, int* no_bytes, int* opera
                     return 0x81;
                 }
 				case OPERAND_IMM32_TO_REG:
-                case OPERAND_IMM_TO_REG: {
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
                     *no_bytes = 1;
                     if (_8bit) return 0x80;
                     return 0x81;
@@ -901,12 +922,14 @@ static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
     return sib;
 }
 
-static bool parse_memory_operand(int bits, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
+static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
     if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
-        printf(COLOR_RED "Error: Invalid Memory Operand!\n" COLOR_RESET);
+		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Memory Operand!");
+		fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+		print_ir(ir);
         return false;
     }
 
@@ -951,7 +974,7 @@ static bool parse_memory_operand(int bits, const char* op, bool* issrc, RegInfo*
 
         if (isalpha(term[0])) {
 			bool err = false;
-            RegInfo r = encode_register(bits, term, &err);
+            RegInfo r = encode_register(ctx->bits, term, &err);
 			if (err) return false;
             if (base_r.valid) {
                 if (r.valid) {
@@ -979,8 +1002,10 @@ static bool parse_memory_operand(int bits, const char* op, bool* issrc, RegInfo*
         } else {
             uint64_t sib_mult = strtoll(term, NULL, base);
             if (sib_mult != 1 && sib_mult != 2 && sib_mult != 4 && sib_mult != 8) {
-                printf(COLOR_RED "Error: Invalid SIB Scale - %lu\n" COLOR_RESET, sib_mult);
-                return false;
+				PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid SIB Scale!");
+                fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+				print_ir(ir);
+				return false;
             }
             *sib_scale = (uint8_t)sib_mult;
         }
@@ -1076,10 +1101,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         }
 
         if (inst.arch != x86_64 && inst.arch != x86) {
-            char archs[128];
-            archenum_to_archs(inst.arch, archs);
-            fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction: [%s]\n" COLOR_RESET, archs);
-            return false;
+			PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Architecture Unsupported Instruction!");
+			fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+			print_ir(&inst);
+			return false;
         }
 
         RegInfo src = {0};
@@ -1124,7 +1149,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					}
 					break;
                 case OPERAND_MEMORY:
-                    if (!parse_memory_operand(bits, operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) return false;
+                    if (!parse_memory_operand(ctx, &inst, operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) return false;
                     break;
                 case OPERAND_LABEL:
                     imm = strtoul(operand, NULL, 16); // resolve symbol
@@ -1136,23 +1161,29 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     }
                     break;
                 default:
-                    fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
-                    return false;
+					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, operand, 0, "Unknown Operand");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
             }
         }
 
         if (src.valid && src.size > bits) {
             if (src.size == 32 && bits == 16) {
             } else {
-                fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, src.name);
-                return false;
+				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, src.name, 0, "Invalid Register");
+                fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+				print_ir(&inst);
+				return false;
             }
         }
         if (dest.valid && dest.size > bits) {
             if (src.size == 32 && bits == 16) {
             } else {
-                fprintf(stderr, COLOR_RED "Error: Invalid Register Found [%s]!\n" COLOR_RESET, dest.name);
-                return false;
+				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Invalid Register");
+                fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+				print_ir(&inst);
+				return false;
             }
         }
 
@@ -1183,8 +1214,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         switch (operand_mod) {
             case OPERAND_REG_TO_REG: {
                 if (src.valid && dest.valid && src.size != dest.size) {
-                    printf(COLOR_RED "Error: Size mismatch between '%s' and '%s' registers!\n" COLOR_RESET, src.name, dest.name);
-                    return false;
+					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, src.name, 0, "Size Mismatch between registers!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 if (src.valid && src.rex_ex) src.rex_r = true;
                 if (dest.valid && dest.rex_ex) dest.rex_b = true;
@@ -1208,8 +1241,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 else if (dest.size == 32) sz = 0xFFFFFFFF;
                 else if (dest.size == 64) sz = 0xFFFFFFFFFFFFFFFF;
                 if (dest.valid && sz < (uint64_t)imm) {
-                    printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 
                 if (dest.valid && dest.rex_ex) {
@@ -1273,8 +1308,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 else if (dest.size == 32) sz = 0xFFFFFFFF;
                 else if (dest.size == 64) sz = 0xFFFFFFFFFFFFFFFF;
                 if (dest.valid && sz < (uint64_t)imm) {
-                    printf(COLOR_RED "Error: Size mismatch between '%s' reg and '%lu' imm!\n" COLOR_RESET, dest.name, imm);
-                    return false;
+					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 
                 if (dest.valid && dest.rex_ex) {
@@ -1342,9 +1379,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         uint64_t opcode_full = get_opcode(bits, inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
 
         if (no_bytes == 0) {
-            fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\nInstruction: " COLOR_RESET, token_type_to_ogstr(inst.opcode));
-            print_ir(&inst);
-            return false;
+            PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Instruction");
+            fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+			print_ir(&inst);
+			return false;
         }
         for (int i = no_bytes - 1; i >= 0; i--) {
             uint8_t opcode = (opcode_full >> (i * 8)) & 0xFF;
@@ -1495,8 +1533,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rbp_mode = false;
                 bool rsp_sib = false;
                 if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_w) {
-                    printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Cannot use RIP as a destination register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 if (bits == 64 && src.valid && src.code == 0b101) {
                     if (src.rex_w) rbp_mode = true;
@@ -1580,8 +1620,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rbp_mode = false;
                 bool rsp_sib = false;
                 if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_w) {
-                    printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Cannot use RIP as a source register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 if (bits == 64 && dest.valid && dest.code == 0b101) {
                     if (dest.rex_w) rbp_mode = true;
@@ -1699,8 +1741,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rsp_sib = false;
                 if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_w) {
-                    printf(COLOR_RED "Error: Cannot use %%rip as a source register!\n" COLOR_RESET);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Cannot use RIP as a source register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
                 if (dest.valid && dest.code == 0b100) rsp_sib = true;
@@ -1743,8 +1787,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rsp_sib = false;
                 if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_w) {
-                    printf(COLOR_RED "Error: Cannot use %%rip as a destination register!\n" COLOR_RESET);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Cannot use RIP as a destination register!");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					return false;
                 }
                 if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_ex) rip_mode = true;
                 if (src.valid && src.code == 0b100) rsp_sib = true;
@@ -1931,6 +1977,16 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
     flush_everything(out);
 	if (inst_buf) free(inst_buf);
+
+	// Reset
+	inst_buf_off = 0;
+	inst_buf = NULL;
+	inst_buf_init = false;
+	inst_buf_capacity = 0;
+	out_text_off = 0;
+	inst_text_off = 0;
+	inst_written = 0;
+	no_update_inst_written_in_pad = false;
 
     return true;
 }

@@ -1,14 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
+
 #include <elf.h>
+
 #include <pac-extra.h>
 #include <pac-asm.h>
 #include <pac-pvcpu-encoder.h>
 #include <pac-x86_64-encoder.h>
 #include <pac-encoder.h>
-
-#define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
 
 static int get_max_inst_size(enum Architecture arch) {
     switch (arch) {
@@ -210,7 +211,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         sh->sh_name = shstrtab_off;
         shstrtab_off += len;
 
-        offset = ALIGN_UP(offset, sec->alignment);
+        offset = align_up(offset, sec->alignment);
 
         if (strcmp(sec->name, ".text") == 0) {
             sh->sh_type = SHT_PROGBITS;
@@ -370,7 +371,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             if (i < text_sec_idx) continue; // skip
             sh->sh_offset = (Elf64_Xword)offset;
             offset += sec->size;
-            offset = ALIGN_UP(offset, sec->alignment);
+            offset = align_up(offset, sec->alignment);
         }
     }
 
@@ -433,7 +434,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     shdrs[4].sh_link = 1;
     shdrs[4].sh_info = text_sec_idx;
     shdrs[4].sh_entsize = sizeof(Elf64_Rela);
-    size_t reloc_offset = ALIGN_UP(offset, 8);
+    size_t reloc_offset = align_up(offset, 8);
     shdrs[4].sh_offset = (Elf64_Xword)(reloc_offset);
     shdrs[4].sh_size = (Elf64_Xword)(text_sec->reloc_count * sizeof(Elf64_Rela));
     shdrs[4].sh_addralign = 1;
@@ -561,7 +562,7 @@ bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int 
 		}
 	}
 
-    offset = ALIGN_UP(ftell(out), 16);
+    offset = align_up(ftell(out), 16);
 
     // Write data
     for (size_t i = 0; i < ctx->sections->count; i++) {

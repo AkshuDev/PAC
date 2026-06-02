@@ -738,6 +738,8 @@ IRList assemble(Assembler *ctx)
             ir.arch = ctx->arch;
             ir.operand_count = inst->operand_count;
             ir.vaddr = current_offset;
+			ir.line = node->line;
+			ir.col = node->col;
 
             for (size_t j = 0; j < inst->operand_count; j++)
             {
@@ -832,8 +834,28 @@ IRList assemble(Assembler *ctx)
                         }
                         else if (opmem_op->type == OPERAND_IDENTIFIER)
                         {
-                            if (opmem_op->identifier->type != AST_IDENTIFIER)
-                            {
+							if (opmem_op->identifier->type == AST_LITERAL) {
+								char buf[128];
+								switch (opmem_op->identifier->literal.type) {
+									case LIT_INT:
+										snprintf(buf, sizeof(buf), "%lld", (long long)opmem_op->identifier->literal.int_val);
+										break;
+									default:
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+										symtab_free(symtab);
+										section_free(sectab);
+										free_ast(ctx->parser->root);
+										exit(PAC_Error_InvalidIdentifier);
+								}
+							} else if (opmem_op->identifier->type == AST_IDENTIFIER) {
+								Symbol* sym;
+								bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
+								if (got_sym) {
+									snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym->addr);
+								} else {
+									snprintf(buf, sizeof(buf), "UNRESOLVED");
+								}
+							} else {
                                 fprintf(stderr, COLOR_RED "Error: Identifier doesn't have type AST_Identifier!\n" COLOR_RESET);
                                 fprintf(stderr, COLOR_CYAN "Tip: This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!\n" COLOR_RESET);
                                 symtab_free(symtab);
@@ -841,16 +863,7 @@ IRList assemble(Assembler *ctx)
                                 free_ast(ctx->parser->root);
                                 exit(PAC_Error_InvalidIdentifier);
                             }
-                            Symbol* sym;
-                            bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
-                            if (got_sym)
-                            {
-                                snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym->addr);
-                            }
-                            else
-                            {
-                                snprintf(buf, sizeof(buf), "UNRESOLVED");
-                            }
+                            
                         } else
                         {
                             fprintf(stderr, COLOR_RED "Error: Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]\n" COLOR_RESET);
@@ -880,8 +893,30 @@ IRList assemble(Assembler *ctx)
                         }
                         else if (opmem_op->type == OPERAND_IDENTIFIER)
                         {
-                            if (op->identifier->type != AST_IDENTIFIER)
-                            {
+							if (op->identifier->type == AST_LITERAL) {
+								char buf[128];
+								switch (op->identifier->literal.type) {
+									case LIT_INT:
+										snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+										ir.operands[j] = strdup(buf);
+										break;
+									default:
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+										symtab_free(symtab);
+										section_free(sectab);
+										free_ast(ctx->parser->root);
+										exit(PAC_Error_InvalidIdentifier);
+								}
+							} else if (op->identifier->type == AST_IDENTIFIER) {
+								Symbol* sym;
+                            	bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
+								if (got_sym) {
+									if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
+									else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
+								} else {
+									snprintf(buf, sizeof(buf), "UNRESOLVED");
+								}
+							} else {
                                 fprintf(stderr, COLOR_RED "Error: Identifier doesn't have type AST_Identifier!\n" COLOR_RESET);
                                 fprintf(stderr, COLOR_CYAN "Tip: This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!\n" COLOR_RESET);
                                 symtab_free(symtab);
@@ -889,18 +924,7 @@ IRList assemble(Assembler *ctx)
                                 free_ast(ctx->parser->root);
                                 exit(PAC_Error_InvalidIdentifier);
                             }
-                            Symbol* sym;
-                            bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
-                            if (got_sym)
-                            {
-                                if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
-                                else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
-                            }
-                            else
-                            {
-                                snprintf(buf, sizeof(buf), "UNRESOLVED");
-                            }
-                        } else
+                    	} else
                         {
                             fprintf(stderr, COLOR_RED "Error: Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]\n" COLOR_RESET);
                             symtab_free(symtab);

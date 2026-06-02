@@ -55,7 +55,7 @@ Token make_token(Lexer* lex, TokenType type, const char* start, size_t len) {
     strncpy(tk.lexeme, start, len);
     tk.lexeme[len] = '\0';
     tk.line = lex->line;
-    tk.column = lex->column - (int)len + 1;
+    tk.column = lex->column - (int)len;
     return tk;
 }
 

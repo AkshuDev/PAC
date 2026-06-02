@@ -3,33 +3,6 @@
 @def grid_mx 10
 @def grid_my 10
 
-:section .rodata
-    startup!ubyte[] = "Welcome to SimpleTest-Snake v1, Made for PAC!", 10, 0
-    clearstr!ubyte[] = 27, "[2J", 27, "[H", 0
-	uded!ubyte[] = "U died .........", 10, 0
-    snakechar!ubyte[] = "#", 0
-    foodchar!ubyte[] = "*", 0
-	spacechar!ubyte[] = " ", 0
-	hidestr!ubyte[] = 27, "[?25l"
-	showstr!ubyte[] = 27, "[?25h"
-	save_mposstr!ubyte[] = 27, "[s"
-	res_mposstr!ubyte[] = 27, "[u"
-	nl_char!ubyte = 0xa
-
-:section .data
-    snake_x!ulong = 5
-    snake_y!ulong = 5
-
-    food_x!ulong = 0
-    food_y!ulong = 0
-
-    direction!ulong = 255
-
-	sleep_time!ulong[2] = 0, 100000000
-
-:section .bss
-    :res input_buffer!uint[8]
-
 :section .text
     :global _start
 
@@ -258,3 +231,34 @@ _start:
     mov %rax, 60
     xor %rdi, %rdi
     syscall
+
+
+// A bunch of typedefs
+.type Str=ubyte
+
+:section .rodata
+    startup!Str[] = "Welcome to SimpleTest-Snake v1, Made for PAC!", 10, 0
+    clearstr!Str[] = 27, "[2J", 27, "[H", 0
+	uded!Str[] = "U died .........", 10, 0
+    snakechar!Str[] = "#", 0
+    foodchar!Str[] = "*", 0
+	spacechar!Str[] = " ", 0
+	hidestr!Str[] = 27, "[?25l"
+	showstr!Str[] = 27, "[?25h"
+	save_mposstr!Str[] = 27, "[s"
+	res_mposstr!Str[] = 27, "[u"
+	nl_char!ubyte = 0xa
+
+:section .data
+    snake_x!ulong = 5
+    snake_y!ulong = 5
+
+    food_x!ulong = 0
+    food_y!ulong = 0
+
+    direction!ulong = 255
+
+	sleep_time!ulong[2] = 0, 100000000
+
+:section .bss
+    :res input_buffer!uint[8]

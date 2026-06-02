@@ -10,8 +10,8 @@ PAC Includes Structures/Preprocessing/Functions/Types/more
 All new keywords begin with '.' example:
 ```pac-asm
     .struct
-        a: int
-        b: int
+        a!int
+        b!int
     .endstruct
 ```
 
@@ -20,11 +20,11 @@ PAC's default types include: **byte**, **short**, **int**, **long**, **ubyte**, 
 
 PAC also offers users a way to create their own types using '**.type**' keyword, example:
 ```pac-asm
-    .type new_type:ubyte // .type <new type>:<type>
-    .type another_type:new_type
+    .type new_type ubyte // .type <new type> = <type>
+    .type another_type=new_type
     .struct
-        a: new_type // Same as ubyte
-        b: another_type // Same as ubyte
+        a!new_type // Same as ubyte
+        b!another_type // Same as ubyte
     .endstruct
 ```
 
@@ -34,19 +34,19 @@ PAC offers structures, here is how to use them -
 ##### Making Structures
 
 To Define Structures, you must use the '**.struct**' keyword to open a Structure Block, Then type the structure name.
-Then you follow this format to define a new field: '**Name: Type**', for example
+Then you follow this format to define a new field: '**Name!Type**', for example
 
 ```pac-asm
     .struct MyStruct
-        myField: ubyte
-        anotherField: ushort
+        myField!ubyte
+        anotherField!ushort
     .endstruct
 ```
 
 Finally **DO NOT** Forget to close the structure block using the keyword '**.endstruct**'
 
 ##### Accessing Structures
-To Access your created Structures you need to use this format: '**Structure Name.Field**', For example -
+To Access your created Structures you need to use this format: '**Structure-Name.Field**', For example -
 ```pac-asm
     mov %qg0, MyStruct.myField
 ```
