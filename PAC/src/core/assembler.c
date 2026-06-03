@@ -465,52 +465,56 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 					}
                 }
             } else {
-				ASTNode* val = node->children[0];
+				ASTNode* val = node->child_count > 0 ? node->children[0] : NULL;
 
 				size = token_type_size(node->decl_identifier.opt_specified_type);
-				switch (node->decl_identifier.type) {
-					case LIT_INT:
-					case LIT_BIN:
-					case LIT_HEX:
-					case LIT_CHAR: {
-						uint64_t num = (uint64_t)val->literal.int_val;
-						memcpy(value, &num, size);
-						break;
-					}
-
-					case LIT_FLOAT: {
-						double f = val->literal.float_val;
-						memcpy(value, &f, size);
-						break;
-					}
-
-					case LIT_STRING: {
-						char* str = val->literal.str_val;
-						size = strlen(str);
-
-						if (size >= val_max_size) {
-							char* tmp = realloc(value, size + 1);
-
-							if (!tmp) {
-								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
-								symtab_free(symtab);
-								section_free(sectab);
-								free_ast(ctx->parser->root);
-								exit(PAC_Error_MemoryAllocationFailed);
-							}
-							value = tmp;
+				if (val) {
+					switch (node->decl_identifier.type) {
+						case LIT_INT:
+						case LIT_BIN:
+						case LIT_HEX:
+						case LIT_CHAR: {
+							uint64_t num = (uint64_t)val->literal.int_val;
+							memcpy(value, &num, size);
+							break;
 						}
 
-						memcpy(value, str, size);
-						break;
-					}
+						case LIT_FLOAT: {
+							double f = val->literal.float_val;
+							memcpy(value, &f, size);
+							break;
+						}
 
-					default:
-						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
-						symtab_free(symtab);
-						section_free(sectab);
-						free_ast(ctx->parser->root);
-						exit(PAC_Error_TypeResolutionFailed);
+						case LIT_STRING: {
+							char* str = val->literal.str_val;
+							size = strlen(str);
+
+							if (size >= val_max_size) {
+								char* tmp = realloc(value, size + 1);
+
+								if (!tmp) {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_MemoryAllocationFailed);
+								}
+								value = tmp;
+							}
+
+							memcpy(value, str, size);
+							break;
+						}
+
+						default:
+							PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+							symtab_free(symtab);
+							section_free(sectab);
+							free_ast(ctx->parser->root);
+							exit(PAC_Error_TypeResolutionFailed);
+					}
+				} else {
+					memset(value, 0, size);
 				}
 			}
 

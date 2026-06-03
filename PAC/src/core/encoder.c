@@ -160,7 +160,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     
     size_t offset = sizeof(Elf64_Ehdr) + (sizeof(Elf64_Shdr) * section_count) + shstrtab_size + strtab_size + (sizeof(Elf64_Sym) * (ctx->symbols->count + 1)) + 64; // leave 64 bytes for safety
     size_t text_off = offset;
-    Section* text_sec;
+    Section* text_sec = NULL;
     size_t text_sec_idx = 0;
 
     // Null section

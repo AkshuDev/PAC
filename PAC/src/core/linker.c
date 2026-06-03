@@ -146,6 +146,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         Elf64_Ehdr* eh = (Elf64_Ehdr*)(fdata);
 
         if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0) {
+			free(fdata);
             free_objfile(objfiles, objfile_count);
             fprintf(stderr, COLOR_RED "Linker Error: %s file has the wrong ELF Magic! This is not a valid Elf file!\n" COLOR_RESET, input_files[i]);
             return false;
@@ -156,6 +157,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
         objfiles = realloc(objfiles, (objfile_count + 1) * sizeof(ObjectFile));
         if (!objfiles) {
+			free(fdata);
             free_objfile(objfiles, objfile_count);
             perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
             return false;
@@ -986,6 +988,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
         Elf64_Ehdr* eh = (Elf64_Ehdr*)(fdata);
 
         if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0) {
+			free(fdata);
             free_objfile(objfiles, objfile_count);
             fprintf(stderr, COLOR_RED "Linker Error: %s file has the wrong ELF Magic! This is not a valid Elf file!\n" COLOR_RESET, input_files[i]);
             return false;
@@ -996,6 +999,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 
         objfiles = realloc(objfiles, (objfile_count + 1) * sizeof(ObjectFile));
         if (!objfiles) {
+			free(fdata);
             free_objfile(objfiles, objfile_count);
             perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
             return false;

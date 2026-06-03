@@ -113,7 +113,9 @@ static struct p_macro* find_macro(char* name, int* ret, enum p_macro_types type,
     return NULL;
 }
 
-static const char* new_macro(char* name, char* value, bool auto_gen, enum p_macro_types type, int line, int col, const char* file) {
+static const char* new_macro(char* name, char* value, bool auto_gen, enum p_macro_types type, int line, int col, const char* file, struct p_macro** out_m) {
+	if (out_m) *out_m = NULL;
+	
 	if (!name) return "No specified name for MACRO/IDENTIFIER/SYMBOL/ETC";
     
 	size_t idx = macro_count;
@@ -148,10 +150,14 @@ static const char* new_macro(char* name, char* value, bool auto_gen, enum p_macr
 	else if (macro_count <= 0) macro_count = 1;
 	else if (idx >= macro_count-1) macro_count++;
 
+	if (out_m) *out_m = m;
+
 	return NULL;
 }
 
-static const char* new_macroEX(char* name, uint8_t* value, size_t val_size, bool auto_gen, enum p_macro_types type, int line, int col, const char* file) {
+static const char* new_macroEX(char* name, uint8_t* value, size_t val_size, bool auto_gen, enum p_macro_types type, int line, int col, const char* file, struct p_macro** out_m) {
+	if (out_m) *out_m = NULL;
+	
 	if (!name) return "No specified name for MACRO/IDENTIFIER/SYMBOL/ETC";
     
 	size_t idx = macro_count;
@@ -185,6 +191,8 @@ static const char* new_macroEX(char* name, uint8_t* value, size_t val_size, bool
 	if (idx > macro_count) macro_count = idx+1;
 	else if (macro_count <= 0) macro_count = 1;
 	else if (idx >= macro_count-1) macro_count++;
+
+	if (out_m) *out_m = m;
 
 	return NULL;
 }
@@ -319,140 +327,270 @@ void free_ast(ASTNode* node) {
     if (node) free(node);
 }
 
-static ASTOperand* parse_operand(Parser* p) {
+static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
     if (parser_check(p, RBRACKET)) {
         parser_advance(p);
         if (parser_check(p, COMMA)) parser_advance(p);
         return NULL;
     } // Probably a memory expression closing
 
-    ASTOperand* op = calloc(1, sizeof(ASTOperand));
+	ASTOperand* op = NULL;
+	if (!jst_verify) {
+		op = calloc(1, sizeof(ASTOperand));
 
-    if (parser_check(p, REGISTER)) {
-        op->type = OPERAND_REGISTER;
-        op->reg = (char*)calloc(strlen(p->current.lexeme) + 1, 1);
-        op->reg[strlen(p->current.lexeme)] = '\0';
-        pac_strdup(p->current.lexeme, op->reg);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_INT)) {
-        op->type = OPERAND_LIT_INT;
-        op->int_val = strtoll(p->current.lexeme, NULL, 10);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_BIN)) {
-        op->type = OPERAND_LIT_INT;
-        op->int_val = strtoll(p->current.lexeme, NULL, 2);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_HEX)) {
-        op->type = OPERAND_LIT_INT;
-        op->int_val = strtoll(p->current.lexeme, NULL, 16);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_FLOAT)) {
-        op->type = OPERAND_LIT_FLOAT;
-        op->float_val = strtod(p->current.lexeme, NULL);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_CHAR)) {
-        op->type = OPERAND_LIT_CHAR;
-        op->int_val = (int64_t)p->current.lexeme[0];
-        parser_advance(p);
-    } else if (parser_check(p, OP_ADD)) {
-        op->type = OPERAND_DISPLACEMENT;
-        parser_advance(p);
+		switch (p->current.type) {
+			case REGISTER: {
+				op->type = OPERAND_REGISTER;
+				op->reg = (char*)calloc(strlen(p->current.lexeme) + 1, 1);
+				op->reg[strlen(p->current.lexeme)] = '\0';
+				pac_strdup(p->current.lexeme, op->reg);
+				parser_advance(p);
+				break;
+			} 
+			case LIT_INT: {
+				op->type = OPERAND_LIT_INT;
+				op->int_val = strtoll(p->current.lexeme, NULL, 10);
+				parser_advance(p);
+				break;
+			} 
+			case LIT_BIN: {
+				op->type = OPERAND_LIT_INT;
+				op->int_val = strtoll(p->current.lexeme, NULL, 2);
+				parser_advance(p);
+				break;
+			}
+			case LIT_HEX: {
+				op->type = OPERAND_LIT_INT;
+				op->int_val = strtoll(p->current.lexeme, NULL, 16);
+				parser_advance(p);
+				break;
+			}
+			case LIT_FLOAT: {
+				op->type = OPERAND_LIT_FLOAT;
+				op->float_val = strtod(p->current.lexeme, NULL);
+				parser_advance(p);
+				break;
+			}
+			case LIT_CHAR: {
+				op->type = OPERAND_LIT_CHAR;
+				op->int_val = (int64_t)p->current.lexeme[0];
+				parser_advance(p);
+				break;
+			}
+			case OP_ADD: {
+				op->type = OPERAND_DISPLACEMENT;
+				parser_advance(p);
 
-        if (parser_check(p, LIT_INT)) {
-            op->int_val = strtoll(p->current.lexeme, NULL, 10);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_BIN)) {
-            op->int_val = strtoll(p->current.lexeme, NULL, 2);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_HEX)) {
-            op->int_val = strtoll(p->current.lexeme, NULL, 16);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_CHAR)) {
-            op->int_val = (int64_t)p->current.lexeme[0];
-            parser_advance(p);
-        } else {
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal!");
-            free_ast(p->root);
-            exit(PAC_Error_UnexpectedToken);
-        }
-    } else if (parser_check(p, OP_SUB)) {
-        op->type = OPERAND_DISPLACEMENT;
-        parser_advance(p);
+				switch (p->current.type) {
+					case LIT_INT: {
+						op->int_val = strtoll(p->current.lexeme, NULL, 10);
+						parser_advance(p);
+						break;
+					}
+					case LIT_BIN: {
+						op->int_val = strtoll(p->current.lexeme, NULL, 2);
+						parser_advance(p);
+						break;
+					}
+					case LIT_HEX: {
+						op->int_val = strtoll(p->current.lexeme, NULL, 16);
+						parser_advance(p);
+						break;
+					}
+					case LIT_CHAR: {
+						op->int_val = (int64_t)p->current.lexeme[0];
+						parser_advance(p);
+						break;
+					}
+					default: {
+						free(op);
+						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal!");
+						free_ast(p->root);
+						exit(PAC_Error_UnexpectedToken);
+						break;
+					}
+				}
+				break;
+			}
+			case OP_SUB: {
+				op->type = OPERAND_DISPLACEMENT;
+				parser_advance(p);
 
-        if (parser_check(p, LIT_INT)) {
-            op->int_val = 0 - strtoll(p->current.lexeme, NULL, 10);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_BIN)) {
-            op->int_val = 0 - strtoll(p->current.lexeme, NULL, 2);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_HEX)) {
-            op->int_val = 0 - strtoll(p->current.lexeme, NULL, 16);
-            parser_advance(p);
-        } else if (parser_check(p, LIT_CHAR)) {
-            op->int_val = 0 - (int64_t)p->current.lexeme[0];
-            parser_advance(p);
-        } else {
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal!");
-            free_ast(p->root);
-            exit(PAC_Error_UnexpectedToken);
-        }
-    } else if (parser_check(p, FUNC_USE)) {
-        ASTNode* identnode = parse_identifier(p, false, false, NULL);
-        op->type = OPERAND_IDENTIFIER;
-        op->identifier = identnode;
-        if (parser_check(p, RBRACKET)) {
-            parser_advance(p);
-            if (parser_check(p, COMMA)) parser_advance(p);
-        }
-    } else if (parser_check(p, LABEL_DEF)) {
-        op->type = OPERAND_LABEL;
-        op->label = (char*)calloc(strlen(p->current.lexeme) + 1, 1);
-        op->label[strlen(p->current.lexeme)] = '\0';
-        pac_strdup(p->current.lexeme, op->label);
-        if (parser_check(p, RBRACKET)) {
-            parser_advance(p);
-            if (parser_check(p, COMMA)) parser_advance(p);
-        }
-    } else if (parser_check(p, IDENTIFIER_TOK)) {
-        ASTNode* identnode = parse_identifier(p, false, false, NULL);
-        op->type = OPERAND_IDENTIFIER;
-        op->identifier = identnode;
-        if (parser_check(p, RBRACKET)) {
-            parser_advance(p);
-        }
-    } else if (parser_check(p, LBRACKET)) {
-        // Probably some memory expression
-        op->type = OPERAND_MEMORY;
-        
-        size_t memoprcount = 0;
-        parser_advance(p);
-        while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL && p->current.type != COMMA) {
-            ASTOperand* opr = parse_operand(p);
-            if (!opr) break;
-            op->mem_addr = recalloc(op->mem_addr, memoprcount, memoprcount + 1, sizeof(ASTOperand*));
-            op->mem_addr[memoprcount++] = opr;
-        }
-        op->mem_opr_count = memoprcount;
-    } else {
-        char msgbuf[128];
-        snprintf(msgbuf, sizeof(msgbuf), "Unexpected token in operand: [%s]", token_type_to_ogstr(p->current.type));
-        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), msgbuf);
-        free_ast(p->root);
-        exit(PAC_Error_UnexpectedToken);
-    }
-    return op;
+				switch (p->current.type) {
+					case LIT_INT: {
+						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 10);
+						parser_advance(p);
+						break;
+					}
+					case LIT_BIN: {
+						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 2);
+						parser_advance(p);
+						break;
+					}
+					case LIT_HEX: {
+						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 16);
+						parser_advance(p);
+						break;
+					}
+					case LIT_CHAR: {
+						op->int_val = 0 - (int64_t)p->current.lexeme[0];
+						parser_advance(p);
+						break;
+					}
+					default: {
+						free(op);
+						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal!");
+						free_ast(p->root);
+						exit(PAC_Error_UnexpectedToken);
+						break;
+					}
+				}
+				break;
+			}
+			case FUNC_USE: {
+				ASTNode* identnode = parse_identifier(p, false, false, NULL);
+				op->type = OPERAND_IDENTIFIER;
+				op->identifier = identnode;
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+					if (parser_check(p, COMMA)) parser_advance(p);
+				}
+				break;
+			}
+			case LABEL_DEF: {
+				op->type = OPERAND_LABEL;
+				op->label = (char*)calloc(strlen(p->current.lexeme) + 1, 1);
+				op->label[strlen(p->current.lexeme)] = '\0';
+				pac_strdup(p->current.lexeme, op->label);
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+					if (parser_check(p, COMMA)) parser_advance(p);
+				}
+				break;
+			}
+			case IDENTIFIER_TOK: {
+				ASTNode* identnode = parse_identifier(p, false, false, NULL);
+				op->type = OPERAND_IDENTIFIER;
+				op->identifier = identnode;
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+				}
+				break;
+			}
+			case LBRACKET: {
+				// Probably some memory expression
+				op->type = OPERAND_MEMORY;
+				
+				size_t memoprcount = 0;
+				parser_advance(p);
+				while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL && p->current.type != COMMA) {
+					ASTOperand* opr = parse_operand(p, jst_verify);
+					if (!opr) break;
+					op->mem_addr = recalloc(op->mem_addr, memoprcount, memoprcount + 1, sizeof(ASTOperand*));
+					op->mem_addr[memoprcount++] = opr;
+				}
+				op->mem_opr_count = memoprcount;
+				break;
+			}
+			default:  {
+				char msgbuf[128];
+				snprintf(msgbuf, sizeof(msgbuf), "Unexpected token in operand: [%s]", token_type_to_ogstr(p->current.type));
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), msgbuf);
+				free_ast(p->root);
+				free(op);
+				exit(PAC_Error_UnexpectedToken);
+			}
+		}
+	} else {
+		switch (p->current.type) {
+			case REGISTER:
+			case LIT_INT:
+			case LIT_BIN:
+			case LIT_HEX:
+			case LIT_FLOAT:
+			case LIT_CHAR: {
+				parser_advance(p);
+				break;
+			}
+			case OP_ADD:
+			case OP_SUB: {
+				parser_advance(p);
+
+				switch (p->current.type) {
+					case LIT_INT:
+					case LIT_BIN:
+					case LIT_HEX:
+					case LIT_CHAR: {
+						parser_advance(p);
+						break;
+					}
+					default: {
+						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal!");
+						free_ast(p->root);
+						exit(PAC_Error_UnexpectedToken);
+						break;
+					}
+				}
+				break;
+			}
+			case FUNC_USE: {
+				ASTNode* identnode = parse_identifier(p, true, false, NULL);
+				if (identnode) free_ast(identnode);
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+					if (parser_check(p, COMMA)) parser_advance(p);
+				}
+				break;
+			}
+			case LABEL_DEF: {
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+					if (parser_check(p, COMMA)) parser_advance(p);
+				}
+				break;
+			}
+			case IDENTIFIER_TOK: {
+				ASTNode* identnode = parse_identifier(p, true, false, NULL);
+				if (identnode) free_ast(identnode);
+				if (parser_check(p, RBRACKET)) {
+					parser_advance(p);
+				}
+				break;
+			}
+			case LBRACKET: {
+				parser_advance(p);
+				while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL && p->current.type != COMMA) {
+					ASTOperand* opr = parse_operand(p, jst_verify);
+					if (!opr) break;
+				}
+				break;
+			}
+			default:  {
+				char msgbuf[128];
+				snprintf(msgbuf, sizeof(msgbuf), "Unexpected token in operand: [%s]", token_type_to_ogstr(p->current.type));
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), msgbuf);
+				free_ast(p->root);
+				exit(PAC_Error_UnexpectedToken);
+			}
+		}
+	}
+	return op;
 }
 
-static ASTNode* parse_inst(Parser* p) {
-    ASTNode* node = create_node(AST_INSTRUCTION, p);
-    node->inst.opcode = p->current.type;
+static ASTNode* parse_inst(Parser* p, bool jst_verify) {
+    ASTNode* node = !jst_verify ? create_node(AST_INSTRUCTION, p) : NULL;
+    if (!jst_verify) node->inst.opcode = p->current.type;
     parser_advance(p);
 
     while (!parser_check(p, SP_EOF) && p->current.type != SEMICOLON && p->current.type != SP_EOL) { 
-        ASTOperand* op = parse_operand(p);
-        if (!op) break;
-        node->inst.operands = realloc(node->inst.operands, sizeof(ASTOperand*) * (node->inst.operand_count + 1));
-        node->inst.operands[node->inst.operand_count++] = op;
+        ASTOperand* op = parse_operand(p, jst_verify);
+
+		if (!jst_verify) {
+        	if (!op) break;
+
+			node->inst.operands = realloc(node->inst.operands, sizeof(ASTOperand*) * (node->inst.operand_count + 1));
+			node->inst.operands[node->inst.operand_count++] = op;
+		} else if (op) free(op);
 
         if (parser_match(p, COMMA)) continue;
         if (parser_match(p, COMMENT_BLOCK)) break;
@@ -488,18 +626,22 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Macros?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+					else if (m->type == MACRO_TYPE_IDENTIFIER)
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+					else if (m->line > 0)
+						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
 
-                const char* err = new_macro(label, node->label.name, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file);
+                const char* err = new_macro(label, node->label.name, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL);
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
 					exit(PAC_Error_Unknown);
 				}
-                err = new_macro(node->label.name, NULL, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file); // keep track!
+                err = new_macro(node->label.name, NULL, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file, NULL); // keep track!
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
@@ -532,9 +674,13 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Macros?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+					else if (m->type == MACRO_TYPE_IDENTIFIER)
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+					else if (m->line > 0)
+						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
 
 				ret = 0;
@@ -546,18 +692,22 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, label, strlen(label), "Try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, label, strlen(label), "Try renaming your Macros?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+					else if (m->type == MACRO_TYPE_IDENTIFIER)
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+					else if (m->line > 0)
+						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
 
-                const char* err = new_macro(label, node->label.name, true, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file);
+                const char* err = new_macro(label, node->label.name, true, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL);
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
 					exit(PAC_Error_Unknown);
 				}
-                err = new_macro(node->label.name, NULL, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file); // keep track!
+                err = new_macro(node->label.name, NULL, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file, NULL); // keep track!
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
@@ -565,7 +715,7 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 				}
                 char templabel[512];
                 snprintf(templabel, sizeof(templabel), "%s_raw", node->label.name); // for using the mangled label to access to usage label
-                err = new_macro(templabel, label, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file);
+                err = new_macro(templabel, label, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file, NULL);
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
@@ -586,12 +736,16 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 				else
 					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous Auto-Generated definition\n");
 				if (m->type == MACRO_TYPE_NTYPE)
-					PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Types?");
-				else if (m->type == MACRO_TYPE_USER_MACRO)
-					PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Try renaming your Macros?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+					else if (m->type == MACRO_TYPE_USER_MACRO)
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+					else if (m->type == MACRO_TYPE_IDENTIFIER)
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+					else if (m->line > 0)
+						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 			}
 
-			const char* err = new_macro(node->label.name, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file); // ensure using the label works!
+			const char* err = new_macro(node->label.name, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL); // ensure using the label works!
 			if (err) {
 				free_ast(p->root);
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
@@ -677,22 +831,42 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 		free_ast(p->root);
 		exit(PAC_Error_MemoryAllocationFailed);
 	}
-    name[fsize] = '\0';
-    if (prefix) snprintf(name, fsize, "%s%s", prefix, p->current.lexeme);
-	else snprintf(name, fsize, "%s", p->current.lexeme);
+	
+	if (prefix) snprintf(name, fsize + 1, "%s%s", prefix, p->current.lexeme);
+	else snprintf(name, fsize + 1, "%s", p->current.lexeme);
+
+	size_t tsize = fsize;
+	char* true_name = name;
+	if (prefix) {
+		tsize = strlen(p->current.lexeme);
+		true_name = (char*)malloc(tsize + 1);
+		if (!true_name) {
+			free(name);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+			free_ast(p->root);
+			exit(PAC_Error_MemoryAllocationFailed);
+		}
+		true_name[tsize] = '\0';
+		pac_strdup(p->current.lexeme, true_name);
+	}
 
 	int sline = p->current.line;
 	int scol = p->current.column;
 
     if (p->current.type == FUNC_USE) {
-		if (only_macros) return NULL;
+		if (only_macros) {
+			free(true_name);
+			if (prefix) free(name);
+			parser_advance(p);
+			return NULL;
+		}
 
         ret = 0;
         m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_IDENTIFIER, -1);
 		char* label = m ? m->value : NULL;
         if (ret != 0) {
             free_ast(p->root);
-            PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Function not found!");
+            PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Function not found!");
             exit(PAC_Error_FunctionNotFound);
         }
 
@@ -706,6 +880,8 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 		}
         name[strlen(label)] = '\0';
         pac_strdup(label, name);
+
+		if (!prefix) true_name = name;
     }
     parser_advance(p);
     TokenType opt_specified_type = (TokenType)-1;
@@ -726,15 +902,17 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			} else {
 				free_ast(p->root);
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unknown Identifier!");
-				free(name);
+				free(true_name);
+				if (prefix) free(name);
 				exit(PAC_Error_TypeResolutionFailed);
 			}
 		}
 
 		if (opt_specified_type < T_BYTE || opt_specified_type > T_PTR) {
 			free_ast(p->root);
-			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Unknown Type!");
-			free(name);
+			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Type!");
+			free(true_name);
+			if (prefix) free(name);
 			exit(PAC_Error_TypeResolutionFailed);
 		}
 
@@ -751,8 +929,9 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
                 // Pass
             } else {
                 free_ast(p->root);
-                PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
-                free(name);
+                PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
+                free(true_name);
+				if (prefix) free(name);
                 exit(PAC_Error_TypeResolutionFailed);
             }
 
@@ -761,8 +940,9 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
                 parser_advance(p);
             } else {
                 free_ast(p->root);
-                PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Forgot to close array size specifier '[]' ?");
-                free(name);
+                PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Forgot to close array size specifier '[]' ?");
+                free(true_name);
+				if (prefix) free(name);
                 exit(PAC_Error_TypeResolutionFailed);
             }
         }
@@ -774,14 +954,18 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 
 		if (ret != -1) {
 			if (!m->auto_gen)
-				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Identifier conflicts with previous definition\n");
+				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous definition\n");
 			else
-				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Identifier conflicts with previous Auto-Generated definition\n");
+				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous Auto-Generated definition\n");
 				
 			if (m->type == MACRO_TYPE_NTYPE)
-				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, name, strlen(name), "Try renaming your Types?");
+				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
 			else if (m->type == MACRO_TYPE_USER_MACRO)
-				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, name, strlen(name), "Try renaming your Macros?");
+				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+			else if (m->type == MACRO_TYPE_IDENTIFIER)
+				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+			else if (m->line > 0)
+				PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 		}
 
 		ASTNode* node = NULL;
@@ -789,14 +973,48 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			ASTNode* child = NULL;
 			parser_advance(p);
 
+			if (parser_check(p, SP_EOL)) {
+				node = create_node(AST_DECLIDENTIFIER, p);
+				node->decl_identifier.name = (char*)malloc(fsize + 1);
+				if (!node->decl_identifier.name) {
+					free(true_name);
+					if (prefix) free(name);
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+					free_ast(p->root);
+					exit(PAC_Error_MemoryAllocationFailed);
+				}
+				node->decl_identifier.name[fsize] = '\0';
+				pac_strdup(name, node->decl_identifier.name);
+				node->decl_identifier.type = p->current.type;
+				node->decl_identifier.opt_specified_type = opt_specified_type;
+				node->decl_identifier.is_array = is_array;
+				node->decl_identifier.array_size = array_len;
+				node->decl_identifier.array_values = NULL;
+				node->decl_identifier.array_value_count = 0;
+
+				const char* err = add_macros ? new_macro(name, NULL, false, MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, NULL) : NULL;
+				if (err) {
+					free_ast(p->root);
+					PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, err);
+					free(true_name);
+					if (prefix) free(name);
+					exit(PAC_Error_Unknown);
+				}
+				free(true_name);
+				if (prefix) free(name);
+				return node;
+			}
+
 			node = create_node(AST_DECLIDENTIFIER, p);
-			node->decl_identifier.name = (char*)malloc(strlen(name) + 1);
+			node->decl_identifier.name = (char*)malloc(fsize + 1);
 			if (!node->decl_identifier.name) {
+				free(true_name);
+				if (prefix) free(name);
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
 				free_ast(p->root);
 				exit(PAC_Error_MemoryAllocationFailed);
 			}
-			node->decl_identifier.name[strlen(name)] = '\0';
+			node->decl_identifier.name[fsize] = '\0';
 			pac_strdup(name, node->decl_identifier.name);
 			node->decl_identifier.type = p->current.type;
 			node->decl_identifier.opt_specified_type = opt_specified_type;
@@ -822,8 +1040,9 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 					child = parse_literal(p);
 				} else {
 					free_ast(p->root);
-					PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Unknown Value!");
-					free(name);
+					PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Value!");
+					free(true_name);
+					if (prefix) free(name);
 					exit(PAC_Error_TypeResolutionFailed);
 				}
 			
@@ -839,79 +1058,258 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 				else parser_advance(p);
 				i++;
 			}
+		} else {
+			parser_advance(p);
+
+			if (parser_check(p, SP_EOL)) {
+			} else {
+				bool continue_loop = true;
+				while (continue_loop) {
+					if (!is_array) {
+						continue_loop = false;
+					}
+					if (p->current.type == IDENTIFIER_TOK) {
+					} else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
+						free_ast(parse_literal(p)); // Just there to ya know, do the job
+					} else {
+						free_ast(p->root);
+						PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Value!");
+						free(true_name);
+						if (prefix) free(name);
+						exit(PAC_Error_TypeResolutionFailed);
+					}
+
+					if (p->current.type != COMMA) continue_loop = false;
+					else parser_advance(p);
+				}
+			}
 		}
 
-		const char* err = add_macros ? new_macro(name, NULL, false, MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file) : NULL;
+		const char* err = add_macros ? new_macro(name, NULL, false, MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, NULL) : NULL;
 		if (err) {
 			free_ast(p->root);
-			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), err);
-			free(name);
+			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, err);
+			free(true_name);
+			if (prefix) free(name);
 			exit(PAC_Error_Unknown);
 		}
-		free(name);
+		free(true_name);
+		if (prefix) free(name);
         return node;
     }
 
 	if (only_macros) {
-		free(name);
+		free(true_name);
+		if (prefix) free(name);
 		return NULL;
 	}
 
     ret = 0;
-	m = find_macro(name, &ret, MACRO_TYPE_UNKNOWN, -1);
+	m = find_macro(true_name, &ret, MACRO_TYPE_UNKNOWN, -1);
     char* value = m ? m->value : NULL;
     if (ret == 0) {
 		size_t len = strlen(value);
 		char* str = value;
-		bool hex = false;
-		bool octal = false;
-		if (str[0] != '\0') {
-			if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
-				str = value + 2;
-				hex = true;
-			} else if (str[0] == '\\' && str[1] == '0') {
-				str = value + 2;
-				octal = true;
+
+		ASTNode* node = NULL;
+
+		if (m->type == MACRO_TYPE_USER_MACRO) {
+			bool hex = false;
+			bool octal = false;
+			if (str[0] != '\0') {
+				if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+					str = value + 2;
+					hex = true;
+				} else if (str[0] == '\\' && str[1] == '0') {
+					str = value + 2;
+					octal = true;
+				}
 			}
-		}
-        ASTNode* node = create_node(AST_LITERAL, p);
-        
-		if (is_sdigit(str)) {
-			node->literal.type = LIT_INT;
-			node->literal.int_val = strtol(str, NULL, hex ? 16 : octal ? 8 : 10);
-		} else {
+			node = create_node(AST_LITERAL, p);
+			
+			if (is_sdigit(str)) {
+				node->literal.type = LIT_INT;
+				node->literal.int_val = strtol(str, NULL, hex ? 16 : octal ? 8 : 10);
+			} else {
+				node->literal.type = LIT_STRING;
+				node->literal.str_val = (char*)malloc(len + 1);
+				if (!node->literal.str_val) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+					free(true_name);
+					if (prefix) free(name);
+					free_ast(p->root);
+					exit(PAC_Error_MemoryAllocationFailed);
+				}
+				node->literal.str_val[len] = '\0';
+				pac_strdup(value, node->literal.str_val);
+			}
+		} else if (m->type == MACRO_TYPE_IDENTIFIER) {
+			node = create_node(AST_IDENTIFIER, p);
+			ASTIdentifier* iden = &node->identifier;
 			node->literal.type = LIT_STRING;
-			node->literal.str_val = (char*)malloc(len + 1);
-			if (!node->literal.str_val) {
+
+			size_t nlen = strlen(m->value);
+
+			iden->name = (char*)malloc(nlen + 1);
+			if (!iden->name) {
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+				free(true_name);
+				if (prefix) free(name);
 				free_ast(p->root);
 				exit(PAC_Error_MemoryAllocationFailed);
 			}
-			node->literal.str_val[len] = '\0';
-			pac_strdup(value, node->literal.str_val);
+
+			iden->name[nlen] = '\0';
+			pac_strdup(m->value, iden->name);
+		} else {
+			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Can only use Macros or Identifiers (Functions/Labels/Structures/Data/Res/etc)");
+			PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Defined Here");
+			free(true_name);
+			if (prefix) free(name);
+			free_ast(p->root);
+			exit(PAC_Error_InvalidIdentifier);
 		}
-        free(name);
+		free(true_name);
+		if (prefix) free(name);
         return node;
     } else if (ret == -2) { // value found but NULL
         ASTNode* node = create_node(AST_IDENTIFIER, p);
-        node->identifier.name = (char*)malloc(strlen(name) + 1);
+        node->identifier.name = (char*)malloc(tsize + 1);
 		if (!node->identifier.name) {
 			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
 			free_ast(p->root);
 			exit(PAC_Error_MemoryAllocationFailed);
 		}
-        node->identifier.name[strlen(name)] = '\0';
-        pac_strdup(name, node->identifier.name);
-        free(name);
+        node->identifier.name[tsize] = '\0';
+        pac_strdup(true_name, node->identifier.name);
+        free(true_name);
+		if (prefix) free(name);
         return node;
     } else { // Error
         free_ast(p->root);
-        PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), "Unknown Identifier!");
-        free(name);
+        PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Identifier!");
+        free(true_name);
+		if (prefix) free(name);
         exit(PAC_Error_InvalidIdentifier);
     }
 
     return NULL;
+}
+
+ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefix) {
+    ASTNode* node = only_macros ? NULL : create_node(AST_RESERVE, p);
+    parser_advance(p); // consume :res
+    if (p->current.type != IDENTIFIER_TOK) {
+        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier!");
+        free_ast(p->root);
+        exit(PAC_Error_UnexpectedToken);
+    }
+    
+	size_t fsize = prefix ? strlen(p->current.lexeme) + strlen(prefix) : strlen(p->current.lexeme);
+
+    char* name = (char*)malloc(fsize + 1);
+	if (!name) {
+		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+		free_ast(p->root);
+		exit(PAC_Error_MemoryAllocationFailed);
+	}
+    
+    if (prefix) snprintf(name, fsize + 1, "%s%s", prefix, p->current.lexeme);
+	else snprintf(name, fsize + 1, "%s", p->current.lexeme);
+
+	size_t tsize = fsize;
+	char* true_name = name;
+	if (prefix) {
+		tsize = strlen(p->current.lexeme);
+		true_name = (char*)malloc(tsize + 1);
+		if (!true_name) {
+			free(name);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+			free_ast(p->root);
+			exit(PAC_Error_MemoryAllocationFailed);
+		}
+		true_name[tsize] = '\0';
+		pac_strdup(p->current.lexeme, true_name);
+	}
+
+    parser_advance(p);
+
+    if (p->current.type != OP_NOT) {
+		free(true_name);
+		if (prefix) free(name);
+        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected '!'");
+        free_ast(p->root);
+        exit(PAC_Error_UnexpectedToken);
+    }
+
+    parser_advance(p);
+
+    if (p->current.type < T_BYTE || p->current.type > T_PTR) {
+		free(true_name);
+		if (prefix) free(name);
+        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected a Type!");
+        free_ast(p->root);
+        exit(PAC_Error_UnexpectedToken);
+    }
+	
+	if (!only_macros) node->reserve.type = p->current.type;
+
+	parser_advance(p);
+	bool is_array = false;
+	size_t array_len = 0;
+	if (p->current.type == LBRACKET) {
+		// Array
+		is_array = true;
+		array_len = 1;
+		parser_advance(p);
+		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
+			ASTNode* arrsize_node = parse_literal(p);
+			array_len = arrsize_node->literal.int_val;
+			free_ast(arrsize_node);
+		} else if (p->current.type == RBRACKET) {
+			PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Size of Array not specified, defaulting to 1");
+		} else {
+			free(true_name);
+			if (prefix) free(name);
+			free_ast(p->root);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
+			exit(PAC_Error_TypeResolutionFailed);
+		}
+
+		if (p->current.type == RBRACKET) {
+			// Parse Array Values
+			parser_advance(p);
+		} else {
+			free(true_name);
+			if (prefix) free(name);
+			free_ast(p->root);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Forgot to close array size specifier '[]' ?");
+			exit(PAC_Error_TypeResolutionFailed);
+		}
+		parser_advance(p);
+	}
+
+	if (!only_macros) {
+		node->reserve.is_array = is_array;
+		node->reserve.array_size = array_len;
+		node->reserve.name = name;
+	}
+    
+	const char* err = add_macros ? new_macro(name, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL) : NULL;
+	if (err) {
+		free(true_name);
+		if (prefix) free(name);
+		free_ast(p->root);
+		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
+		exit(PAC_Error_Unknown);
+	}
+    
+	if (only_macros) {
+		free(true_name);
+		if (prefix) free(name);
+	}
+	
+	return node;
 }
 
 static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
@@ -975,7 +1373,7 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 				break;
 			}
 
-			const char* err = new_macro(name, value, false, MACRO_TYPE_USER_MACRO, sline, scol, p->lexer->file);
+			const char* err = new_macro(name, value, false, MACRO_TYPE_USER_MACRO, sline, scol, p->lexer->file, NULL);
 			free(name);
 			if (err) {
 				free_ast(p->root);
@@ -1178,7 +1576,7 @@ static void parse_types(Parser* p, bool make_macro) {
 	}
 
 	if (make_macro) {
-		const char* err = new_macroEX(name, (uint8_t*)&p->current.type, sizeof(TokenType), false, MACRO_TYPE_NTYPE, sline, scol, p->lexer->file);
+		const char* err = new_macroEX(name, (uint8_t*)&p->current.type, sizeof(TokenType), false, MACRO_TYPE_NTYPE, sline, scol, p->lexer->file, NULL);
 		if (err) {
 			free_ast(p->root);
 			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), err);
@@ -1191,189 +1589,194 @@ static void parse_types(Parser* p, bool make_macro) {
 }
 
 static void parse_struct(Parser* p, bool only_macros, bool add_macros, ASTNode* parent) {
-    parser_advance(p);
+    parser_advance(p); // consume .struct
     if (p->current.type != IDENTIFIER_TOK) {
         PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier!");
         free_ast(p->root);
         exit(PAC_Error_UnexpectedToken);
     }
     
-	char* name = (char*)malloc(strlen(p->current.lexeme) + 2);
+	size_t nlen = strlen(p->current.lexeme);
+	char* name = (char*)malloc(nlen + 2);
 	if (!name) {
 		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
 		free_ast(p->root);
 		exit(PAC_Error_MemoryAllocationFailed);
 	}
-	name[strlen(p->current.lexeme)+1] = '\0';
-	snprintf(name, strlen(p->current.lexeme) + 2, "%s.", p->current.lexeme);
+	
+	snprintf(name, nlen + 2, "%s.", p->current.lexeme);
 
 	int sline = p->current.line;
 	int scol = p->current.column;
 
     parser_advance(p);
 
-    if (p->current.type != SP_EOL) {
+	bool res = false;
+	if (parser_check(p, RESERVE)) {
+		res = true;
+		parser_advance(p);
+	}
+    if (!parser_check(p, SP_EOL)) {
         PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected '\\n' (newline)");
         free_ast(p->root);
         exit(PAC_Error_UnexpectedToken);
     }
 
     parser_advance(p);
-	if (p->current.type == STRUCT_END) {
-		PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name)-1, "Skipped Empty Structure");
+	if (parser_check(p, STRUCT_END)) {
+		PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, NULL, strlen(name)-1, "Skipped Empty Structure");
+		parser_advance(p);
         return;
 	}
-	parser_advance(p);
 	
 	bool found = false;
-	while (p->current.type != STRUCT_END) {
+
+	size_t i = 0;
+	while (!parser_check(p, STRUCT_END)) {
 		if (p->current.type != IDENTIFIER_TOK) {
-			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier!");
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier for field name!");
 			free_ast(p->root);
 			exit(PAC_Error_UnexpectedToken);
 		}
 
-		ASTNode* node = parse_identifier(p, only_macros, add_macros, name);
-		add_child(parent, node);
+		if (add_macros && i == 0) {
+			char v[256];
+			snprintf(v, sizeof(v), "%s%s", name, p->current.lexeme);
+			char n[256];
+			strcpy(n, name);
+			n[nlen] = '\0';
+			const char* err = new_macroEX(n, (uint8_t*)v, nlen + 2 + strlen(p->current.lexeme), true, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL);
+			if (err) {
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+				free_ast(p->root);
+				free(name);
+				exit(PAC_Error_MemoryAllocationFailed);
+			}
+		}
+
+		ASTNode* node = res ? parse_reserve(p, only_macros, add_macros, name) : parse_identifier(p, only_macros, add_macros, name);
+		if (node) add_child(parent, node);
 
 		parser_advance(p);
 
 		if (parser_check(p, STRUCT_END)) found = true;
+		i++;
 	}
     
 	if (!found) {
-		PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name)-1, "Incomplete Structure!");
+		PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, NULL, strlen(name)-1, "Incomplete Structure!");
 		free(name);
 		free_ast(p->root);
 		exit(PAC_Error_StructIncomplete);
 	}
 	free(name);
-}
 
-ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros) {
-    ASTNode* node = only_macros ? NULL : create_node(AST_RESERVE, p);
-    parser_advance(p); // consume :res
-    if (p->current.type != IDENTIFIER_TOK) {
-        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier!");
-        free_ast(p->root);
-        exit(PAC_Error_UnexpectedToken);
-    }
-    
-	char* name = (char*)malloc(strlen(p->current.lexeme) + 1);
-	if (!name) {
-		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
-		free_ast(p->root);
-		exit(PAC_Error_MemoryAllocationFailed);
-	}
-	name[strlen(p->current.lexeme)] = '\0';
-	pac_strdup(p->current.lexeme, name);
-
-    parser_advance(p);
-
-    if (p->current.type != OP_NOT) {
-        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected '!'");
-        free_ast(p->root);
-        exit(PAC_Error_UnexpectedToken);
-    }
-
-    parser_advance(p);
-
-    if (p->current.type < T_BYTE || p->current.type > T_PTR) {
-        PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected a Type!");
-        free_ast(p->root);
-        exit(PAC_Error_UnexpectedToken);
-    }
-	
-	if (!only_macros) node->reserve.type = p->current.type;
-
-	parser_advance(p);
-	bool is_array = false;
-	size_t array_len = 0;
-	if (p->current.type == LBRACKET) {
-		// Array
-		is_array = true;
-		array_len = 1;
-		parser_advance(p);
-		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
-			ASTNode* arrsize_node = parse_literal(p);
-			array_len = arrsize_node->literal.int_val;
-			free_ast(arrsize_node);
-		} else if (p->current.type == RBRACKET) {
-			PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Size of Array not specified, defaulting to 1");
-		} else {
-			free_ast(p->root);
-			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Only Int/Bin/Hex Literals Allowed inside the array size specifier '[]'");
-			exit(PAC_Error_TypeResolutionFailed);
-		}
-
-		if (p->current.type == RBRACKET) {
-			// Parse Array Values
-			parser_advance(p);
-		} else {
-			free_ast(p->root);
-			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Forgot to close array size specifier '[]' ?");
-			exit(PAC_Error_TypeResolutionFailed);
-		}
-		parser_advance(p);
-	}
-
-	if (!only_macros) {
-		node->reserve.is_array = is_array;
-		node->reserve.array_size = array_len;
-		node->reserve.name = name;
-	}
-    
-	const char* err = add_macros ? new_macro(name, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file) : NULL;
-	if (err) {
-		free(name);
-		free_ast(p->root);
-		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
-		exit(PAC_Error_Unknown);
-	}
-    
-	if (only_macros) free(name);
-	
-	return node;
+	parser_advance(p); // consume .struct_end
 }
 
 void parse_symbols(Parser* p) {
     parser_advance(p);
     while (p->current.type != SP_EOF) {
-        if (p->current.type == LABEL_DEF) {
-            ASTNode* temp = parse_label(p, true);
-            free_ast(temp);
-            continue;
-        } else if (p->current.type == FUNC_DEF) {
-            parser_advance(p);
-            
-            ASTNode* temp;
-            
-            if (in_func) {
-                temp = parse_label(p, true);
-            } else {
-                memset(func_start, 0, sizeof(func_start));
-                in_func = true;
-                temp = parse_label(p, true); // resolve func
-            }
-            free_ast(temp);
-            continue;
-        } else if (p->current.type == FUNC_END) {
-            memset(func_start, 0, sizeof(func_start));
-            parser_advance(p);
-            in_func = false;
-            continue;
-        } else if (p->current.type >= PP_DEF && p->current.type <= PP_UNDEF) {
-            parse_preprocessors(p, true, false);
-        } else if (p->current.type == IDENTIFIER_TOK) {
-            (void)parse_identifier(p, true, true, NULL);
-        } else if (p->current.type == STRUCT_DEF) {
-			parse_struct(p, true, true, NULL);
-		} else if (p->current.type == RESERVE) {
-            (void)parse_reserve(p, true, true);
-        } else if (p->current.type == TYPEDEF) {
-			parse_types(p, true);
+		if (parser_check(p, SP_EOL)) {
+			parser_advance(p);
+			continue;
 		}
-		parser_advance(p);
+
+		ASTNode* stmt = NULL;
+		if (p->current.type >= ASM_MOV && p->current.type <= ASM_NOP) {
+			stmt = parse_inst(p, true);
+			if (stmt) free_ast(stmt);
+			continue;
+		} else if (p->current.type >= PP_DEF && p->current.type <= PP_UNDEF) {
+			parse_preprocessors(p, true, false); // Already handled
+			continue;
+		}
+
+		switch (p->current.type) {
+			case LABEL_DEF: {
+				stmt = parse_label(p, true);
+				break;
+			}
+			case SECTION:
+			case GLOBAL: {
+				stmt = parse_directive(p);
+				break;
+			}
+			case COMMENT_LINE:
+			case COMMENT_BLOCK: {
+				parser_advance(p);
+				break;
+			}
+			case LIT_BIN:
+			case LIT_HEX:
+			case LIT_INT:
+			case LIT_FLOAT:
+			case LIT_CHAR:
+			case LIT_STRING: {
+				stmt = parse_literal(p);
+				break;
+			}
+			case IDENTIFIER_TOK: {
+				stmt = parse_identifier(p, true, true, NULL);
+				break;
+			}
+			case SIZE_SEC:
+			case START_SEC:
+			case ALIGN: {
+				parser_advance(p); // consume :align
+				stmt = parse_literal(p); // parse literal
+				if (stmt->type != AST_LITERAL) {
+					free_ast(stmt);
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
+					exit(PAC_Error_InvalidAlignment);
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+					free_ast(stmt);
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
+					exit(PAC_Error_InvalidAlignment);
+				}
+				free_ast(stmt);
+				stmt = NULL;
+				break;
+			}
+			case RESERVE: {
+				stmt = parse_reserve(p, true, true, NULL);
+				break;
+			}
+			case FUNC_DEF: {
+            	parser_advance(p);
+            
+				if (in_func) {
+					stmt = parse_label(p, true);
+				} else {
+					memset(func_start, 0, sizeof(func_start));
+					in_func = true;
+					stmt = parse_label(p, true); // resolve func
+				}
+				break;
+			}
+			case FUNC_END: {
+				memset(func_start, 0, sizeof(func_start));
+				parser_advance(p);
+				in_func = false;
+				break;
+			}
+			case TYPEDEF: {
+				parse_types(p, true);
+				break;
+			}
+			case STRUCT_DEF: {
+				parse_struct(p, true, true, NULL);
+				break;
+			}
+			default: {
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unexpected token at top-level!");
+				if (stmt) free_ast(stmt);
+				exit(PAC_Error_UnexpectedToken);
+				break;
+			}
+		}
+
+		if (stmt) free_ast(stmt);
     }
     free_token(&p->current);
     free_token(&p->previous);
@@ -1390,106 +1793,157 @@ ASTNode* parse_program(Parser* p) {
         }
         ASTNode* stmt = NULL;
         if (p->current.type >= ASM_MOV && p->current.type <= ASM_NOP) {
-            stmt = parse_inst(p);
+            add_child(root, parse_inst(p, false));
+			continue;
         } else if (p->current.type == LABEL_DEF) {
-            stmt = parse_label(p, false);
+			add_child(root, parse_label(p, false));
+			continue;
         } else if (p->current.type >= PP_DEF && p->current.type <= PP_UNDEF) {
             parse_preprocessors(p, false, true); // Already handled
-        } else if (p->current.type == SECTION || p->current.type == GLOBAL) {
-            stmt = parse_directive(p);
-        } else if (p->current.type == COMMENT_LINE || p->current.type == COMMENT_BLOCK) {
-            stmt = create_node(AST_COMMENT, p);
-            stmt->comment.value = (char*)malloc(strlen(p->current.lexeme) + 1);
-			if (!stmt->comment.value) {
-				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
-				free_ast(p->root);
-				exit(PAC_Error_MemoryAllocationFailed);
+			continue;
+		}
+		switch (p->current.type) {
+			case LABEL_DEF: {
+				stmt = parse_label(p, false);
+				break;
 			}
-            stmt->comment.value[strlen(p->current.lexeme)] = '\0';
-            pac_strdup(p->current.lexeme, stmt->comment.value);
-            parser_advance(p);
-        } else if (p->current.type == LIT_BIN || p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_FLOAT || p->current.type == LIT_CHAR || p->current.type == LIT_STRING) {
-            stmt = parse_literal(p);
-        } else if (p->current.type == IDENTIFIER_TOK) {
-            stmt = parse_identifier(p, false, false, NULL);
-        } else if (p->current.type == ALIGN) {
-            parser_advance(p); // consume :align
-            stmt = parse_literal(p); // parse literal
-            if (stmt->type != AST_LITERAL) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            } else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            }
-            nxt_secalignment = stmt->literal.int_val;
-            free_ast(stmt);
-            stmt = NULL;
-        } else if (p->current.type == START_SEC) {
-            parser_advance(p); // consume :start
-            stmt = parse_literal(p); // parse literal
-            if (stmt->type != AST_LITERAL) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':start'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            } else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':start'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            }
-            nxt_secstart = stmt->literal.int_val;
-            free_ast(stmt);
-            stmt = NULL;
-        } else if (p->current.type == SIZE_SEC) {
-            parser_advance(p); // consume :size
-            stmt = parse_literal(p); // parse literal
-            if (stmt->type != AST_LITERAL) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer literal when using ':size'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            } else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
-                PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer literal when using ':size'");
-                free_ast(root);
-                exit(PAC_Error_InvalidAlignment);
-            }
-            nxt_secsize = stmt->literal.int_val;
-            free_ast(stmt);
-            stmt = NULL;
-        } else if (p->current.type == RESERVE) {
-            stmt = parse_reserve(p, false, false);
-        } else if (p->current.type == FUNC_DEF) {
-            parser_advance(p); // consume .func
-            in_func = true;
-            stmt = parse_label(p, false);
-        } else if (p->current.type == FUNC_END) {
-            parser_advance(p); // consume .endfunc
-            in_func = false;
-            char label[512];
-            // Remove all labels
-            for (size_t i = 0; i < funccount; i++) {
-                snprintf(label, sizeof(label), "%s_%llu", func_start, (unsigned long long)i);
-                rm_macro(label);
-                snprintf(label, sizeof(label), "%s_%llu_raw", func_start, (unsigned long long)i);
-                int ret = 0;
-				struct p_macro* m = find_macro(label, &ret, MACRO_TYPE_IDENTIFIER, -1);
-                char* usage_label = m ? m->value : NULL;
-                if (ret == 0) {
-                    rm_macro(usage_label);
-                }
-                rm_macro(label);
-            }
-            memset(func_start, 0, sizeof(func_start));
-        } else if (p->current.type == TYPEDEF) {
-			parse_types(p, false);
-		} else if (p->current.type == STRUCT_DEF) {
-			parse_struct(p, false, false, root);
-		} else {
-            PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unexpected token at top-level!");
-            free_ast(root);
-            exit(PAC_Error_UnexpectedToken);
-        }
+			case SECTION:
+			case GLOBAL: {
+				stmt = parse_directive(p);
+				break;
+			}
+			case COMMENT_LINE:
+			case COMMENT_BLOCK: {
+				stmt = create_node(AST_COMMENT, p);
+				stmt->comment.value = (char*)malloc(strlen(p->current.lexeme) + 1);
+				if (!stmt->comment.value) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed!");
+					free_ast(stmt);
+					free_ast(p->root);
+					exit(PAC_Error_MemoryAllocationFailed);
+				}
+				stmt->comment.value[strlen(p->current.lexeme)] = '\0';
+				pac_strdup(p->current.lexeme, stmt->comment.value);
+				parser_advance(p);
+				break;
+			}
+			case LIT_BIN:
+			case LIT_HEX:
+			case LIT_INT:
+			case LIT_FLOAT:
+			case LIT_CHAR:
+			case LIT_STRING: {
+				stmt = parse_literal(p);
+				break;
+			}
+			case IDENTIFIER_TOK: {
+				stmt = parse_identifier(p, false, false, NULL);
+				break;
+			}
+			case ALIGN: {
+				parser_advance(p); // consume :align
+				stmt = parse_literal(p); // parse literal
+				if (stmt->type != AST_LITERAL) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				}
+
+				nxt_secalignment = stmt->literal.int_val;
+				free_ast(stmt);
+				stmt = NULL;
+				break;
+			}
+			case START_SEC: {
+				parser_advance(p); // consume :start
+				stmt = parse_literal(p); // parse literal
+				if (stmt->type != AST_LITERAL) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':start'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':start'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				}
+				nxt_secstart = stmt->literal.int_val;
+				free_ast(stmt);
+				stmt = NULL;
+				break;
+			}
+			case SIZE_SEC: {
+				parser_advance(p); // consume :size
+				stmt = parse_literal(p); // parse literal
+				if (stmt->type != AST_LITERAL) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer literal when using ':size'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer literal when using ':size'");
+					free_ast(stmt);
+					free_ast(root);
+					exit(PAC_Error_InvalidAlignment);
+				}
+				nxt_secsize = stmt->literal.int_val;
+				free_ast(stmt);
+				stmt = NULL;
+				break;
+			}
+			case RESERVE: {
+				stmt = parse_reserve(p, false, false, NULL);
+				break;
+			}
+			case FUNC_DEF: {
+            	parser_advance(p); // consume .func
+				in_func = true;
+				stmt = parse_label(p, false);
+				break;
+			}
+			case FUNC_END: {
+				parser_advance(p); // consume .endfunc
+				in_func = false;
+				char label[512];
+				// Remove all labels
+				for (size_t i = 0; i < funccount; i++) {
+					snprintf(label, sizeof(label), "%s_%llu", func_start, (unsigned long long)i);
+					rm_macro(label);
+					snprintf(label, sizeof(label), "%s_%llu_raw", func_start, (unsigned long long)i);
+					int ret = 0;
+					struct p_macro* m = find_macro(label, &ret, MACRO_TYPE_IDENTIFIER, -1);
+					char* usage_label = m ? m->value : NULL;
+					if (ret == 0) {
+						rm_macro(usage_label);
+					}
+					rm_macro(label);
+				}
+				memset(func_start, 0, sizeof(func_start));
+				break;
+			}
+			case TYPEDEF: {
+				parse_types(p, false);
+				break;
+			}
+			case STRUCT_DEF: {
+				parse_struct(p, false, false, root);
+				break;
+			}
+			default: {
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Unexpected token at top-level!");
+				if (stmt) free_ast(stmt);
+				free_ast(root);
+				exit(PAC_Error_UnexpectedToken);
+				break;
+			}
+		}
 
         if (stmt) add_child(root, stmt);
     }
@@ -1638,7 +2092,7 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
         case AST_DECLIDENTIFIER:
 			if (!node->decl_identifier.is_array) {
 				if (node->child_count < 1) {
-					strcpy(out, "Invalid DeclIdentifier!");
+					snprintf(out, maxsize, "[DeclIdentifier] %s => \\x0", node->decl_identifier.name);
 					return;
 				}
 				ast_to_str(node->children[0], operand, sizeof(operand));

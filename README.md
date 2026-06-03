@@ -9,7 +9,7 @@ PAC Includes Structures/Preprocessing/Functions/Types/more
 ### New Keywords
 All new keywords begin with '.' example:
 ```pac-asm
-    .struct
+    .struct MyStruct :res
         a!int
         b!int
     .endstruct
@@ -20,9 +20,9 @@ PAC's default types include: **byte**, **short**, **int**, **long**, **ubyte**, 
 
 PAC also offers users a way to create their own types using '**.type**' keyword, example:
 ```pac-asm
-    .type new_type ubyte // .type <new type> = <type>
+    .type new_type = ubyte // .type <new type> = <type>
     .type another_type=new_type
-    .struct
+    .struct MyStruct :res
         a!new_type // Same as ubyte
         b!another_type // Same as ubyte
     .endstruct
@@ -33,11 +33,11 @@ PAC offers structures, here is how to use them -
 
 ##### Making Structures
 
-To Define Structures, you must use the '**.struct**' keyword to open a Structure Block, Then type the structure name.
+To Define Structures, you must use the '**.struct**' keyword to open a Structure Block, Then type the structure name, after this you can use '**:res**' keyword to define the Structure as '*Reserved*' or in simple terms, allocated in sections like '**.bss**'
 Then you follow this format to define a new field: '**Name!Type**', for example
 
 ```pac-asm
-    .struct MyStruct
+    .struct MyStruct :res
         myField!ubyte
         anotherField!ushort
     .endstruct
@@ -45,19 +45,22 @@ Then you follow this format to define a new field: '**Name!Type**', for example
 
 Finally **DO NOT** Forget to close the structure block using the keyword '**.endstruct**'
 
+For Structures with data in them, dont use '**:res**' keyword. For every field '=' is mandatory in data structures, but for whichever field you like, assign it a value after '='. All other fields are auto assigned to '0'.
+
+Example -
+
+```pac-asm
+	.struct MyStruct
+		myField!ubyte[] = "Some String", 0xA
+		anotherField!ushort = // No Value = Auto Zeroed
+		yetAnotherField!ulong = 0x123456789ABCDEF
+	.endstruct
+```
+
 ##### Accessing Structures
 To Access your created Structures you need to use this format: '**Structure-Name.Field**', For example -
 ```pac-asm
     mov %qg0, MyStruct.myField
-```
-
-
-##### Change Structure's Field's Value
-To change the value of a field inside a structure, you need to first access it then use the '=' sign to assign it a new value, either constant or variable. Example -
-
-```pac-asm
-    MyStruct.anotherField = 123 // Constant
-    MyStruct.myField = %bg1 // Variable (Register)
 ```
 
 ### Global/External

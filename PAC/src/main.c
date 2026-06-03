@@ -54,7 +54,7 @@ void print_usage(const char* prog) {
     printf("\t--only-asm                Stop after encoding and do not link\n");
 	printf("\t--only-link               Do not do any sort of assembly, direcly link input files\n");
 	printf("\t            - Important Note, the inbuilt linker only supports Linking ELF64 Object files to supported formats such as ELF32\n");
-    printf("\t-a, --arch <architecture> Target architecture (default: x86_64)\n");
+    printf("\t-a, --arch <architecture> Target architecture (default: host, fallback: x86_64)\n");
     printf("\t-b, --bits <16|32|64>     Target bits (default: 64)\n");
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
@@ -68,7 +68,13 @@ bool parse_args(int argc, char** argv, Args* args) {
     args->input_files = NULL;
     args->input_count = 0;
     args->verbose = false;
-    args->arch = x86_64;
+    args->arch = host_arch();
+	if (args->arch == UNKNOWN_ARCH) {
+		char arch[256];
+		archenum_to_archs(args->arch, arch);
+		fprintf(stderr, COLOR_YELLOW "Warning: Unsupported HOST Archiecture '%s'\n\tDefaulting to x86_64\n" COLOR_RESET, arch);
+		args->arch = x86_64;
+	}
     args->bits = 64;
     args->debug_symbols = false;
     args->lexout = false;
@@ -419,6 +425,32 @@ int main(int argc, char** argv) {
     if (!parse_args(argc, argv, &args)) {
         return PAC_Error_ArgumentInvalidUsage;
     }
+
+	if (args.verbose) {
+		printf("Verbose mode enabled\n");
+		printf("Target Information:\n");
+		
+		char arch[256];
+		archenum_to_archs(args.arch, arch);
+		printf("\tTarget Architecture: %s\n", arch);
+		printf("\tTarget Bits: %u\n", args.bits);
+		printf("\tTarget File: %s\n", args.output_file);
+		const char* tmode = args.only_asm ? (args.only_link ? "Link Only" : "Assemble Only") : "Assemble + Link";
+		if (args.parseout || args.lexout) {
+			tmode = args.parseout ? "Parse + Show AST" : "Lex + Show Tokens";
+		} else if (args.asmout) {
+			tmode = "Assemble + Show IR";
+		} else if (!args.only_asm) {
+			printf("\tTarget Format: %s\n", linker_format_to_str(args.linkformat));
+		}
+		printf("\tTarget Mode: %s\n", tmode);
+
+		printf("Host Information:\n");
+		enum Architecture arche = host_arch();
+		archenum_to_archs(arche, arch);
+		printf("\tHost Architecture: %s\n", arch);
+		printf("\tHost Bits: %u\n", arch_bits(arche));
+	}
 
     if (args.lexout) {
         perform_lexout(&args, args.input_files, 0, args.input_count);

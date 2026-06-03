@@ -1072,6 +1072,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
     // REX prefix = 0100WRXB
     size_t cur_symbol_idx = 0;
 
+	(void)unlocked;
+
     inst_buf_capacity = MAX_INST_BUF_SIZE;
     inst_buf = (uint8_t*)malloc(inst_buf_capacity);
 	if (!inst_buf) {

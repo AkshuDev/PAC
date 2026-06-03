@@ -258,7 +258,10 @@ _start:
 
     direction!ulong = 255
 
-	sleep_time!ulong[2] = 0, 100000000
+	.struct sleep_time
+		t0!ulong =
+		t1!ulong = 100000000
+	.endstruct
 
 :section .bss
     :res input_buffer!uint[8]
