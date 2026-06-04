@@ -254,8 +254,9 @@ After analyzing the memory usage (***heaptrack***) by Assembling and Linking on 
 
 **NOTE: PAC auto defaults architecture and bits to HOST, and output format to ELF64, for the following tests, parameters were passed just to FORCE the parameter**
 
-## Example on x86 32-bit and x86_64 64-bit
-For this example, these contents are used ->
+**NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
+
+For the following examples, these contents are used ->
 ```pac-asm
 	:section .rodata
 		msg!ubyte[] = "Pretty Neat huh?", 0xa
@@ -275,9 +276,10 @@ For this example, these contents are used ->
 		inst.int 0x80
 ```
 
+## Example on x86 32-bit and x86_64 64-bit
 Assembling + Linking with an Optimised Release Build of PAC
 
-**Test used ELF64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
+**This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
 ```shell
 	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86 -b 32
 	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
@@ -296,6 +298,8 @@ Assembling + Linking with an Optimised Release Build of PAC
 	[user@host PAC]$ tests/bin/simpleTest
 	Pretty Neat huh?
 ```
+
+---
 
 **This test utilizes x86 and Elf32 output format**
 ```shell
@@ -426,3 +430,369 @@ Assembling + Linking with an Optimised Release Build of PAC
 	[user@host PAC]$ tests/bin/simpleTest
 	Pretty Neat huh?
 ```
+
+## Examples of various flags
+**This test utilizes the lexout flag**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest --lexout
+	Lexing file: tests/simpleTest_x86.pasm
+	[  1:1  ] SECTION              ':section'
+	[  1:10 ] IDENTIFIER           '.rodata'
+	[  2:1  ] SP_EOL               ''
+	[  2:2  ] IDENTIFIER           'msg'
+	[  2:5  ] OP_NOT               '!'
+	[  2:6  ] T_UBYTE              'ubyte'
+	[  2:11 ] LBRACKET             '['
+	[  2:12 ] RBRACKET             ']'
+	[  2:14 ] OP_ASSIGN            '='
+	[  2:18 ] LIT_STRING           'Pretty Neat huh?'
+	[  2:34 ] COMMA                ','
+	[  2:36 ] LIT_HEX              '0xa'
+	[  3:1  ] SP_EOL               ''
+	[  4:1  ] SP_EOL               ''
+	[  4:1  ] SECTION              ':section'
+	[  4:10 ] IDENTIFIER           '.text'
+	[  5:1  ] SP_EOL               ''
+	[  5:2  ] GLOBAL               ':global'
+	[  5:10 ] IDENTIFIER           '_start'
+	[  6:1  ] SP_EOL               ''
+	[  7:1  ] SP_EOL               ''
+	[  7:1  ] LABEL_DEF            '_start'
+	[  8:1  ] SP_EOL               ''
+	[  8:2  ] ASM_MOV              'mov'
+	[  8:7  ] REGISTER             'ax'
+	[  8:9  ] COMMA                ','
+	[  8:11 ] LIT_INT              '0'
+	[  8:13 ] COMMENT_LINE         '// Uselss but fun'
+	[  9:1  ] SP_EOL               ''
+	[  9:2  ] ASM_MOV              'mov'
+	[  9:7  ] REGISTER             'eax'
+	[  9:10 ] COMMA                ','
+	[  9:12 ] LIT_INT              '4'
+	[ 10:1  ] SP_EOL               ''
+	[ 10:2  ] ASM_MOV              'mov'
+	[ 10:7  ] REGISTER             'ebx'
+	[ 10:10 ] COMMA                ','
+	[ 10:12 ] LIT_INT              '1'
+	[ 11:1  ] SP_EOL               ''
+	[ 11:2  ] ASM_LEA              'lea'
+	[ 11:7  ] REGISTER             'ecx'
+	[ 11:10 ] COMMA                ','
+	[ 11:12 ] LBRACKET             '['
+	[ 11:13 ] IDENTIFIER           'msg'
+	[ 11:16 ] RBRACKET             ']'
+	[ 12:1  ] SP_EOL               ''
+	[ 12:2  ] ASM_MOV              'mov'
+	[ 12:7  ] REGISTER             'edx'
+	[ 12:10 ] COMMA                ','
+	[ 12:12 ] LIT_INT              '17'
+	[ 13:1  ] SP_EOL               ''
+	[ 13:2  ] ASM_INT              'inst.int'
+	[ 13:11 ] LIT_HEX              '0x80'
+	[ 14:1  ] SP_EOL               ''
+	[ 15:1  ] SP_EOL               ''
+	[ 15:2  ] ASM_MOV              'mov'
+	[ 15:7  ] REGISTER             'eax'
+	[ 15:10 ] COMMA                ','
+	[ 15:12 ] LIT_INT              '1'
+	[ 16:1  ] SP_EOL               ''
+	[ 16:2  ] ASM_MOV              'mov'
+	[ 16:7  ] REGISTER             'ebx'
+	[ 16:10 ] COMMA                ','
+	[ 16:12 ] LIT_INT              '0'
+	[ 17:1  ] SP_EOL               ''
+	[ 17:2  ] ASM_INT              'inst.int'
+	[ 17:11 ] LIT_HEX              '0x80'
+```
+
+---
+
+**This test utilizes the --parseout flag**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest --parseout
+	Parsing file: tests/simpleTest_x86.pasm
+	[AST] [Directive] .rodata
+	[AST] Sadly DeclIdentifier Array is not yet supported.
+	[AST] [Directive] .text
+	[AST] [Directive] _start
+	[AST] [Label] _start
+	[AST] [Instruction] mov ax, 0
+	[AST] [Instruction] mov eax, 4
+	[AST] [Instruction] mov ebx, 1
+	[AST] [Instruction] lea ecx, [[Identifier] msg]
+	[AST] [Instruction] mov edx, 17
+	[AST] [Instruction] int 128
+	[AST] [Instruction] mov eax, 1
+	[AST] [Instruction] mov ebx, 0
+	[AST] [Instruction] int 128
+```
+
+---
+
+**This test utilizes the --asmout flag**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest --asmout
+	Assembling file: tests/simpleTest_x86.pasm
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	NOTE: Addresses/Sizes provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding
+	=== IR Dump (9 instructions) ===
+	[IR] [0x20] mov ax, 0
+	[IR] [0x2F] mov eax, 4
+	[IR] [0x3E] mov ebx, 1
+	[IR] [0x4D] lea ecx, [0x0]
+	[IR] [0x5C] mov edx, 17
+	[IR] [0x6B] int 128
+	[IR] [0x7A] mov eax, 1
+	[IR] [0x89] mov ebx, 0
+	[IR] [0x98] int 128
+	=== End IR ===
+	=== Symbol Dump (3 symbols) ===
+	[FILE] tests/simpleTest_x86.pasm
+	[IDENTIFIER] msg at 0x0 => Pretty Neat huh?\x0A in section: .rodata of size 0x11
+	[LABEL] _start at 0x20 => \x00 in section: .text of size 0x0
+	=== End Symbol ===
+	=== Section Dump (2 sections) ===
+	[0x0] .rodata => 24 bytes
+	[0x20] .text => 279 bytes
+	=== End Section ===
+```
+
+---
+
+
+**This test utilizes the --only-asm flag**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/build/simpleTest.o --only-asm
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	[user@host PAC]$ objdump -d tests/build/simpleTest.o
+
+	tests/build/simpleTest.o:     file format elf64-x86-64
+
+
+	Disassembly of section .text:
+
+	0000000000000000 <_start>:
+	0:	66 b8 00 00          	mov    $0x0,%ax
+	4:	b8 04 00 00 00       	mov    $0x4,%eax
+	9:	bb 01 00 00 00       	mov    $0x1,%ebx
+	e:	8d 0d 00 00 00 00    	lea    0x0(%rip),%ecx        # 14 <_start+0x14>
+	14:	ba 11 00 00 00       	mov    $0x11,%edx
+	19:	cd 80                	int    $0x80
+	1b:	b8 01 00 00 00       	mov    $0x1,%eax
+	20:	bb 00 00 00 00       	mov    $0x0,%ebx
+	25:	cd 80                	int    $0x80
+	27:	0f 1f 00             	nopl   (%rax)
+	2a:	0f 1f 00             	nopl   (%rax)
+	2d:	0f 1f 00             	nopl   (%rax)
+	# NOTE: objdump uses AT&T Syntax (src, dst), while PAC has its own syntax (dst, src)
+```
+
+---
+
+**This test utilizes the --only-link flag**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/build/simpleTest.o -o tests/bin/simpleTest --only-link
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+	[user@host PAC]$ tests/bin/simpleTest
+	Pretty Neat huh?
+```
+
+## Example of diagnostics system
+For this specific test, these contents are used ->
+```pac-asm
+	:section .rodata
+		msg!ubyte[] = "Pretty Neat huh?", 0xa
+
+	:section .text
+		:global _start
+
+	@def _start // Predefine macro with label name
+
+	_start:
+		mov %eax, 4
+		mov %ebx, 1
+		lea %ecx, [msg]
+		mov %edx, 17
+		inst.int 0x80
+
+		mov %eax, 1
+		mov %ebx, 0
+		inst.int 0x80
+
+	@def myFunc_0 // Predefine macro with auto-generated func name
+
+	.func myFunc:
+		// Also nothing
+	mylabel: // $myFunc.mylabel
+		// Nothing
+	.endfunc
+```
+
+**Test utilizes manually added errors to present the diagnostics system of PAC**
+```shell
+	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	tests/simpleTest_x86.pasm:10:1: warning: Label/Function conflicts with previous definition
+	- ("_start")
+	8 | @def _start
+	9 |
+	> 10 | _start:
+		   ^^^^^^
+	11 | 	mov %eax, 4
+	tests/simpleTest_x86.pasm:8:6: tip: Macro created here, try renaming your Macros? - ("_start")
+	6 |
+	7 | // Predefine macro with label name
+	> 8 | @def _start
+			   ^^^^^^
+	9 |
+	tests/simpleTest_x86.pasm:26:1: warning: Auto-Generated Label/Function conflicts with previous definition
+	- ("myFunc_0")
+	24 | .func myFunc:
+	25 | 	// Also nothing
+	> 26 | mylabel: // $myFunc.mylabel
+		   ^^^^^^^
+	27 | 	// Nothing
+	tests/simpleTest_x86.pasm:22:6: tip: Macro created here, try renaming your Macros? - ("myFunc_0")
+	20 |
+	21 | // Predefine macro with auto-generated func name
+	> 22 | @def myFunc_0
+				^^^^^^^^
+	23 |
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+```
+
+---
+
+For this specific test, these contents are used ->
+```pac-asm
+	:section .rodata
+		msg!ubyte[] = "Pretty Neat huh?", 0xa
+		_start!ulong = 10 // Predefine identifier with label name
+
+	:section .text
+		:global _start
+
+	_start:
+		mov %eax, 4
+		mov %ebx, 1
+		lea %ecx, [msg]
+		mov %edx, 17
+		inst.int 0x80
+
+		mov %eax, 1
+		mov %ebx, 0
+		inst.int 0x80
+```
+
+**Test utilizes manually added errors to present the diagnostics system of PAC**
+```shell
+	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	tests/simpleTest_x86.pasm:8:1: warning: Label/Function conflicts with previous definition
+	- ("_start")
+	6 | 	:global _start
+	7 |
+	> 8 | _start:
+		  ^^^^^^
+	9 | 	mov %eax, 4
+	tests/simpleTest_x86.pasm:3:2: tip: Identifier created here, try renaming your identifiers? - ("_start")
+	1 | :section .rodata
+	2 | 	msg!ubyte[] = "Pretty Neat huh?", 0xa
+	> 3 | 	_start!ulong = 10 // Predefine identifier with label name
+		    ^^^^^^
+	4 |
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+```
+
+---
+
+For this specific test, these contents are used ->
+```pac-asm
+	:section .rodata
+		msg!ubyte[] = "Pretty Neat huh?", 0xa
+
+	:section .text
+		:global _start
+
+	_start:
+		mov %eax, 4
+		mov %ebx, 1
+		lea %ecx, [msg]
+		mov %edx, 17
+		inst.int 0x80
+
+		jmp 5
+
+		mov %eax, 1
+		mov %ebx, 0
+		inst.int 0x80
+```
+
+**Test utilizes manually added errors to present the diagnostics system of PAC**
+```shell
+	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	tests/simpleTest_x86.pasm:14:2: error: Invalid Instruction
+	12 | 	inst.int 0x80
+	13 |
+	> 14 | 	jmp 5
+			^
+	15 |
+	Generated IR of this Instruction:
+		[IR] [0x6B] jmp 5
+```
+
+---
+
+For this specific test, these contents are used ->
+```pac-asm
+	:section .rodata
+		msg!ubyte[] = "Pretty Neat huh?", 0xa
+
+	:section .text
+		:global _start
+
+	@def exit 0x99
+	_start:
+		mov %eax, 4
+		mov %ebx, 1
+		lea %ecx, [msg]
+		mov %edx, 17
+		inst.int 0x80
+
+		jmp exit
+	
+	exit:
+		mov %eax, 1
+		mov %ebx, 0
+		inst.int 0x80
+```
+
+**Test utilizes manually added errors to present the diagnostics system of PAC**
+```shell
+	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+		tests/simpleTest_x86.pasm:17:1: warning: Label/Function conflicts with previous definition
+	- ("exit")
+	15 | 	jmp exit
+	16 |
+	> 17 | exit:
+		   ^^^^
+	18 | 	mov %eax, 1
+	tests/simpleTest_x86.pasm:7:6: tip: Macro created here, try renaming your Macros? - ("exit")
+	5 | 	:global _start
+	6 |
+	> 7 | @def exit 0x99
+			   ^^^^
+	8 | _start:
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	tests/simpleTest_x86.pasm:15:2: error: Invalid Instruction
+	13 | 	inst.int 0x80
+	14 |
+	> 15 | 	jmp exit
+			^
+	16 |
+	Generated IR of this Instruction:
+		[IR] [0x6B] jmp 153
+```
+
+# Thank you for reading this
