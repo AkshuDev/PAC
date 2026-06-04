@@ -278,8 +278,25 @@ void pac_diag(
             break;
     }
 
-    if (lexeme) fprintf(stderr, "%s:%d:%d: %s %s - (\"%s\")\n" COLOR_RESET, file, line, column, lvl, msg, lexeme);
-	else fprintf(stderr, "%s:%d:%d: %s %s\n" COLOR_RESET, file, line, column, lvl, msg);
+	char lbuf[12];
+	char cbuf[12];
+
+	if (line > 0) {
+		lbuf[0] = ':';
+		snprintf(lbuf + 1, sizeof(lbuf)-1, "%d", line);
+	} else
+		lbuf[0] = '\0';
+	if (column > 0) {
+		cbuf[0] = ':';
+		snprintf(cbuf + 1, sizeof(cbuf)-1, "%d", column);
+	} else
+		cbuf[0] = '\0';
+
+	lbuf[11] = '\0';
+	cbuf[11] = '\0';
+
+    if (lexeme) fprintf(stderr, "%s%s%s: %s %s - (\"%s\")\n" COLOR_RESET, file, lbuf, cbuf, lvl, msg, lexeme);
+	else fprintf(stderr, "%s%s%s: %s %s\n" COLOR_RESET, file, lbuf, cbuf, lvl, msg);
 
     if (src != NULL && src_len > 0 && line > 0) {
         int src_linecount = 0;

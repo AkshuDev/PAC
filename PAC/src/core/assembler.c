@@ -74,9 +74,17 @@ void section_add(SectionTable *table, const char *name, uint64_t base, uint64_t 
 {
     if (table->count >= table->capacity)
     {
-        table->capacity = table->capacity ? table->capacity * 2 : 8;
-        table->sections = realloc(table->sections, table->capacity * sizeof(Section));
+		size_t cap = table->capacity ? table->capacity * 2 : 8;
+        Section* s = table->sections ? (Section*)realloc(table->sections, cap * sizeof(Section)) : (Section*)malloc(cap * sizeof(Section));
+		if (!s) {
+			PAC_WARNINGF("Unknown File", 0, 0, NULL, 0, name, 0, "Allocation failed for section\n");
+			return;
+		}
+		table->capacity = cap;
+		table->sections = s;
     }
+
+	if (!name) return;
 
     Section *sec = &table->sections[table->count++];
     sec->name = strdup(name);
@@ -90,6 +98,7 @@ void section_add(SectionTable *table, const char *name, uint64_t base, uint64_t 
 
 Section *section_get(SectionTable *table, const char *name)
 {
+	if (!table || !table->sections) return NULL;
     for (size_t i = 0; i < table->count; i++)
     {
         if (strcmp(table->sections[i].name, name) == 0)
@@ -102,9 +111,11 @@ Section *section_get(SectionTable *table, const char *name)
 
 void section_free(SectionTable *table)
 {
+	if (!table || !table->sections) return;
+
     for (size_t i = 0; i < table->count; i++)
     {
-        free(table->sections[i].name);
+        if (table->sections[i].name) free(table->sections[i].name);
     }
     free(table->sections);
     table->sections = NULL;
@@ -130,6 +141,7 @@ void free_reloc(Section* sec) {
 }
 
 void free_relocs(SectionTable* sectab) {
+	if (!sectab || !sectab->sections) return;
     for (size_t i = 0; i < sectab->count; i++) {
         Section* sec = &sectab->sections[i];
         if (sec->relocs) {
@@ -143,6 +155,7 @@ void free_relocs(SectionTable* sectab) {
 
 void init_assembler(Assembler *ctx, Lexer *lex, Parser *parser, size_t bits, enum Architecture arch, ASTNode *root, SymbolTable *symtable, SectionTable *sectable, char *entry_label)
 {
+	memset(ctx, 0, sizeof(Assembler));
     ctx->arch = arch;
     ctx->bits = bits;
     ctx->parser = parser;
@@ -259,6 +272,10 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
     ASTNode *root = ctx->current;
     SectionTable *sectab = ctx->sections;
     SymbolTable *symtab = ctx->symbols;
+
+	if (sectab) memset(sectab, 0, sizeof(SectionTable));
+	if (symtab) memset(symtab, 0, sizeof(SymbolTable));
+
     signed long long current_section = -1;
     size_t cvaddr = 0; // Current Virtual Address
     Symbol *first_label = NULL;
@@ -522,14 +539,15 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
             free(value);
             cvaddr += size;
-            sectab->sections[current_section].size += size;
+            if (current_section >= 0) sectab->sections[current_section].size += size;
+			else PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Definitions outside any sections are skipped!");
 
             break;
 
         case AST_RESERVE:
             if (current_section < 0)
             {
-                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in undefined section!");
+                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in unknown section!");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -657,11 +675,11 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
     if (ctx->entry_label == NULL)
     {
-        fprintf(stderr, COLOR_YELLOW "Warning: No entry point specified, defaulting to the first label/func!\n" COLOR_RESET);
+        PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No entry point specified, defaulting to the first label/func!");
         if (first_label_node) { ctx->entry_label = first_label_node->label.name; }
-		else { fprintf(stderr, COLOR_YELLOW "Warning: No Assembly in file?\n" COLOR_RESET); ctx->no_instructions = true; }
+		else { PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No Assembly in file?"); ctx->no_instructions = true; }
     } else {
-		if (!first_label_node) { fprintf(stderr, COLOR_YELLOW "Warning: No Assembly in file?\n" COLOR_RESET); ctx->no_instructions = true; }
+		if (!first_label_node) { PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No Assembly in file?"); ctx->no_instructions = true; }
 	}
 }
 
@@ -682,269 +700,286 @@ IRList assemble(Assembler *ctx)
     for (size_t i = 0; i < root->child_count; i++)
     {
         ASTNode *node = root->children[i];
-		if (node->type == AST_FILE_CHANGE) {
-			ctx->cur_file = node->file_change.file_path;
-			ctx->cur_file_src = node->file_change.src;
-			ctx->cur_file_len = node->file_change.len;
-			continue;
-		}
-        if (node->type == AST_DIRECTIVE && node->directive.type == SECTION)
-        {
-            Section *sec = section_get(ctx->sections, node->directive.arg);
-            current_section = (sec ? (sec - ctx->sections->sections) : 0);
-            current_offset = ctx->sections->sections[current_section].base;
-            continue;
-        }
-		if (node->type == AST_DIRECTIVE && node->directive.type == GLOBAL)
-        {
-            Symbol* sym;
-            if (symtab_get(symtab, node->directive.arg, &sym)) {
-                sym->is_global = true;
-            } else {
-				PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
+
+		switch (node->type) {
+			case AST_FILE_CHANGE: {
+				ctx->cur_file = node->file_change.file_path;
+				ctx->cur_file_src = node->file_change.src;
+				ctx->cur_file_len = node->file_change.len;
+				continue;
 			}
-			continue;
-        }
+			case AST_DIRECTIVE: {
+				switch (node->directive.type) {
+					case SECTION: {
+						Section *sec = section_get(ctx->sections, node->directive.arg);
+						current_section = (sec && ctx->sections->sections ? (sec - ctx->sections->sections) : 0);
+						current_offset = current_section >= 0 && ctx->sections->sections ? ctx->sections->sections[current_section].base : 0x0;
+						continue;
+					}
+					case GLOBAL: {
+						Symbol* sym;
+						if (symtab_get(symtab, node->directive.arg, &sym)) {
+							sym->is_global = true;
+						} else {
+							PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
+						}
+						continue;
+					}
+					default: {
+						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Invalid AST Directive Type!");
+						symtab_free(symtab);
+						section_free(sectab);
+						free_ast(ctx->parser->root);
+						exit(PAC_Error_InternalLogicError);
+					}
+				}
+				continue;
+			}
+			case AST_LABEL: {
+				// assign label addr = current offset in section
+				if (current_section < 0 && sectab->sections) {
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
+					symtab_free(symtab);
+					section_free(sectab);
+					free_ast(ctx->parser->root);
+					exit(PAC_Error_SectionNotFound);
+				}
+				Symbol* sym;
+				if (symtab_get(symtab, node->label.name, &sym)) {
+					sym->addr = current_offset;
+					sym->addr2 = current_offset;
+				}
+				continue;
+			}
+			case AST_INSTRUCTION: {
+				if (current_section < 0 && sectab->sections) {
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
+					symtab_free(symtab);
+					section_free(sectab);
+					free_ast(ctx->parser->root);
+					exit(PAC_Error_SectionNotFound);
+				}
+				ASTInstruction *inst = &node->inst;
+				IRInstruction ir = {0};
+				ir.opcode = inst->opcode;
+				ir.arch = ctx->arch;
+				ir.operand_count = inst->operand_count;
+				ir.vaddr = current_offset;
+				ir.line = node->line;
+				ir.col = node->col;
 
-        if (node->type == AST_LABEL)
-        {
-            // assign label addr = current offset in section
-            if (current_section < 0)
-            {
-                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
-                symtab_free(symtab);
-                section_free(sectab);
-                free_ast(ctx->parser->root);
-                exit(PAC_Error_SectionNotFound);
-            }
-            Symbol* sym;
-            if (symtab_get(symtab, node->label.name, &sym))
-            {
-                sym->addr = current_offset;
-                sym->addr2 = current_offset;
-            }
-            continue;
-        }
+				for (size_t j = 0; j < inst->operand_count; j++){
+					ASTOperand *op = inst->operands[j];
+					switch(op->type) {
+						case OPERAND_IDENTIFIER:
+						case OPERAND_LABEL: {
+							Symbol* sym;
+							char *label = NULL;
 
-        if (node->type == AST_INSTRUCTION)
-        {
-            if (current_section < 0)
-            {
-                PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
-                symtab_free(symtab);
-                section_free(sectab);
-                free_ast(ctx->parser->root);
-                exit(PAC_Error_SectionNotFound);
-            }
-            ASTInstruction *inst = &node->inst;
-            IRInstruction ir = {0};
-            ir.opcode = inst->opcode;
-            ir.arch = ctx->arch;
-            ir.operand_count = inst->operand_count;
-            ir.vaddr = current_offset;
-			ir.line = node->line;
-			ir.col = node->col;
+							bool done = false;
 
-            for (size_t j = 0; j < inst->operand_count; j++)
-            {
-                ASTOperand *op = inst->operands[j];
-
-                if (op->type == OPERAND_LABEL || op->type == OPERAND_IDENTIFIER)
-                {
-                    Symbol* sym;
-                    char *label = NULL;
-
-					bool done = false;
-
-                    if (op->type == OPERAND_LABEL) {
-                        label = op->label;
-						done = true;
-					} else if (op->type == OPERAND_IDENTIFIER) {
-						if (op->identifier->type == AST_LITERAL) {
-							char buf[128];
-							switch (op->identifier->literal.type) {
-								case LIT_INT:
-									done = false;
-									snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
-									ir.operands[j] = strdup(buf);
-									break;
-								default:
-									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+							if (op->type == OPERAND_LABEL) {
+								label = op->label;
+								done = true;
+							} else if (op->type == OPERAND_IDENTIFIER) {
+								if (op->identifier->type == AST_LITERAL) {
+									char buf[128];
+									switch (op->identifier->literal.type) {
+										case LIT_INT:
+											done = false;
+											snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+											ir.operands[j] = strdup(buf);
+											break;
+										default:
+											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+											symtab_free(symtab);
+											section_free(sectab);
+											free_ast(ctx->parser->root);
+											exit(PAC_Error_InvalidIdentifier);
+									}
+								} else if (op->identifier->type != AST_IDENTIFIER) {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
 									symtab_free(symtab);
 									section_free(sectab);
 									free_ast(ctx->parser->root);
 									exit(PAC_Error_InvalidIdentifier);
+								} else {
+									label = op->identifier->identifier.name;
+									done = true;
+								}
 							}
-						} else if (op->identifier->type != AST_IDENTIFIER) {
-							PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
-							symtab_free(symtab);
-							section_free(sectab);
-							free_ast(ctx->parser->root);
-							exit(PAC_Error_InvalidIdentifier);
-						} else {
-							label = op->identifier->identifier.name;
-							done = true;
-						}
-                    }
 
-					if (done) {
-						bool got_sym = symtab_get(symtab, label, &sym);
-						if (got_sym)
-						{
-							char buf[128];
-							snprintf(buf, sizeof(buf), "0x%llX", (long long)sym->addr);
-							ir.operands[j] = strdup(buf);
+							if (done) {
+								bool got_sym = symtab_get(symtab, label, &sym);
+								if (got_sym) {
+									char buf[128];
+									snprintf(buf, sizeof(buf), "0x%llX", (long long)sym->addr);
+									ir.operands[j] = strdup(buf);
+								}
+								else {
+									ir.operands[j] = strdup("UNRESOLVED");
+								}
+							}
+							break;
 						}
-						else
-						{
-							ir.operands[j] = strdup("UNRESOLVED");
+						
+						case OPERAND_REGISTER: {
+							ir.operands[j] = strdup(op->reg);
+							break;
+						}
+					
+						case OPERAND_LIT_CHAR:
+						case OPERAND_LIT_INT: {
+							char buf[128];
+							snprintf(buf, sizeof(buf), "%lld", (long long)op->int_val);
+							ir.operands[j] = strdup(buf);
+							break;
+						}
+
+						case OPERAND_LIT_FLOAT:
+						case OPERAND_LIT_DOUBLE: {
+							char buf[128];
+							snprintf(buf, sizeof(buf), "%lf", op->float_val);
+							ir.operands[j] = strdup(buf);
+							break;
+						}
+
+						case OPERAND_MEMORY: {
+							char buf[128];
+							if (op->mem_opr_count < 1) {
+								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Operand of type memory is empty. e.g. mov %%rax, []");
+								symtab_free(symtab);
+								section_free(sectab);
+								free_ast(ctx->parser->root);
+								exit(PAC_Error_SyntaxMissingOperand);
+							}
+							if (op->mem_opr_count == 1) {
+								// Either identifier or register
+								ASTOperand *opmem_op = op->mem_addr[0];
+								switch (opmem_op->type) {
+									case OPERAND_REGISTER: {
+										snprintf(buf, sizeof(buf), "[%s]", opmem_op->reg);
+										break;
+									}
+									case OPERAND_IDENTIFIER: {
+										if (opmem_op->identifier->type == AST_LITERAL) {
+											char buf[128];
+											switch (opmem_op->identifier->literal.type) {
+												case LIT_INT:
+													snprintf(buf, sizeof(buf), "%lld", (long long)opmem_op->identifier->literal.int_val);
+													break;
+												default:
+													PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+													symtab_free(symtab);
+													section_free(sectab);
+													free_ast(ctx->parser->root);
+													exit(PAC_Error_InvalidIdentifier);
+											}
+										} else if (opmem_op->identifier->type == AST_IDENTIFIER) {
+											Symbol* sym;
+											bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
+											if (got_sym) {
+												snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym->addr);
+											} else {
+												snprintf(buf, sizeof(buf), "UNRESOLVED");
+											}
+										} else {
+											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier!");
+											PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 0, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!");
+											symtab_free(symtab);
+											section_free(sectab);
+											free_ast(ctx->parser->root);
+											exit(PAC_Error_InvalidIdentifier);
+										}
+										break;
+									}
+									default: {
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]");
+										symtab_free(symtab);
+										section_free(sectab);
+										free_ast(ctx->parser->root);
+										exit(PAC_Error_SyntaxInvalidOperandType);
+									}
+								}
+							} else if (op->mem_opr_count == 2) {
+								// 101% displacement
+								ASTOperand *opmem_op = op->mem_addr[0];
+								ASTOperand *opmem_disp = op->mem_addr[1];
+
+								if (opmem_disp->type != OPERAND_DISPLACEMENT) {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Expected Operand of type Displacement, got something else instead! e.g.\n\tInvalid - mov %%rax, [%%rbx 123]\n\tValid - mov %%rax, [%%rbx + 123]");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_SyntaxUnexpectedToken);
+								}
+
+								if (opmem_op->type == OPERAND_REGISTER) {
+									if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val);
+									else snprintf(buf, sizeof(buf), "[%s + %lld]", opmem_op->reg, (long long)opmem_disp->int_val);
+								}
+								else if (opmem_op->type == OPERAND_IDENTIFIER) {
+									if (op->identifier->type == AST_LITERAL) {
+										char buf[128];
+										switch (op->identifier->literal.type) {
+											case LIT_INT: {
+												snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+												ir.operands[j] = strdup(buf);
+												break;
+											} default: {
+												PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+												symtab_free(symtab);
+												section_free(sectab);
+												free_ast(ctx->parser->root);
+												exit(PAC_Error_InvalidIdentifier);
+											}
+										}
+									} else if (op->identifier->type == AST_IDENTIFIER) {
+										Symbol* sym;
+										bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
+										if (got_sym) {
+											if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
+											else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
+										} else {
+											snprintf(buf, sizeof(buf), "UNRESOLVED");
+										}
+									} else {
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier!");
+										PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 1, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!");
+										symtab_free(symtab);
+										section_free(sectab);
+										free_ast(ctx->parser->root);
+										exit(PAC_Error_InvalidIdentifier);
+									}
+								} else {
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]");
+									symtab_free(symtab);
+									section_free(sectab);
+									free_ast(ctx->parser->root);
+									exit(PAC_Error_SyntaxInvalidOperandType);
+								}
+							}
+							ir.operands[j] = strdup(buf);
+							break;
+						}
+					
+						default: {
+							printf("GAGA\n");
+							break;
 						}
 					}
 				}
-                else if (op->type == OPERAND_REGISTER)
-                {
-                    ir.operands[j] = strdup(op->reg);
-                }
-                else if (op->type == OPERAND_LIT_INT || op->type == OPERAND_LIT_CHAR)
-                {
-                    char buf[128];
-                    snprintf(buf, sizeof(buf), "%lld", (long long)op->int_val);
-                    ir.operands[j] = strdup(buf);
-                }
-                else if (op->type == OPERAND_LIT_FLOAT || op->type == OPERAND_LIT_DOUBLE)
-                {
-                    char buf[128];
-                    snprintf(buf, sizeof(buf), "%f", op->float_val);
-                    ir.operands[j] = strdup(buf);
-                }
-                else if (op->type == OPERAND_MEMORY)
-                {
-                    char buf[128];
-                    if (op->mem_opr_count < 1)
-                    {
-                        fprintf(stderr, COLOR_RED "Error: Operand of type memory is empty. e.g. mov %%rax, []\n" COLOR_RESET);
-                        symtab_free(symtab);
-                        section_free(sectab);
-                        free_ast(ctx->parser->root);
-                        exit(PAC_Error_SyntaxMissingOperand);
-                    }
-                    if (op->mem_opr_count == 1)
-                    {
-                        // Either identifier or register
-                        ASTOperand *opmem_op = op->mem_addr[0];
-                        if (opmem_op->type == OPERAND_REGISTER)
-                        {
-                            snprintf(buf, sizeof(buf), "[%s]", opmem_op->reg);
-                        }
-                        else if (opmem_op->type == OPERAND_IDENTIFIER)
-                        {
-							if (opmem_op->identifier->type == AST_LITERAL) {
-								char buf[128];
-								switch (opmem_op->identifier->literal.type) {
-									case LIT_INT:
-										snprintf(buf, sizeof(buf), "%lld", (long long)opmem_op->identifier->literal.int_val);
-										break;
-									default:
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
-										symtab_free(symtab);
-										section_free(sectab);
-										free_ast(ctx->parser->root);
-										exit(PAC_Error_InvalidIdentifier);
-								}
-							} else if (opmem_op->identifier->type == AST_IDENTIFIER) {
-								Symbol* sym;
-								bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
-								if (got_sym) {
-									snprintf(buf, sizeof(buf), "[0x%llX]", (long long)sym->addr);
-								} else {
-									snprintf(buf, sizeof(buf), "UNRESOLVED");
-								}
-							} else {
-                                fprintf(stderr, COLOR_RED "Error: Identifier doesn't have type AST_Identifier!\n" COLOR_RESET);
-                                fprintf(stderr, COLOR_CYAN "Tip: This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!\n" COLOR_RESET);
-                                symtab_free(symtab);
-                                section_free(sectab);
-                                free_ast(ctx->parser->root);
-                                exit(PAC_Error_InvalidIdentifier);
-                            }
-                            
-                        } else
-                        {
-                            fprintf(stderr, COLOR_RED "Error: Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]\n" COLOR_RESET);
-                            symtab_free(symtab);
-                            section_free(sectab);
-                            free_ast(ctx->parser->root);
-                            exit(PAC_Error_SyntaxInvalidOperandType);
-                        }
-                    } else if (op->mem_opr_count == 2)
-                    {
-                        // 101% displacement
-                        ASTOperand *opmem_op = op->mem_addr[0];
-                        ASTOperand *opmem_disp = op->mem_addr[1];
 
-                        if (opmem_disp->type != OPERAND_DISPLACEMENT) {
-                            fprintf(stderr, COLOR_RED "Error: Expected Operand of type Displacement, got something else instead! e.g.\n\tInvalid - mov %%rax, [%%rbx 123]\n\tValid - mov %%rax, [%%rbx + 123]\n" COLOR_RESET);
-                            symtab_free(symtab);
-                            section_free(sectab);
-                            free_ast(ctx->parser->root);
-                            exit(PAC_Error_SyntaxUnexpectedToken);
-                        }
-
-                        if (opmem_op->type == OPERAND_REGISTER)
-                        {
-                            if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val);
-                            else snprintf(buf, sizeof(buf), "[%s + %lld]", opmem_op->reg, (long long)opmem_disp->int_val);
-                        }
-                        else if (opmem_op->type == OPERAND_IDENTIFIER)
-                        {
-							if (op->identifier->type == AST_LITERAL) {
-								char buf[128];
-								switch (op->identifier->literal.type) {
-									case LIT_INT:
-										snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
-										ir.operands[j] = strdup(buf);
-										break;
-									default:
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
-										symtab_free(symtab);
-										section_free(sectab);
-										free_ast(ctx->parser->root);
-										exit(PAC_Error_InvalidIdentifier);
-								}
-							} else if (op->identifier->type == AST_IDENTIFIER) {
-								Symbol* sym;
-                            	bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
-								if (got_sym) {
-									if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
-									else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
-								} else {
-									snprintf(buf, sizeof(buf), "UNRESOLVED");
-								}
-							} else {
-                                fprintf(stderr, COLOR_RED "Error: Identifier doesn't have type AST_Identifier!\n" COLOR_RESET);
-                                fprintf(stderr, COLOR_CYAN "Tip: This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!\n" COLOR_RESET);
-                                symtab_free(symtab);
-                                section_free(sectab);
-                                free_ast(ctx->parser->root);
-                                exit(PAC_Error_InvalidIdentifier);
-                            }
-                    	} else
-                        {
-                            fprintf(stderr, COLOR_RED "Error: Operand of type memory has an undefined/unsupported expression! .e.g mov %%rax, [\"This string is unsupported!\"]\n" COLOR_RESET);
-                            symtab_free(symtab);
-                            section_free(sectab);
-                            free_ast(ctx->parser->root);
-                            exit(PAC_Error_SyntaxInvalidOperandType);
-                        }
-                    }
-                    ir.operands[j] = strdup(buf);
-                }
-            }
-
-            add_ir(&list, ir);
-            current_offset += instruction_length(ctx->arch);
-            sectab->sections[current_section].size += instruction_length(ctx->arch);
-        }
+				add_ir(&list, ir);
+				current_offset += instruction_length(ctx->arch);
+				sectab->sections[current_section].size += instruction_length(ctx->arch);
+				continue;
+			}
+		
+			default: {
+				continue;
+			}
+		}
     }
 
     return list;
