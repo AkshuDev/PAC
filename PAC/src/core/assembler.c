@@ -19,7 +19,7 @@ void symtab_init(SymbolTable *tab)
     tab->capacity = 0;
 }
 
-void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t addr, char *value, size_t val_size, size_t section_index, uint64_t size, TokenType type_of_data, bool isglobal)
+void symtab_add(SymbolTable *tab, const char *name, SymbolType type, uint64_t addr, char *value, size_t val_size, size_t section_index, uint64_t size, PAC_TokenType type_of_data, bool isglobal)
 {
     if (tab->count >= tab->capacity)
     {
@@ -240,7 +240,7 @@ static size_t instruction_length(enum Architecture arch)
     return length;
 }
 
-static size_t token_type_size(TokenType t) {
+static size_t token_type_size(PAC_TokenType t) {
     switch (t) {
         case T_BYTE:
         case T_UBYTE:
@@ -283,7 +283,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 
     ASTNode *section_node = NULL;
 
-    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 1, 0, 0, (TokenType)-1, false);
+    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 1, 0, 0, (PAC_TokenType)-1, false);
 
     for (size_t i = 0; i < root->child_count; i++)
     {
@@ -379,7 +379,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_SectionNotFound);
             }
-            symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", 1, current_section, 0, (TokenType)-1, false);
+            symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", 1, current_section, 0, (PAC_TokenType)-1, false);
             if (first_label == NULL)
             {
                 first_label = &symtab->symbols[symtab->count - 1];
@@ -397,7 +397,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
                 exit(PAC_Error_SectionNotFound);
             }
 
-            TokenType type = node->decl_identifier.type;
+            PAC_TokenType type = node->decl_identifier.type;
             size_t size = 0;
             char* value = (char*)malloc(100);
 			if (!value) {
@@ -421,7 +421,7 @@ void assembler_collect_symbols(Assembler *ctx, char* filename)
 					char* str = NULL;
 					size_t len = 0;
 
-					TokenType littype = node->decl_identifier.array_values[i]->literal.type;
+					PAC_TokenType littype = node->decl_identifier.array_values[i]->literal.type;
 
 					switch (littype) {
 						case LIT_INT:

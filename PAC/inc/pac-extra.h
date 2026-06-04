@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdint.h>
+#include <pac-asm.h>
+
 #define COLOR_RESET   "\033[0m"
 #define COLOR_BOLD    "\033[1m"
 #define COLOR_DIM     "\033[2m"
@@ -15,17 +18,6 @@
 #define align_up(val, to) (((val) + (to) - 1) & ~((to) - 1))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 
-enum Architecture {
-    x86_64,
-    ARM64,
-    ARM32,
-    x86,
-    RISCV32,
-    RISCV64,
-    PVCPU,
-    UNKNOWN_ARCH,
-};
-
 enum Architecture archs_to_archenum(char* arch);
 enum Architecture host_arch(void);
 unsigned int arch_bits(enum Architecture arch);
@@ -37,7 +29,5 @@ void pac_strdup(char* src, char* dest);
 void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size);
 bool is_sdigit(const char *str);
 
-void* pac_malloc(size_t size);
-void pac_free(void* ptr);
-void* pac_realloc(void* ptr, size_t new_size);
-void* pac_calloc(size_t nmemb, size_t size);
+size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr);
+OperandType classify_operand(const char* op);

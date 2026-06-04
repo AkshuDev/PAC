@@ -238,10 +238,10 @@ typedef enum {
     SP_EOF,
     SP_EOL,
     UNKNOWN,
-} TokenType;
+} PAC_TokenType;
 
 typedef struct {
-    TokenType type;
+    PAC_TokenType type;
     char* lexeme;
     int line;
     int column;
@@ -259,5 +259,5 @@ typedef struct {
 Lexer init_lexer(const char* src, size_t len, const char* file);
 void free_token(Token* t);
 Token next_token(Lexer* lx);
-const char* token_type_to_str(TokenType type);
-const char* token_type_to_ogstr(TokenType type);
+const char* token_type_to_str(PAC_TokenType type);
+const char* token_type_to_ogstr(PAC_TokenType type);

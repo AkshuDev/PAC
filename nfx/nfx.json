@@ -2,14 +2,14 @@
     "Name": "PAC",
     "Description": "Pheonix Assembler Collection",
 
-    "Version": "0.1.0",
+    "Version": "1.0.0",
     "Author": "Pheonix-Studios",
 
     "License": "LICENSE",
     "Readme": "README.md",
 
     "Id": "pheonix_studios.pac",
-    "Status": "beta",
+    "Status": "stable",
 
     "Build": {
         "Date": "2026-04-16",

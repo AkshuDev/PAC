@@ -38,13 +38,15 @@ typedef enum {
     MODE_REG_REG, // dest = src
     MODE_REG_IMM, // src is actually a imm! dest is a reg (dest = src (as imm))
     MODE_REG_EXTIMM, // Allows use of Bit 1 of Flags (dest = imm)
-    MODE_REG_DISP, // Allows use of Bit 1 of Flags (dest = mem[disp + src])
+    MODE_REG_DISP, // Allows use of Bit 1 of Flags => (dest = mem[disp + src])
     MODE_LOAD_REGADDR, // dest = mem[src]
     MODE_LOAD_IMMADDR, // dest = mem[imm]
     MODE_LOAD_PC_REL, // dest = mem[src (as offset) + PC]
+	MODE_LOAD_REG_DISP, // dest = mem[disp + src]
     MODE_STORE_REGADDR, // mem[dest] = src
     MODE_STORE_IMMADDR, // mem[imm] = src
     MODE_STORE_PC_REL, // mem[dest (as offset) + PC] = src
+	MODE_STORE_REG_DISP, // mem[disp + dest] = src
     // Special
     MODE_SRC_REG, // (opcode) reg
     MODE_SRC_REG_IMM, // (opcode) (src as imm)
@@ -66,12 +68,16 @@ static size_t inst_buf_capacity = 0;
 static size_t out_text_off = 0;
 static size_t inst_text_off = 0;
 
+static size_t inst_written = 0;
+static bool no_update_inst_written_in_pad = false;
+
 static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
     if (!inst_buf_init) return;
     if (inst_buf_off >= MAX_INST_BUF_SIZE) {
         fseek(out, out_text_off + inst_text_off, SEEK_SET);
         fwrite(inst_buf, 1, inst_buf_off, out);
         fwrite(bytes, 1, count, out);
+        if (!no_update_inst_written_in_pad) inst_written += count;
         inst_text_off += inst_buf_off + count;
         inst_buf_off = 0;
         return;
@@ -86,6 +92,7 @@ static void emit_bytes(FILE* out, uint8_t* bytes, size_t count) {
     }
 
     memcpy(inst_buf + inst_buf_off, bytes, count);
+    if (!no_update_inst_written_in_pad) inst_written += count;
     inst_buf_off += count;
 }
 
@@ -99,11 +106,13 @@ static void flush_everything(FILE* out) {
     fflush(out);
 }
 
-static RegInfo encode_register(const char *reg, bool unlocked) {
+static RegInfo encode_register(const char *reg, bool unlocked, bool* error) {
     RegInfo r = {0};
 
     r.valid = true;
     strncpy(r.name, reg, sizeof(r.name));
+
+	*error = false;
 
     // 64-bit (q<REG>)
     if (strcmp(reg, "qnull") == 0) { r.code = 0x0; return r; }
@@ -305,13 +314,15 @@ static RegInfo encode_register(const char *reg, bool unlocked) {
         else if (strcmp(reg, "i2") == 0) { r.code = 0x38; r.size = 64; return r; }
     }
 
-    fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_CYAN "\tTip: If the register is privilaged, try re-assembling with --unlock\n" COLOR_RESET, reg);
-    r.code = 0xFF;
+    fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
+	*error = true;
+	
+	r.code = 0xFF;
     r.valid = false;
     return r;
 }
 
-static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlocked, uint8_t* mode, bool* special_usage) {
+static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool unlocked, Modes* mode, bool* special_usage) {
     *valid = true;
     switch (opcode) {
         case ASM_NOP: return 0x0;
@@ -405,21 +416,15 @@ static uint64_t get_opcode(TokenType opcode, bool* valid, int op_size, bool unlo
     return 0;
 }
 
-static OperandType classify_operand(const char* op) {
-    if (op[0] == '0' && op[1] == 'x') return OPERAND_LABEL; // print, exit
-    if (op[0] == '[') return OPERAND_MEMORY; // [0x1234], [var], [%qg0 + 0x1234], [%qg1 - 0x1234]
-    if (isdigit(op[0])) return OPERAND_LIT_INT; // 42, 0x1234
-    if (isalpha(op[0])) return OPERAND_REGISTER; // %qg0, %qg16
-    return (OperandType)-1;
-}
-
-static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, uint64_t* imm, uint8_t* flags, uint8_t* mode, bool* is_symbol, bool unlocked) {
+static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, int64_t* imm, Modes* mode, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
     if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
-        *mode = (uint8_t)-1; // INVALID
-        return;
+		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Memory Operand!");
+		fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+		print_ir(ir);
+        return false;
     }
 
     memcpy(buf, op + 1, len - 2);
@@ -433,11 +438,9 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
     *w = '\0';
 
     *imm = 0;
-    *mode = MODE_REG_DISP;
-    *flags = 0;
-    *flags |= FLAGS_VALID;
-    *flags |= FLAGS_IMM;
 
+    RegInfo base_r = {0};
+    
     char* p = buf;
     while (*p) {
         int sign = +1;
@@ -452,7 +455,7 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
         char term[64];
         int ti = 0;
 
-        while (*p && *p != '+' && *p != '-') {
+        while (*p && *p != '+' && *p != '-' && *p != '*') {
             term[ti++] = *p++;
         }
         term[ti] = '\0';
@@ -460,12 +463,13 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
         if (term[0] == '\0') continue;
 
         if (isalpha(term[0])) {
-            RegInfo r = encode_register(term, unlocked);
+			bool err = false;
+            RegInfo r = encode_register(term, unlocked, &err);
+			if (err) return false;
             if (r.valid) {
-                if (dest->valid) {*src = r; *mode = MODE_LOAD_REGADDR;}
-                else {*dest = r; *mode = MODE_STORE_REGADDR;}
-                continue;
-            }
+				base_r = r;
+				continue;
+			}
         }
 
         int base = 10;
@@ -476,32 +480,63 @@ static void parse_memory_operand(const char* op, RegInfo* src, RegInfo* dest, ui
             *is_symbol = false;
         }
 
-        *imm += sign * strtoll(term, NULL, base);
+		*imm += sign * strtoll(term, NULL, base);
     }
 
-}
-
-static size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
-    for (size_t i = 0; i < symtab->count; i++) {
-        Symbol sym = symtab->symbols[i];
-        if (sym.addr == addr) { // match
-            // we found it
-            return i;
+    if (!base_r.valid && !*is_symbol) {
+        if (src->valid) {
+            *mode = MODE_STORE_IMMADDR;
+            *dest = (RegInfo){0};
+        } else {
+            *mode = MODE_STORE_IMMADDR;
+            *src = (RegInfo){0};
+        }
+    } else if (*imm == 0 && !*is_symbol) {
+        if (!*issrc) {
+            *mode = MODE_STORE_REGADDR;
+            *dest = base_r;
+            *issrc = true;
+        } else {
+            *mode = MODE_STORE_REGADDR;
+            *src = base_r;
+            *issrc = false;
+        }
+    } else {
+		if (!*issrc && *is_symbol && !base_r.valid) {
+            *mode = MODE_STORE_PC_REL;
+            *issrc = true;
+        } else if (issrc && *is_symbol && !base_r.valid){
+            *mode = MODE_LOAD_PC_REL;
+            *issrc = false;
+        } else if (!*issrc) {
+            *mode = MODE_STORE_REG_DISP;
+            *dest = base_r;
+            *issrc = true;
+        } else {
+            *mode = MODE_LOAD_REG_DISP;
+            *src = base_r;
+            *issrc = false;
         }
     }
-    return 0;
+    return true;
 }
 
 bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
-    size_t inst_written = 0;
     size_t cur_symbol_idx = 0;
 
+    // Reset
     inst_buf_capacity = MAX_INST_BUF_SIZE;
     inst_buf = (uint8_t*)malloc(inst_buf_capacity);
+	if (!inst_buf) {
+		fprintf(stderr, COLOR_RED "Error: Allocation failed!\n" COLOR_RESET);
+		return false;
+	}
     inst_buf_init = true;
     inst_buf_off = 0;
     inst_text_off = 0;
     out_text_off = text_off;
+	inst_written = 0;
+	no_update_inst_written_in_pad = false;
 
     for (size_t i = 0; i < irlist->count; i++) {
         IRInstruction inst = irlist->instructions[i];
@@ -511,41 +546,51 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
             uint64_t sym_idx = (uint64_t)((uint32_t)ent);
             uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
 
-            if (ir_idx == si && sym_idx < ctx->symbols->count) {
+            if (ir_idx > i) break;
+
+            if (ir_idx == i && sym_idx < ctx->symbols->count) {
                 Symbol* sym = &ctx->symbols->symbols[sym_idx];
-                sym->addr = text_sec->base + inst_written;
+                sym->addr = inst_written;
                 cur_symbol_idx = si;
             }
         }
 
         if (inst.arch != PVCPU) {
-            fprintf(stderr, COLOR_RED "Error: Instructions contain an Architecture unsupported instruction!" COLOR_RESET);
-            return false;
+			PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Architecture Unsupported Instruction!");
+			fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+			print_ir(&inst);
+			if (inst_buf) free(inst_buf);
+			return false;
         }
 
         RegInfo src = {0};
         RegInfo dest = {0};
-        uint64_t imm = 0;
-        uint64_t disp = 0;
+        int64_t imm = 0;
         bool special_mode_usage_opcode = false;
 
         uint8_t flags = 0;
-        uint8_t mode = MODE_REG_REG;
+        Modes mode = MODE_REG_REG;
         uint8_t rsrc = 0;
         uint8_t rdest = 0;
 
         bool issrc = false;
         bool valid_qm = true; // valid?
         bool is_symbol = true;
+		bool err = false;
 
         for (size_t j = 0; j < inst.operand_count; j++) {
+			if (err) {
+				if (inst_buf) free(inst_buf);
+				return false;
+			}
+
             char* operand = inst.operands[j];
             OperandType optype = classify_operand((const char*)operand);
 
             switch (optype) {
                 case OPERAND_REGISTER:
-                    if (issrc) { src = encode_register(operand, unlocked); issrc = false; }
-                    else {dest = encode_register(operand, unlocked); issrc = true; }
+                    if (issrc) { src = encode_register(operand, unlocked, &err); issrc = false; }
+                    else {dest = encode_register(operand, unlocked, &err); issrc = true; }
                     break;
                 case OPERAND_LIT_INT:
                     imm = strtoul(operand, NULL, 10);
@@ -556,7 +601,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                     }
                     break;
                 case OPERAND_MEMORY:
-                    parse_memory_operand(operand, &src, &dest, &disp, &flags, &mode, &is_symbol, unlocked);
+                    parse_memory_operand(unlocked, ctx, &inst, (const char*)operand, &issrc, &src, &dest, &imm, &mode, &is_symbol);
                     break;
                 case OPERAND_LABEL:
                     size_t addr = strtoul(operand, NULL, 16); // resolve symbol
@@ -565,13 +610,13 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                     is_symbol = true;
                     break;
                 default:
-                    fprintf(stderr, COLOR_RED "Error: Unknown operand: %s\n" COLOR_RESET, operand);
-                    return false;
+                    PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, operand, 0, "Unknown Operand");
+                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					if (inst_buf) free(inst_buf);
+					return false;
             }
         }
-
-        rsrc = src.valid ? src.code : 0;
-        rdest = dest.valid ? dest.code : 0;
 
         int op_size = 0;
         if (src.valid && dest.valid) op_size = (int)dest.size;
@@ -589,65 +634,94 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         else if (!(flags & FLAGS_VALID) && valid_qm) flags |= FLAGS_VALID; // Add valid bit
 
         if (!opcode_full) {
-            fprintf(stderr, COLOR_RED "Error: Invalid Instruction Found [%s]!\n" COLOR_RESET, token_type_to_ogstr(inst.opcode));
-            return false;
+            PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Instruction");
+            fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+			print_ir(&inst);
+			if (inst_buf) free(inst_buf);
+			return false;
         } 
 
         if (mode == MODE_SRC_IMM && imm < 0b111111) mode = MODE_SRC_REG_IMM;
-        if (mode == MODE_REG_IMM || mode == MODE_SRC_REG_IMM) {
-            if (src.valid) dest = src;
-            src.code = (uint8_t)imm;
-            rsrc = src.code;
-            rdest = dest.valid ? dest.code : 0;
-            if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
-        }
 
-        if (mode == MODE_REG_EXTIMM || mode == MODE_SRC_IMM) {
-            if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
-        }
+		switch (mode) {
+			case MODE_REG_REG:
+			case MODE_REG_IMM:
+			case MODE_LOAD_REGADDR:
+			case MODE_STORE_REGADDR:
+			case MODE_SRC_REG_IMM: {
+				if (src.valid) dest = src;
+				src.code = (uint8_t)imm;
+				if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
+				break;
+			}
 
-        if (mode == MODE_REG_DISP || mode == MODE_LOAD_REGADDR || mode == MODE_STORE_REGADDR) {
-            if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
-            if (!(flags & FLAGS_64)) flags |= FLAGS_64;
-        }
+			case MODE_REG_EXTIMM:
+			case MODE_SRC_IMM:
+			case MODE_LOAD_IMMADDR:
+			case MODE_STORE_IMMADDR:
+			case MODE_LOAD_REG_DISP:
+			case MODE_STORE_REG_DISP:
+			case MODE_REG_DISP: {
+				if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
+				break;
+			}
+
+			case MODE_LOAD_PC_REL:
+			case MODE_STORE_PC_REL: {
+				if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
+            	if (!(flags & FLAGS_64)) flags |= FLAGS_64;
+				size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
+				add_reloc(text_sec, inst_written + text_off, symindex, R_PVCPU_PC_64, 0);
+				break;
+			}
+
+			case MODE_SRC_REG: {
+				if (dest.valid) {
+					src.valid = false;
+					src.code = 0;
+				} else {
+					dest.valid = false;
+					dest.code = 0;
+				}
+			}
+
+			default: {
+
+			}
+		}
+
+		rsrc = src.valid ? src.code : 0;
+        rdest = dest.valid ? dest.code : 0;
 
         if (flags & FLAGS_IMM && imm > 0xFFFFFFFF) {
             if (!(flags & FLAGS_64))
                 flags |= FLAGS_64;
-        } else if (flags & FLAGS_IMM && imm <= 0xFFFFFFFF && flags & FLAGS_64) {
+        } else if (flags & FLAGS_IMM && imm <= 0xFFFFFFFF && (flags & FLAGS_64)) {
             flags &= ~FLAGS_64;
         } else if (flags & FLAGS_IMM && is_symbol) flags |= FLAGS_64;
 
         uint32_t outbytes = 0x0;
         outbytes |= (uint32_t)(opcode_full & OPCODE_BITS) << OPCODE_SHIFT;
-        outbytes |= (uint32_t)(mode & MODE_BITS) << MODE_SHIFT;
+        outbytes |= (uint32_t)((uint8_t)mode & MODE_BITS) << MODE_SHIFT;
         outbytes |= (uint32_t)(rsrc & RSRC_BITS) << RSRC_SHIFT;
         outbytes |= (uint32_t)(rdest & RDEST_BITS) << RDEST_SHIFT;
         outbytes |= (uint32_t)(flags & FLAGS_BITS) << FLAGS_SHIFT;
 
         emit_bytes(out, (uint8_t*)&outbytes, 4);
 
-        if (flags & FLAGS_IMM) {
-            int64_t disp64 = 0;
-            if (is_symbol) {
-                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm);
-                emit_bytes(out, (uint8_t*)&disp64, 8);
-                add_reloc(text_sec, ftell(out) - text_off, symindex, R_PVCPU_64, 0);
-            } else {
-                disp64 = (int64_t)imm;
-                emit_bytes(out, (uint8_t*)&disp64, flags & FLAGS_64 ? 8: 4);
-            }
-        }
+        if (flags & FLAGS_IMM)
+            emit_bytes(out, (uint8_t*)&imm, flags & FLAGS_64 ? 8 : 4);
     }
 
     if (inst_written > text_sec->size) {
         fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %llu bytes\n\tReserved Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
-        return false;
+        if (inst_buf) free(inst_buf);
+		return false;
     } else if (inst_written < text_sec->size) {
         text_sec->size = inst_written;
     }
 
     flush_everything(out);
-    
+    if (inst_buf) free(inst_buf);
     return true;
 }

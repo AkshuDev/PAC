@@ -226,7 +226,7 @@ static void parser_advance(Parser* p) {
     }
 }
 
-static bool parser_match(Parser* p, TokenType type) {
+static bool parser_match(Parser* p, PAC_TokenType type) {
     if (p->current.type == type) {
         parser_advance(p);
         return true;
@@ -626,11 +626,11 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
 					else if (m->type == MACRO_TYPE_IDENTIFIER)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
 					else if (m->line > 0)
 						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
@@ -674,11 +674,11 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
 					else if (m->type == MACRO_TYPE_IDENTIFIER)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
 					else if (m->line > 0)
 						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
@@ -692,11 +692,11 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 					else
 						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
 					if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
 					else if (m->type == MACRO_TYPE_IDENTIFIER)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
 					else if (m->line > 0)
 						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 				}
@@ -736,11 +736,11 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 				else
 					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous Auto-Generated definition\n");
 				if (m->type == MACRO_TYPE_NTYPE)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
 					else if (m->type == MACRO_TYPE_IDENTIFIER)
-						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
 					else if (m->line > 0)
 						PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 			}
@@ -884,7 +884,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 		if (!prefix) true_name = name;
     }
     parser_advance(p);
-    TokenType opt_specified_type = (TokenType)-1;
+    PAC_TokenType opt_specified_type = (PAC_TokenType)-1;
     bool is_array = false;
     int array_len = 0;
     if (parser_check(p, OP_NOT)) {
@@ -895,7 +895,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
         } else if (p->current.type == IDENTIFIER_TOK) {
 			ret = 0;
 			m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_NTYPE, -1);
-			TokenType value = m && m->value ? *((TokenType*)m->value) : (TokenType)-1;
+			PAC_TokenType value = m && m->value ? *((PAC_TokenType*)m->value) : (PAC_TokenType)-1;
 			if (ret == 0) {
 				opt_specified_type = value;
             	parser_advance(p);
@@ -959,11 +959,11 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous Auto-Generated definition\n");
 				
 			if (m->type == MACRO_TYPE_NTYPE)
-				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Types?");
+				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 			else if (m->type == MACRO_TYPE_USER_MACRO)
 				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
 			else if (m->type == MACRO_TYPE_IDENTIFIER)
-				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your identifiers?");
+				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
 			else if (m->line > 0)
 				PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 		}
@@ -1196,9 +1196,9 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
     return NULL;
 }
 
-ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefix) {
+ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefix, bool consume) {
     ASTNode* node = only_macros ? NULL : create_node(AST_RESERVE, p);
-    parser_advance(p); // consume :res
+    if (consume) parser_advance(p); // consume :res
     if (p->current.type != IDENTIFIER_TOK) {
         PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Identifier!");
         free_ast(p->root);
@@ -1307,7 +1307,7 @@ ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefi
 	if (only_macros) {
 		free(true_name);
 		if (prefix) free(name);
-	}
+	} else { if (prefix) free(true_name); }
 	
 	return node;
 }
@@ -1576,7 +1576,7 @@ static void parse_types(Parser* p, bool make_macro) {
 	}
 
 	if (make_macro) {
-		const char* err = new_macroEX(name, (uint8_t*)&p->current.type, sizeof(TokenType), false, MACRO_TYPE_NTYPE, sline, scol, p->lexer->file, NULL);
+		const char* err = new_macroEX(name, (uint8_t*)&p->current.type, sizeof(PAC_TokenType), false, MACRO_TYPE_NTYPE, sline, scol, p->lexer->file, NULL);
 		if (err) {
 			free_ast(p->root);
 			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, name, strlen(name), err);
@@ -1654,7 +1654,7 @@ static void parse_struct(Parser* p, bool only_macros, bool add_macros, ASTNode* 
 			}
 		}
 
-		ASTNode* node = res ? parse_reserve(p, only_macros, add_macros, name) : parse_identifier(p, only_macros, add_macros, name);
+		ASTNode* node = res ? parse_reserve(p, only_macros, add_macros, name, false) : parse_identifier(p, only_macros, add_macros, name);
 		if (node) add_child(parent, node);
 
 		parser_advance(p);
@@ -1739,7 +1739,7 @@ void parse_symbols(Parser* p) {
 				break;
 			}
 			case RESERVE: {
-				stmt = parse_reserve(p, true, true, NULL);
+				stmt = parse_reserve(p, true, true, NULL, true);
 				break;
 			}
 			case FUNC_DEF: {
@@ -1899,7 +1899,7 @@ ASTNode* parse_program(Parser* p) {
 				break;
 			}
 			case RESERVE: {
-				stmt = parse_reserve(p, false, false, NULL);
+				stmt = parse_reserve(p, false, false, NULL, true);
 				break;
 			}
 			case FUNC_DEF: {
@@ -2061,7 +2061,7 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
             return;
         case AST_LITERAL:
             ASTLiteral* op = &node->literal;
-            TokenType type = op->type;
+            PAC_TokenType type = op->type;
             switch (type) {
                 case LIT_INT:
                     snprintf(out, maxsize, "[Literal.Int] %ld", op->int_val);

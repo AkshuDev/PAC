@@ -3,9 +3,18 @@
 #include <pac-lexer.h>
 #include <pac-parser.h>
 
-#include <pac-extra.h>
-
 #include <stdbool.h>
+
+enum Architecture {
+    x86_64,
+    ARM64,
+    ARM32,
+    x86,
+    RISCV32,
+    RISCV64,
+    PVCPU,
+    UNKNOWN_ARCH,
+};
 
 typedef enum {
     SYM_LABEL,
@@ -23,7 +32,7 @@ typedef struct {
 	size_t val_size;
     size_t section_index; // section the symbol belongs to
     uint64_t size; // size
-    TokenType type_of_data;
+    PAC_TokenType type_of_data;
     bool is_global;
 } Symbol;
 
@@ -81,7 +90,7 @@ typedef struct {
 } Assembler;
 
 typedef struct {
-    TokenType opcode; // e.g. ASM_MOV
+    PAC_TokenType opcode; // e.g. ASM_MOV
     char* operands[3]; // e.g. "rax", "60"
     size_t operand_count;
     enum Architecture arch; // e.g. "x86_64"

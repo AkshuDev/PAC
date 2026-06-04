@@ -11,12 +11,15 @@
 #define PAC_MHDR_FLAG_FREE (2 << 1)
 
 #ifdef _WIN32
+	#define WIN32_LEAN_AND_MEAN
+	#define NOMINMAX
 	#include <windows.h>
 #else
 	#include <sys/utsname.h>
 #endif
 
 #include <pac-extra.h>
+#include <pac-asm.h>
 
 typedef struct {
 	uint32_t magic;
@@ -243,153 +246,23 @@ unsigned int arch_bits(enum Architecture arch) {
 	}
 }
 
-// Total 2MB
-uint8_t PHDR_GPOOL[0x200000]; // 2MB worth of stack
-static size_t gpool_used = 0;
-
-static size_t find_free_stack(size_t sz, bool* found) {
-	if (gpool_used == 0) {
-		*found = true;
-		return 0;
-	}
-	size_t size = align_up(sz, 8);
-
-	size_t cfree_size = 0;
-	size_t sfree_idx = 0;
-	for (size_t i = 0; i < sizeof(PHDR_GPOOL); i++) {
-		// this func trusts the pac_malloc allocator very very much
-		if (i + sizeof(PAC_MHDR) > sizeof(PHDR_GPOOL)) break;
-		if (cfree_size >= size) { *found = true; return sfree_idx; }
-
-		PAC_MHDR* p = (PAC_MHDR*)&PHDR_GPOOL[i];
-		bool valid = (p->flags & PAC_MHDR_FLAG_STACK) && p->size <= PAC_STACK_LIMIT && p->magic == PAC_MHDR_MAGIC;
-		bool free = valid && (p->flags & PAC_MHDR_FLAG_FREE);
-
-		if (free) {
-			if (cfree_size <= 0) {
-				cfree_size = p->size;
-				sfree_idx = i;
-				i += sizeof(PAC_MHDR) + p->size - 1;
-			} else {
-				cfree_size += sizeof(PAC_MHDR) + p->size;
-				i += sizeof(PAC_MHDR) + p->size - 1;
-			}
-		} else {
-			cfree_size = valid ? cfree_size + 1 : 0;
-			sfree_idx = valid ? i : 0;
-			i += valid ? sizeof(PAC_MHDR) + p->size - 1 : 0;
-		}
-	}
-
-	*found = false;
-	return 0;
-}
-
-void* pac_malloc(size_t sz) {
-	if (sz <= 0) return NULL;
-
-	size_t size = align_up(sz, 8);
-
-	if (size + sizeof(PAC_MHDR) > PAC_STACK_LIMIT || gpool_used + size + sizeof(PAC_MHDR) > sizeof(PHDR_GPOOL)) {
-		PAC_MHDR* ptr = (PAC_MHDR*)malloc(size + sizeof(PAC_MHDR));
-		if (!ptr) return (void*)ptr; // Or NULL in simple words
-
-		ptr->size = size;
-		ptr->flags = PAC_MHDR_FLAG_HEAP;
-		ptr->magic = PAC_MHDR_MAGIC;
-		return (void*)((char*)ptr + sizeof(PAC_MHDR));
-	} else {
-		bool found = false;
-		size_t idx = find_free_stack(size + sizeof(PAC_MHDR), &found);
-
-		if (!found) {
-			PAC_MHDR* ptr = (PAC_MHDR*)malloc(size + sizeof(PAC_MHDR));
-			if (!ptr) return (void*)ptr; // Or NULL in simple words
-
-			ptr->size = size;
-			ptr->flags = PAC_MHDR_FLAG_HEAP;
-			ptr->magic = PAC_MHDR_MAGIC;
-			return (void*)((char*)ptr + sizeof(PAC_MHDR));
-		}
-
-		PAC_MHDR* ptr = (PAC_MHDR*)&PHDR_GPOOL[idx];
-
-		ptr->size = size;
-		ptr->magic = PAC_MHDR_MAGIC;
-		ptr->flags = PAC_MHDR_FLAG_STACK;
-    	gpool_used += size + sizeof(PAC_MHDR);
-
-		return (void*)((char*)ptr + sizeof(PAC_MHDR));
-	}
-}
-void pac_free(void* ptr) {
-	if (!ptr)
-        return;
-
-    PAC_MHDR* hdr = (PAC_MHDR*)((char*)ptr - sizeof(PAC_MHDR));
-
-    if (hdr->magic != PAC_MHDR_MAGIC)
-        return;
-
-    if (hdr->flags & PAC_MHDR_FLAG_HEAP) {
-        free(hdr);
-        return;
-    }
-
-    if (hdr->flags & PAC_MHDR_FLAG_STACK) {
-        if (!(hdr->flags & PAC_MHDR_FLAG_FREE)) {
-            hdr->flags |= PAC_MHDR_FLAG_FREE;
-
-            size_t block_size = sizeof(PAC_MHDR) + hdr->size;
-
-            if (gpool_used >= block_size)
-                gpool_used -= block_size;
-            else
-                gpool_used = 0;
+size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
+    for (size_t i = 0; i < symtab->count; i++) {
+        Symbol sym = symtab->symbols[i];
+        if (sym.type != SYM_IDENTIFIER && sym.type != SYM_LABEL) continue;
+        if (sym.addr2 == addr) { // match
+            // we found it
+            return i;
         }
     }
+    return 0;
 }
-void* pac_realloc(void* ptr, size_t new_size) {
-	if (!ptr) return malloc(new_size);
 
-    if (new_size == 0) {
-        free(ptr);
-        return NULL;
-    }
-
-    PAC_MHDR* hdr = (PAC_MHDR*)((char*)ptr - sizeof(PAC_MHDR));
-
-    if (hdr->magic != PAC_MHDR_MAGIC)
-        return NULL;
-
-    size_t old_size = hdr->size;
-
-    if (old_size >= new_size) {
-        hdr->size = align_up(new_size, 8);
-        return ptr;
-    }
-    void *new_ptr = malloc(new_size);
-
-    if (!new_ptr)
-        return NULL;
-
-    memcpy(new_ptr, ptr, old_size);
-    free(ptr);
-
-    return new_ptr;
-}
-void* pac_calloc(size_t nmemb, size_t size) {
-    if (nmemb == 0 || size == 0)
-        return malloc(0);
-
-    if (nmemb > SIZE_MAX / size)
-        return NULL;
-
-    size_t total = nmemb * size;
-    void *ptr = malloc(total);
-
-    if (ptr) memset(ptr, 0, total);
-
-    return ptr;
+OperandType classify_operand(const char* op) {
+    if (op[0] == '0' && op[1] == 'x') return OPERAND_LABEL; // print, exit
+    if (op[0] == '[') return OPERAND_MEMORY; // [0x1234], [var], [%rax + 0x1234], [%rax - 0x1234]
+    if (isdigit(op[0])) return OPERAND_LIT_INT; // 42, 0x1234
+    if (isalpha(op[0])) return OPERAND_REGISTER; // %rax, %r8
+    return (OperandType)-1;
 }
 

@@ -54,7 +54,7 @@ typedef struct ASTFileChange {
 } ASTFileChange;
 
 typedef struct ASTInstruction {
-    TokenType opcode; // The ASM_* token type from lexer
+    PAC_TokenType opcode; // The ASM_* token type from lexer
     ASTOperand** operands; // Array of operand pointers
     size_t operand_count;
 } ASTInstruction;
@@ -64,7 +64,7 @@ typedef struct ASTLabel {
 } ASTLabel;
 
 typedef struct ASTDirective {
-    TokenType type;
+    PAC_TokenType type;
     char* arg;
     size_t aligment;
     int64_t start;
@@ -72,7 +72,7 @@ typedef struct ASTDirective {
 } ASTDirective;
 
 typedef struct ASTLiteral {
-    TokenType type;
+    PAC_TokenType type;
     union {
         int64_t int_val;
         double float_val;
@@ -86,8 +86,8 @@ typedef struct ASTIdentifier {
 
 typedef struct ASTDeclIdentifier {
     char* name;
-    TokenType type;
-    TokenType opt_specified_type;
+    PAC_TokenType type;
+    PAC_TokenType opt_specified_type;
     bool is_array;
     int array_size;
     struct ASTNode** array_values;
@@ -100,7 +100,7 @@ typedef struct ASTComment {
 
 typedef struct ASTReserve {
     char* name;
-    TokenType type;
+    PAC_TokenType type;
 	
     bool is_array;
     int array_size;

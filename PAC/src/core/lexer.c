@@ -48,7 +48,7 @@ bool match(Lexer* lex, char expected) {
 }
 
 // Tokens
-Token make_token(Lexer* lex, TokenType type, const char* start, size_t len) {
+Token make_token(Lexer* lex, PAC_TokenType type, const char* start, size_t len) {
     Token tk;
     tk.type = type;
     tk.lexeme = (char*)malloc(len + 1);
@@ -59,7 +59,7 @@ Token make_token(Lexer* lex, TokenType type, const char* start, size_t len) {
     return tk;
 }
 
-TokenType check_keyword(const char* str) {
+PAC_TokenType check_keyword(const char* str) {
     // Data types
     if (strcmp(str, "byte") == 0) return T_BYTE;
     if (strcmp(str, "short") == 0) return T_SHORT;
@@ -268,7 +268,7 @@ Token lex_identifier(Lexer* lx) {
     }
 
     // Check if keyword
-    TokenType type = check_keyword(text);
+    PAC_TokenType type = check_keyword(text);
     if ((int)type != -1) {
         Token tk = make_token(lx, type, &lx->src[start], length);
         free(text);
@@ -379,7 +379,7 @@ Token next_token(Lexer* lx) {
         while (isalnum(peek(lx))) advance(lx);
         size_t length = lx->pos - start;
         char* text = strndup(&lx->src[start], length);
-        TokenType typ = check_keyword(text);
+        PAC_TokenType typ = check_keyword(text);
         Token tk = make_token(lx, typ, &lx->src[start], length);
         free(text);
         return tk;
@@ -403,7 +403,7 @@ Token next_token(Lexer* lx) {
         while (isalnum(peek(lx))) advance(lx);
         size_t length = lx->pos - start;
         char* text = strndup(&lx->src[start], length);
-        TokenType typ = check_keyword(text);
+        PAC_TokenType typ = check_keyword(text);
         Token tk;
         if ((int)typ != -1) {
             tk = make_token(lx, typ, &lx->src[start], length);
@@ -543,7 +543,7 @@ void free_token(Token* t) {
         free(t->lexeme);
 }
 
-const char* token_type_to_str(TokenType type) {
+const char* token_type_to_str(PAC_TokenType type) {
     switch(type) {
         // Identifiers
         case IDENTIFIER_TOK: return "IDENTIFIER";
@@ -788,7 +788,7 @@ const char* token_type_to_str(TokenType type) {
     }
 }
 
-const char* token_type_to_ogstr(TokenType type) {
+const char* token_type_to_ogstr(PAC_TokenType type) {
     switch (type) {
         case T_BYTE: return "byte";
         case T_SHORT: return "short";

@@ -60,6 +60,7 @@ void print_usage(const char* prog) {
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
     printf("\t-f, --format <elf64/elf32/win64/win32/binary> Target output format (default: elf64)\n");
     printf("\t--unlock                  Allows the use of privilaged instructions\n");
+	printf("\t--err-info <code> Get Information on any PAC Status/Exit Code\n");
 }
 
 bool parse_args(int argc, char** argv, Args* args) {
@@ -116,6 +117,7 @@ bool parse_args(int argc, char** argv, Args* args) {
         {"unlock", no_argument, 0, 1006},
 		{"includes", required_argument, 0, 'I'},
 		{"only-link", no_argument, 0, 1007},
+		{"err-info", required_argument, 0, 1008},
         {0, 0, 0, 0}
     };
 
@@ -206,6 +208,10 @@ bool parse_args(int argc, char** argv, Args* args) {
 			case 1007:
                 args->only_link = true;
                 break;
+			case 1008:
+				enum PAC_Errors code = (enum PAC_Errors)strtoul(optarg, NULL, 10);
+				printf("Status Code '%s' Information =>\n\t%s\n", optarg, PAC_ErrorString(code));
+				break;
             case '?': // unknown option
             default:
 				free(args->inc_dirs);

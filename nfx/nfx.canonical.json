@@ -11,8 +11,8 @@
         "linux"
       ],
       "Path": "PAC/bin/linux/x86_64/pac",
-      "Sha256": "99efc48d2f0b689490b370188e69e07d82eeaf96a25d722258b75d3e4c769f51",
-      "Size": 2732384
+      "Sha256": "d9a9fea1193402d051b38b552562f09bc980e93f18f33e4a462e03f4448de178",
+      "Size": 207592
     },
     {
       "Arch": [
@@ -24,13 +24,13 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Sha256": "e985404d010f2df9d9604337fae939d5cfc833eb7e00ee647c17bfc37dc9e911",
-      "Size": 351261
+      "Sha256": "9777038b74fbcb86b5a37faaa0cdccc1a6e998f697eedc6887b7425f90a1b6e5",
+      "Size": 356257
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-05-29 00:28",
+    "Date": "2026-06-04 23:36",
     "SignatureIdentity": "pheonix-pac"
   },
   "Conflicts": [],
@@ -40,6 +40,6 @@
   "License": "LICENSE",
   "Name": "PAC",
   "Readme": "README.md",
-  "Status": "beta",
-  "Version": "0.1.0"
+  "Status": "stable",
+  "Version": "1.0.0"
 }

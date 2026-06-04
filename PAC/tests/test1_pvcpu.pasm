@@ -1,13 +1,23 @@
 :section .rodata
     msg!ubyte[] = "This is a message! WOW!", 10
 
-:section .text
-    :global main
+:section .bss
+	.struct mStruct :res
+		f1!ubyte
+		f2!ubyte
+		f3!ulong
+	.endstruct
 
-main:
-    mov %qg1, 24
-    mov %qg0, 0x10020
-    mov %qg2, 0xFFFFFFFFFF
-    
-    mov [%qg0], 'H'
-    exception 0x1 // Privilaged
+:section .text
+    :global _start
+
+_start:
+    mov %qg0, 5
+	ucmp %qg0, 5
+	je exit
+
+	push %qg5
+	mov %qg8, [mStruct.f2]
+
+exit:
+	
