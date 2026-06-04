@@ -257,6 +257,9 @@ After analyzing the memory usage (***heaptrack***) by Assembling and Linking on 
 **NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
 
 For the following examples, these contents are used ->
+**NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
+
+For the following examples, these contents are used ->
 ```pac-asm
 	:section .rodata
 		msg!ubyte[] = "Pretty Neat huh?", 0xa
@@ -277,8 +280,10 @@ For the following examples, these contents are used ->
 ```
 
 ## Example on x86 32-bit and x86_64 64-bit
+## Example on x86 32-bit and x86_64 64-bit
 Assembling + Linking with an Optimised Release Build of PAC
 
+**This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
 **This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
 ```shell
 	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86 -b 32
@@ -298,6 +303,8 @@ Assembling + Linking with an Optimised Release Build of PAC
 	[user@host PAC]$ tests/bin/simpleTest
 	Pretty Neat huh?
 ```
+
+---
 
 ---
 
@@ -630,7 +637,7 @@ For this specific test, these contents are used ->
 
 **Test utilizes manually added errors to present the diagnostics system of PAC**
 ```shell
-	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
 	tests/simpleTest_x86.pasm:10:1: warning: Label/Function conflicts with previous definition
 	- ("_start")
 	8 | @def _start
@@ -686,7 +693,7 @@ For this specific test, these contents are used ->
 
 **Test utilizes manually added errors to present the diagnostics system of PAC**
 ```shell
-	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
 	tests/simpleTest_x86.pasm:8:1: warning: Label/Function conflicts with previous definition
 	- ("_start")
 	6 | 	:global _start
@@ -730,7 +737,7 @@ For this specific test, these contents are used ->
 
 **Test utilizes manually added errors to present the diagnostics system of PAC**
 ```shell
-	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
 	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
 	tests/simpleTest_x86.pasm:14:2: error: Invalid Instruction
 	12 | 	inst.int 0x80
@@ -770,7 +777,7 @@ For this specific test, these contents are used ->
 
 **Test utilizes manually added errors to present the diagnostics system of PAC**
 ```shell
-	[AkshuDev@akshudev-hpelitedesk PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest
 		tests/simpleTest_x86.pasm:17:1: warning: Label/Function conflicts with previous definition
 	- ("exit")
 	15 | 	jmp exit
