@@ -228,3 +228,201 @@ Examples (includes all instructions which need this prefix) -
 
 ### Linking, information
 When using PAC's inbuilt linker, unlike normal linkers, the format of sections defined by the user in their first passed file is followed!
+
+# Optimisations and Speed
+**NOTE: Tests done on a ~300 line snake game.**
+
+## Speed
+After timing the Assembling and Linking on a Tuned + Optimised Release Build of PAC, the results are as follows :-
+
+1. Total Time taken to Assemble and Link the game -> ~0.005 seconds or ~5 milliseconds
+2. Total Time taken to only Assemble the game -> ~0.003 seconds or ~3 millisecond
+3. Total Time taken to generate IR Nodes for the game -> ~0.003 seconds or ~3 milliseconds
+4. Total Time taken to generate AST Nodes for the game -> ~0.003 seconds or ~3 milliseconds
+5. Total Time taken to generate tokens for the game -> ~0.002 second or ~2 millisecond
+
+## Memory Usage
+After analyzing the memory usage (***heaptrack***) by Assembling and Linking on a Tuned + Optimised Release Build of PAC, the results are as follows :-
+
+1. Peak Memory Usage: ~144KB (Kilobytes)
+2. Total allocations: ~4000
+3. Memory leaked by PAC: 0KB (Kilobytes)
+4. Memory leaked by ***libc***: 1KB (Kilobyte)
+5. Total Memory leaked: 1KB (Kilobyte)
+
+# Working examples
+
+**NOTE: PAC auto defaults architecture and bits to HOST, and output format to ELF64, for the following tests, parameters were passed just to FORCE the parameter**
+
+## Example on x86 32-bit and x86_64 64-bit
+For this example, these contents are used ->
+```pac-asm
+	:section .rodata
+		msg!ubyte[] = "Pretty Neat huh?", 0xa
+
+	:section .text
+		:global _start
+
+	_start:
+		mov %eax, 4
+		mov %ebx, 1
+		lea %ecx, [msg]
+		mov %edx, 17
+		inst.int 0x80
+
+		mov %eax, 1
+		mov %ebx, 0
+		inst.int 0x80
+```
+
+Assembling + Linking with an Optimised Release Build of PAC
+
+**Test used ELF64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86 -b 32
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+	
+	[user@host PAC]$ tests/bin/simpleTest
+	bash: tests/bin/simpleTest: cannot execute binary file: Exec format error
+```
+
+**To prove this, if you rebuilt using x86_64 architecture instead, it will work**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86_64 -b 64
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+	
+	[user@host PAC]$ tests/bin/simpleTest
+	Pretty Neat huh?
+```
+
+**This test utilizes x86 and Elf32 output format**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86 -b 32 -f elf32
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+	
+	[user@host PAC]$ tests/bin/simpleTest
+	Pretty Neat huh?
+```
+
+**As you can see tools like PDASM and ***readelf*** also show the binary is correct**
+```text
+	[user@host PAC]$ pdasm info tests/bin/simpleTest --all
+	===== ELF Header =====
+	Class:            ELF32
+	Endianness:       Little Endian
+	Type:             0x2
+	Machine:          Intel 80386 (32-Bit)
+	Version:          0x1
+	Entry Point:      0x402000
+	Program Hdr Off:  0x34
+	Section Hdr Off:  0x94
+	PH Count:         3
+	SH Count:         6
+	SH String Index:  3
+
+	===== Program Headers =====
+	Idx   Type       Flags    Offset     VirtAddr   PhysAddr   FileSz     MemSz
+	---------------------------------------------------------------------------------------------------------------------------
+	0     LOAD       R--      0x00000000 0x00400000 0x00000000 0x00000094 0x000000a0
+	1     LOAD       R--      0x00001000 0x00401000 0x00000000 0x00000018 0x00000018
+	2     LOAD       R-X      0x00002000 0x00402000 0x00000000 0x00000030 0x00000030
+
+	===== Section Headers =====
+	Idx  Name                 Type         Addr     Offset   Size     ES     Flg    Lk     Inf
+	--------------------------------------------------------------------------------------------------------------------------------
+	0                         NULL         0x00000000 0x00000000 0x00000000 0      0      0      0
+	1    .rodata              PROGBITS     0x00401000 0x00001000 0x00000018 0      2      0      0
+	2    .text                PROGBITS     0x00402000 0x00002000 0x00000030 0      6      0      0
+	3    .shstrtab            STRTAB       0x00000000 0x00002030 0x00000029 0      0      0      0
+	4    .symtab              SYMTAB       0x00000000 0x00002060 0x00000040 16     0      5      4
+	5    .strtab              STRTAB       0x00000000 0x000020a0 0x00000027 0      0      0      0
+
+	===== Symbols =====
+	Idx  Name                     Type     Bind     Value      Size   Section
+	--------------------------------------------------------------------------------------------------
+	0                             NOTYPE   LOCAL    0x00000000 0      UND
+	1    tests/simpleTest_x86.pasm FILE     LOCAL    0x00000000 0      UND
+	2    msg                      OBJECT   LOCAL    0x00401000 17     .rodata
+	3    _start                   FUNC     GLOBAL   0x00402000 0      .text
+
+	===== Relocations =====
+
+	[user@host PAC]$ readelf -a tests/bin/simpleTest
+	ELF Header:
+	Magic:   7f 45 4c 46 01 01 01 00 00 00 00 00 00 00 00 00
+	Class:                             ELF32
+	Data:                              2's complement, little endian
+	Version:                           1 (current)
+	OS/ABI:                            UNIX - System V
+	ABI Version:                       0
+	Type:                              EXEC (Executable file)
+	Machine:                           Intel 80386
+	Version:                           0x1
+	Entry point address:               0x402000
+	Start of program headers:          52 (bytes into file)
+	Start of section headers:          148 (bytes into file)
+	Flags:                             0x0
+	Size of this header:               52 (bytes)
+	Size of program headers:           32 (bytes)
+	Number of program headers:         3
+	Size of section headers:           40 (bytes)
+	Number of section headers:         6
+	Section header string table index: 3
+
+	Section Headers:
+	[Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+	[ 0]                   NULL            00000000 000000 000000 00      0   0  0
+	[ 1] .rodata           PROGBITS        00401000 001000 000018 00   A  0   0  8
+	[ 2] .text             PROGBITS        00402000 002000 000030 00  AX  0   0 16
+	[ 3] .shstrtab         STRTAB          00000000 002030 000029 00      0   0  1
+	[ 4] .symtab           SYMTAB          00000000 002060 000040 10      5   4  8
+	[ 5] .strtab           STRTAB          00000000 0020a0 000027 00      0   0  1
+	Key to Flags:
+	W (write), A (alloc), X (execute), M (merge), S (strings), I (info),
+	L (link order), O (extra OS processing required), G (group), T (TLS),
+	C (compressed), x (unknown), o (OS specific), E (exclude),
+	D (mbind), p (processor specific)
+
+	There are no section groups in this file.
+
+	Program Headers:
+	Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+	LOAD           0x000000 0x00400000 0x00000000 0x00094 0x000a0 R   0x1000
+	LOAD           0x001000 0x00401000 0x00000000 0x00018 0x00018 R   0x1000
+	LOAD           0x002000 0x00402000 0x00000000 0x00030 0x00030 R E 0x1000
+
+	Section to Segment mapping:
+	Segment Sections...
+	00
+	01     .rodata
+	02     .text
+
+	There is no dynamic section in this file.
+
+	There are no relocations in this file.
+	No processor specific unwind information to decode
+
+	Symbol table '.symtab' contains 4 entries:
+	Num:    Value  Size Type    Bind   Vis      Ndx Name
+		0: 00000000     0 NOTYPE  LOCAL  DEFAULT  UND
+		1: 00000000     0 FILE    LOCAL  DEFAULT  UND tests/simpleTest[...]
+		2: 00401000    17 OBJECT  LOCAL  DEFAULT    1 msg
+		3: 00402000     0 FUNC    GLOBAL DEFAULT    2 _start
+
+	No version information found in this file.
+
+	There is no GOT section in this file.
+```
+
+**This test uses x86_64 and Elf64 Output format**
+```shell
+	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86_64 -f elf64
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	Linker Warning: No Entry Label Specified, Defaulting to '_start'
+
+	[user@host PAC]$ tests/bin/simpleTest
+	Pretty Neat huh?
+```
