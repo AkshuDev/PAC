@@ -1,10 +1,35 @@
 # PAC
 Pheonix Assembler Collection - Many architectures, same syntax!
 
+## Features
+1. Inbuilt-Linker
+2. Multiple Architecture Support
+3. Multiple Linking Format Support
+4. Easy Debugging errors
+5. Full view to generated IR-Nodes, Tokens, and AST Nodes
+6. High-Level Assembly
+7. Works with Standard Assembling/Linking tools as well such as ***ld***, ***objdump***, etc
+
+## Supported Architectures
+PAC Currently supports -
+1. x86
+2. x86_64
+3. x86 native 16-bit
+4. PVCpu
+
+## Supported Formats
+PAC has an entire pipeline for both encoding and linking, and so to increase performance and reduce file size, PAC supports only ***ELF64*** as output after encoding and input to linker.
+
+The PAC Linker infact supports multiple formats, but only takes ***ELF64 Object files*** as an input. Supported formats include -
+1. Elf64
+2. Elf32
+3. PE 32 (Under implementation)
+4. PE 32+ (Under implementation)
+
 ## Syntax
 PAC Syntax isn't just some Assembly, it is high-level Assembly!
 
-PAC Includes Structures/Preprocessing/Functions/Types/more
+PAC Includes Structures/Preprocessing/Functions/Types and more!
 
 ### New Keywords
 All new keywords begin with '.' example:
@@ -63,6 +88,19 @@ To Access your created Structures you need to use this format: '**Structure-Name
     mov %qg0, MyStruct.myField
 ```
 
+If the structure name is used, it symbolises the first field in the structure, example -
+```pac-asm
+    :section .bss
+    .struct MyStruct :res
+        myField!ubyte
+        anotherField!ulong
+    .endstruct
+
+    :section .text
+    lea %rax, [MyStruct] // This is same as MyStruct.myField
+    lea %rbx, [MyStruct.anotherField] // Absolute field access
+```
+
 ### Global/External
 To Export/Import a function/label from another file, you must use the following methods -
 
@@ -77,7 +115,7 @@ Example -
 ```
 
 #### To Export
-To export a function/label to another file, you must use the '**:global**' keyword with the name of the label or function (**NOTE: Use the '$' Prefix**), **NOTE: Use this keyword only inside the .text section.**
+To export a function/label to another file, you must use the '**:global**' keyword with the name of the label or function (**NOTE: Use the '$' Prefix**)
 
 Example -
 ```pac-asm
@@ -146,8 +184,12 @@ To Access a label inside a function, you have to use this format '**$Function Na
     call $myfunc.print // Calls the print label inside the function 'myfunc'
 ```
 
+**NOTE: Such an access only works within the parent function of that label**
+
 #### Labels
-Labels are your average Assembly functions, nothing special here! Example -
+Labels are an easy way to access memory locations, so instead of calculating memory offsets, using a label makes the process a lot easier. Or they can be called "Traditional Assembly Functions". 
+
+Example -
 ```pac-asm
 mylabel:
 	// Assembly goes here
@@ -173,8 +215,10 @@ Includes another file. Example -
     @inc "myfile.pasm"
 ```
 
+**NOTE: A String literal or macro is mandatory**
+
 #### Important Notice
-PAC has many reserved keywords which may be an exact match of the instruction your trying to run and so, in those cases prefixing 'inst.' before it, will fix the isse.
+PAC has many reserved keywords which may be an exact match of the instruction your trying to run and so, in those cases prefixing 'inst.' before it, will fix the issue.
 
 Examples (includes all instructions which need this prefix) -
 ```pac-asm
