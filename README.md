@@ -276,9 +276,6 @@ After analyzing the memory usage (***heaptrack***) by Assembling and Linking on 
 **NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
 
 For the following examples, these contents are used ->
-**NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
-
-For the following examples, these contents are used ->
 ```pac-asm
 	:section .rodata
 		msg!ubyte[] = "Pretty Neat huh?", 0xa
