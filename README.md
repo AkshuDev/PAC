@@ -252,6 +252,8 @@ After analyzing the memory usage (***heaptrack***) by Assembling and Linking on 
 
 # Working examples
 
+**NOTE: The shell preview might have incorrect carret, this is due to markdown preview, within a real terminal its always correct due to monospace font**
+
 **NOTE: PAC auto defaults architecture and bits to HOST, and output format to ELF64, for the following tests, parameters were passed just to FORCE the parameter**
 
 **NOTE: PAC outputs everything with color using ANSI Escape Codes, however this file might not have those colors**
