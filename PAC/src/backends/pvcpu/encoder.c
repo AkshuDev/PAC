@@ -505,7 +505,7 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
 		if (!*issrc && *is_symbol && !base_r.valid) {
             *mode = MODE_STORE_PC_REL;
             *issrc = true;
-        } else if (issrc && *is_symbol && !base_r.valid){
+        } else if (*issrc && *is_symbol && !base_r.valid){
             *mode = MODE_LOAD_PC_REL;
             *issrc = false;
         } else if (!*issrc) {
