@@ -1,4 +1,8 @@
 # PAC
+![Version](https://img.shields.io/badge/Version-v1.0.0-red?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-red?style=for-the-badge)
+![Build](https://img.shields.io/badge/Build-Stable-red?style=for-the-badge)
+
 Pheonix Assembler Collection - Many architectures, same syntax!
 
 ## Features
@@ -25,6 +29,19 @@ The PAC Linker infact supports multiple formats, but only takes ***ELF64 Object 
 2. Elf32
 3. PE 32 (Under implementation)
 4. PE 32+ (Under implementation)
+
+## Comparison between PAC and Traditional Assemblers
+
+| Feature | NASM | GAS | LLVM | PAC |
+|----------|------|------|------| ------ |
+| Structures | Limited | No | Yes | Yes |
+| User Types | No | No | Yes | Yes |
+| Functions | No | No | Yes | Yes |
+| Built-in Linker | No | No | No | Yes |
+| IR Dumping | No | No | Yes | Yes |
+| AST Dumping | No | No | No | Yes |
+| Token Dumping | No | No | No | Yes |
+| Multiple Architectures using same assembler executable | No | No | Limited | Yes |
 
 ## Syntax
 PAC Syntax isn't just some Assembly, it is high-level Assembly!
