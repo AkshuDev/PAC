@@ -23,9 +23,9 @@ OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 ARCH := $(shell uname -m | tr '[:upper:]' '[:lower:]')
 
 # Flags
-OPT_LEVEL ?= 0
+OPT_LEVEL ?= 3
 COBITS ?=
-EXTRA ?=
+EXTRA ?= -mtune=generic
 
 CFLAGS_RELEASE := -O$(OPT_LEVEL) $(EXTRA) -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
 CFLAGS_DEBUG := -O$(OPT_LEVEL) -g3 $(EXTRA) -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)

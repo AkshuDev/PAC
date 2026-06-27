@@ -9,12 +9,13 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
+VERSION := 1.0.1
 WORK_JSON := $(NFX_DIR)/build.json
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
-ZIP := $(BUILD_DIR)/PAC.zip
+ZIP := $(BUILD_DIR)/PAC_v$(VERSION).zip
 CANON_NFX := $(NFX_DIR)/nfx.canonical.json
-SIG := $(BUILD_DIR)/PAC.zip.sig
+SIG := $(BUILD_DIR)/PAC_v$(VERSION).zip.sig
 
 # Colors
 GREEN := \033[0;32m
