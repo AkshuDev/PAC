@@ -11,7 +11,7 @@
         "linux"
       ],
       "Path": "PAC/bin/linux/x86_64/pac",
-      "Sha256": "f56c6fb6a62bb1b1069adabde2033534215dddf08250f322cf28e8319d378d69",
+      "Sha256": "65a2f15a357421c4db03ba31536960a6eb0391ac31a2f80ab4cdd3ad3f48c3d7",
       "Size": 207592
     },
     {
@@ -24,13 +24,13 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Sha256": "bac33a6f84525cf77dc293c29669dbe0c5c6834ee6be9fc29fb7e2a7c23569d5",
+      "Sha256": "045aa96da0ca0b0ca82543c6a7dcc3459e05f98c0f4e661b373f7a7fbb9cbfa1",
       "Size": 358305
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-06-28 00:26",
+    "Date": "2026-06-28 21:17",
     "SignatureIdentity": "pheonix-pac"
   },
   "Conflicts": [],

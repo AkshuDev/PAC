@@ -97,6 +97,7 @@ PAC_TokenType check_keyword(const char* str) {
 
     // Assembly instructions
     if (strcmp(str, "mov") == 0) return ASM_MOV;
+	if (strcmp(str, "movsxd") == 0) return ASM_MOVSXD;
     if (strcmp(str, "add") == 0) return ASM_ADD;
     if (strcmp(str, "sub") == 0) return ASM_SUB;
     if (strcmp(str, "mul") == 0) return ASM_MUL;
@@ -125,6 +126,7 @@ PAC_TokenType check_keyword(const char* str) {
     if (strcmp(str, "or") == 0) return ASM_OR;
     if (strcmp(str, "xor") == 0) return ASM_XOR;
     if (strcmp(str, "not") == 0) return ASM_NOT;
+	if (strcmp(str, "neg") == 0) return ASM_NEG;
     if (strcmp(str, "shl") == 0) return ASM_SHL;
     if (strcmp(str, "shr") == 0) return ASM_SHR;
 	if (strcmp(str, "cld") == 0) return ASM_CLD;
@@ -629,6 +631,7 @@ const char* token_type_to_str(PAC_TokenType type) {
 
         // Assembly / Backend
         case ASM_MOV: return "ASM_MOV";
+		case ASM_MOVSXD: return "ASM_MOVSXD";
         case ASM_ADD: return "ASM_ADD";
         case ASM_SUB: return "ASM_SUB";
         case ASM_MUL: return "ASM_MUL";
@@ -655,6 +658,7 @@ const char* token_type_to_str(PAC_TokenType type) {
         case ASM_OR: return "ASM_OR";
         case ASM_XOR: return "ASM_XOR";
         case ASM_NOT: return "ASM_NOT";
+		case ASM_NEG: return "ASM_NEG";
         case ASM_SHL: return "ASM_SHL";
         case ASM_SHR: return "ASM_SHR";
 		case ASM_CLD: return "ASM_CLD";
@@ -881,6 +885,7 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
 
         // Assembly / Backend
         case ASM_MOV: return "mov";
+		case ASM_MOVSXD: return "movsxd";
         case ASM_ADD: return "add";
         case ASM_SUB: return "sub";
         case ASM_MUL: return "mul";
@@ -907,6 +912,7 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
         case ASM_OR: return "or";
         case ASM_XOR: return "xor";
         case ASM_NOT: return "not";
+		case ASM_NEG: return "neg";
         case ASM_SHL: return "shl";
         case ASM_SHR: return "shr";
 		case ASM_CLD: return "cld";

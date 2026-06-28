@@ -1,6 +1,7 @@
 NFX := nfx/nfx.json
 LICENSE := LICENSE
 README := README.md
+DOCS := docs
 
 PAC_LINUX := PAC/bin/linux/x86_64/pac
 PAC_WINDOWS := PAC/bin/windows/x86_64/pac.exe
@@ -9,13 +10,13 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
-VERSION := 1.0.1
+VERSION := 1.0.2
 WORK_JSON := $(NFX_DIR)/build.json
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
-ZIP := $(BUILD_DIR)/PAC_v$(VERSION).zip
+ZIP := $(BUILD_DIR)/PAC-v$(VERSION).zip
 CANON_NFX := $(NFX_DIR)/nfx.canonical.json
-SIG := $(BUILD_DIR)/PAC_v$(VERSION).zip.sig
+SIG := $(BUILD_DIR)/PAC-v$(VERSION).zip.sig
 
 # Colors
 GREEN := \033[0;32m
@@ -81,6 +82,7 @@ zip: dirs build-linux build-windows canonical
 		$(PAC_WINDOWS) \
 		$(LICENSE) \
 		$(README) \
+		$(DOCS) \
 		$(KEY_DIR)/allowed_signers
 	@rm nfx.json
 	@printf "$(GREEN)==> Created Zip! (%s) \n$(RESET)" $(ZIP)

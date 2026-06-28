@@ -8,7 +8,6 @@ _start:
 	std
 	sti
 	stc
-	hlt
 	wait
 	fwait
 	leave
@@ -17,9 +16,4 @@ _start:
 	lahf
 	sahf
 	pause
-
-	mov %rax, 10
-	mul [%rip + 0xFF]
-	imul %rbx
-	div [%rip - 0xFF]
-	idiv %rcx
+	hlt
