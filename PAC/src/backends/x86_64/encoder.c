@@ -42,6 +42,11 @@
 
 #define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
 
+typedef enum {
+	NORMAL_REGISTER = 0,
+	SSE2_REGISTER
+} RegType;
+
 typedef struct {
     uint8_t code; // 3-bit ID
     bool rex_needed; // Needs a REX prefix at all?
@@ -51,8 +56,9 @@ typedef struct {
     bool rex_x; // Set REX.X (rarely for registers as it extends RIB.index field)
     bool rex_w; // Set REX.W (64-bit op)
     char name[8]; // Name of register
-    uint8_t size; // Operand size (8, 16, 32, 64)
+    uint8_t size; // Operand size (8, 16, 32, 64, 128)
     bool valid;
+	RegType type;
 } RegInfo;
 
 static size_t inst_buf_off = 0;
@@ -108,6 +114,25 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
     r.valid = true;
     strncpy(r.name, reg, sizeof(r.name)-1);
 
+	// Common : 128-bit SSE2
+	if (strcmp(reg, "xmm0") == 0) { r.code=0; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm1") == 0) { r.code=1; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm2") == 0) { r.code=2; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm3") == 0) { r.code=3; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm4") == 0) { r.code=4; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm5") == 0) { r.code=5; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm6") == 0) { r.code=6; r.size=128; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm7") == 0) { r.code=7; r.size=128; r.type=SSE2_REGISTER; return r; }
+	// Extended SSE2 (Need REX.B/R=1)
+	if (strcmp(reg, "xmm8") == 0)  { r.code=0; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm9") == 0)  { r.code=1; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm10") == 0)  { r.code=2; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm11") == 0)  { r.code=3; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm12") == 0)  { r.code=4; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm13") == 0)  { r.code=5; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm14") == 0)  { r.code=6; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+	if (strcmp(reg, "xmm15") == 0)  { r.code=7; r.rex_ex=1; r.size=128; r.rex_needed=1; r.type=SSE2_REGISTER; return r; }
+
     // 64-bit (Need REX.W=1)
 	if (bits == 64) {
 		if (strcmp(reg, "rax") == 0) { r.code=0; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
@@ -118,7 +143,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "rbp") == 0) { r.code=5; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		if (strcmp(reg, "rsi") == 0) { r.code=6; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		if (strcmp(reg, "rdi") == 0) { r.code=7; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-		// Extended 64-bit (Need REX.W=1 and REX.B=1)
+		// Extended 64-bit (Need REX.R=1 or REX.B=1)
 		if (strcmp(reg, "r8") == 0)  { r.code=0; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r9") == 0)  { r.code=1; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r10") == 0)  { r.code=2; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
@@ -141,7 +166,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "ebp") == 0) { r.code=5; r.size=32; return r; }
 		if (strcmp(reg, "esi") == 0) { r.code=6; r.size=32; return r; }
 		if (strcmp(reg, "edi") == 0) { r.code=7; r.size=32; return r; }
-		// Extended 32-bit (Need REX.B=1)
+		// Extended 32-bit (Need REX.B/R=1)
 		if (strcmp(reg, "r8d") == 0) { r.code=0; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r9d") == 0) { r.code=1; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r10d") == 0) { r.code=2; r.rex_ex=1; r.size=32; r.rex_needed=1; return r; }
@@ -162,7 +187,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "bp") == 0) { r.code=5; r.size=16; return r; }
 		if (strcmp(reg, "si") == 0) { r.code=6; r.size=16; return r; }
 		if (strcmp(reg, "di") == 0) { r.code=7; r.size=16; return r; }
-		// Extended 16-bit (Need prefix=0x66 and REX.B=1)
+		// Extended 16-bit (Need prefix=0x66 and REX.B/R=1)
 		if (strcmp(reg, "r8w") == 0){ r.code=0; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r9w") == 0){ r.code=1; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r10w") == 0){ r.code=2; r.rex_ex=1; r.size=16; r.rex_needed=1; return r; }
@@ -190,7 +215,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "bpl") == 0){ r.code=5; r.size=8; r.rex_needed=1; return r; }
 		if (strcmp(reg, "sil") == 0){ r.code=6; r.size=8; r.rex_needed=1; return r; }
 		if (strcmp(reg, "dil") == 0){ r.code=7; r.size=8; r.rex_needed=1; return r; }
-		// Extended 8-bit (Need REX.B=1)
+		// Extended 8-bit (Need REX.B/R=1)
 		if (strcmp(reg, "r8b") == 0){ r.code=0; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r9b") == 0){ r.code=1; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r10b") == 0){ r.code=2; r.size=8; r.rex_ex=1; r.rex_needed=1; return r; }
@@ -284,11 +309,139 @@ static uint8_t make_modrm(RegInfo reg, RegInfo rm, uint8_t mod) {
     return modrm;
 }
 
-static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int* no_bytes, int* operand_mod, RegInfo reg, RegInfo rm) {
+static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int* no_bytes, int* operand_mod, RegInfo reg, RegInfo rm, uint64_t* prefix_o, uint8_t* prefix_count) {
     int modrm = *operand_mod;
+	*privileged = false;
+	*prefix_count = 0;
+
+	// SSE2 Extensions
+	if (reg.type == SSE2_REGISTER || rm.type == SSE2_REGISTER) {
+		*no_bytes = 2;
+
+		switch (opcode) {
+			case ASM_MOVUPD: {
+				switch (modrm) {
+					case OPERAND_REG_TO_MEM:
+					case OPERAND_REG_TO_MEM_DISP32:
+					case OPERAND_REG_TO_MEM_DISP8:
+					case OPERAND_REG_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F11;
+					}
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F10;
+					}
+					default: break;
+				}
+				break;
+			}
+			case ASM_MOVSD: {
+				switch (modrm) {
+					case OPERAND_REG_TO_MEM:
+					case OPERAND_REG_TO_MEM_DISP32:
+					case OPERAND_REG_TO_MEM_DISP8:
+					case OPERAND_REG_TO_REG: {
+						*prefix_o = 0xF2;
+						*prefix_count = 1;
+						return 0x0F11;
+					}
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0xF2;
+						*prefix_count = 1;
+						return 0x0F10;
+					}
+					default: break;
+				}
+				break;
+			}
+			case ASM_MOVLPD: {
+				switch (modrm) {
+					case OPERAND_REG_TO_MEM:
+					case OPERAND_REG_TO_MEM_DISP32:
+					case OPERAND_REG_TO_MEM_DISP8: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F13;
+					}
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F12;
+					}
+					default: break;
+				}
+				break;
+			}
+			case ASM_MOVHPD: {
+				switch (modrm) {
+					case OPERAND_REG_TO_MEM:
+					case OPERAND_REG_TO_MEM_DISP32:
+					case OPERAND_REG_TO_MEM_DISP8: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F17;
+					}
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F16;
+					}
+					default: break;
+				}
+				break;
+			}
+			case ASM_UNPCKLPD: {
+				switch (modrm) {
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F14;
+					}
+					default: break;
+				}
+				break;
+			}
+			case ASM_UNPCKHPD: {
+				switch (modrm) {
+					case OPERAND_MEM_DISP32:
+					case OPERAND_MEM_TO_REG:
+					case OPERAND_MEM_DISP32_TO_REG:
+					case OPERAND_MEM_DISP8_TO_REG: {
+						*prefix_o = 0x66;
+						*prefix_count = 1;
+						return 0x0F15;
+					}
+					default: break;
+				}
+				break;
+			}
+			default: break;
+		}
+		
+		*no_bytes = 0;
+    	return 0;
+	}
+
     bool _8bit = (reg.valid && reg.size == 8) || (rm.valid && rm.size == 8);
 	*no_bytes = 1;
-	*privileged = false;
     switch (opcode) {
 		case ASM_ADD: { // Works
             switch (modrm) {
@@ -1151,7 +1304,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             }
         }
 
-        if (src.valid && src.size > bits) {
+        if (src.valid && src.size > bits && src.type == NORMAL_REGISTER) {
             if (src.size == 32 && bits == 16) {
             } else {
 				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, src.name, 0, "Invalid Register");
@@ -1161,7 +1314,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 				return false;
             }
         }
-        if (dest.valid && dest.size > bits) {
+        if (dest.valid && dest.size > bits && dest.type == NORMAL_REGISTER) {
             if (src.size == 32 && bits == 16) {
             } else {
 				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Invalid Register");
@@ -1198,13 +1351,6 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
         switch (operand_mod) {
             case OPERAND_REG_TO_REG: {
-                if (src.valid && dest.valid && src.size != dest.size) {
-					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, src.name, 0, "Size Mismatch between registers!");
-                    fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
-					print_ir(&inst);
-					if (inst_buf) free(inst_buf);
-					return false;
-                }
                 if (src.valid && src.rex_ex) src.rex_r = true;
                 if (dest.valid && dest.rex_ex) dest.rex_b = true;
                 
@@ -1359,13 +1505,43 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             default: break;
         }
 
-        uint8_t rex = make_rex(*r_reg, *r_rm);
-        if (rex) emit_bytes(out, &rex, 1);
+		if (r_reg->valid && r_rm->valid) {
+			if (r_reg->type == SSE2_REGISTER || r_rm->type == SSE2_REGISTER) {
+				if (r_reg->rex_w) r_reg->rex_w = false;
+				if (r_rm->rex_w) r_rm->rex_w = false;
+			}
+		}
 
         int no_bytes = 0;
 
 		bool privileged_inst = false;
-        uint64_t opcode_full = get_opcode(&privileged_inst, bits, inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm);
+		uint64_t prefix = 0;
+		uint8_t prefix_count = 0;
+        uint64_t opcode_full = get_opcode(&privileged_inst, bits, inst.opcode, &no_bytes, &operand_mod, *r_reg, *r_rm, &prefix, &prefix_count);
+
+		for (int8_t i = prefix_count - 1; i >= 0; i--) {
+            uint8_t p = (prefix >> (i * 8)) & 0xFF;
+            emit_bytes(out, &p, 1);
+        }
+
+		uint8_t rex = make_rex(*r_reg, *r_rm);
+        if (rex) emit_bytes(out, &rex, 1);
+
+		if (r_reg->valid && r_rm->valid && operand_mod == OPERAND_REG_TO_REG) {
+			if (r_reg->type != NORMAL_REGISTER && r_rm->type == NORMAL_REGISTER) {
+				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Invalid Combination of registers");
+                fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+				print_ir(&inst);
+				if (inst_buf) free(inst_buf);
+				return false;
+			} else if (r_reg->type == NORMAL_REGISTER && r_rm->type != NORMAL_REGISTER) {
+				PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Invalid Combination of registers");
+                fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+				print_ir(&inst);
+				if (inst_buf) free(inst_buf);
+				return false;
+			}
+		}
 
 		if (privileged_inst && !unlocked) {
 			PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Instruction");
@@ -1383,7 +1559,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 			if (inst_buf) free(inst_buf);
 			return false;
         }
-        for (int i = no_bytes - 1; i >= 0; i--) {
+        for (int8_t i = no_bytes - 1; i >= 0; i--) {
             uint8_t opcode = (opcode_full >> (i * 8)) & 0xFF;
             emit_bytes(out, &opcode, 1);
         }

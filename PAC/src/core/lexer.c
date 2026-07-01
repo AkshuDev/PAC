@@ -98,6 +98,12 @@ PAC_TokenType check_keyword(const char* str) {
     // Assembly instructions
     if (strcmp(str, "mov") == 0) return ASM_MOV;
 	if (strcmp(str, "movsxd") == 0) return ASM_MOVSXD;
+	if (strcmp(str, "movupd") == 0) return ASM_MOVUPD;
+	if (strcmp(str, "movsd") == 0) return ASM_MOVSD;
+	if (strcmp(str, "movlpd") == 0) return ASM_MOVLPD;
+	if (strcmp(str, "movhpd") == 0) return ASM_MOVHPD;
+	if (strcmp(str, "unpcklpd") == 0) return ASM_UNPCKLPD;
+	if (strcmp(str, "unpckhpd") == 0) return ASM_UNPCKHPD;
     if (strcmp(str, "add") == 0) return ASM_ADD;
     if (strcmp(str, "sub") == 0) return ASM_SUB;
     if (strcmp(str, "mul") == 0) return ASM_MUL;
@@ -632,6 +638,12 @@ const char* token_type_to_str(PAC_TokenType type) {
         // Assembly / Backend
         case ASM_MOV: return "ASM_MOV";
 		case ASM_MOVSXD: return "ASM_MOVSXD";
+		case ASM_MOVUPD: return "ASM_MOVUPD";
+		case ASM_MOVSD: return "ASM_MOVSD";
+		case ASM_MOVLPD: return "ASM_MOVLPD";
+		case ASM_MOVHPD: return "ASM_MOVHPD";
+		case ASM_UNPCKLPD: return "ASM_UNPCKLPD";
+		case ASM_UNPCKHPD: return "ASM_UNPCKHPD";
         case ASM_ADD: return "ASM_ADD";
         case ASM_SUB: return "ASM_SUB";
         case ASM_MUL: return "ASM_MUL";
@@ -886,6 +898,12 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
         // Assembly / Backend
         case ASM_MOV: return "mov";
 		case ASM_MOVSXD: return "movsxd";
+		case ASM_MOVUPD: return "movupd";
+		case ASM_MOVSD: return "movsd";
+		case ASM_MOVLPD: return "movlpd";
+		case ASM_MOVHPD: return "movhpd";
+		case ASM_UNPCKLPD: return "unpcklpd";
+		case ASM_UNPCKHPD: return "unpckhpd";
         case ASM_ADD: return "add";
         case ASM_SUB: return "sub";
         case ASM_MUL: return "mul";
