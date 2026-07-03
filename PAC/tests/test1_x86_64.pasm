@@ -23,4 +23,4 @@ _start:
 	movhpd %xmm1, [%rbp]
 	movsd %xmm10, %xmm11
 	unpcklpd %xmm11, [%rcx]
-	unpckhpd %xmm15, [%xmm13]
+	unpckhpd %xmm15, [%rip]

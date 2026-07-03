@@ -49,6 +49,7 @@ typedef enum {
 
 typedef struct {
     uint8_t code; // 3-bit ID
+	bool special;
     bool rex_needed; // Needs a REX prefix at all?
     bool rex_ex; // Set by reg encoder to specify reg/rm == extended
     bool rex_b; // Set REX.B
@@ -140,7 +141,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "rdx") == 0) { r.code=2; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		if (strcmp(reg, "rbx") == 0) { r.code=3; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		if (strcmp(reg, "rsp") == 0) { r.code=4; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
-		if (strcmp(reg, "rbp") == 0) { r.code=5; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
+		if (strcmp(reg, "rbp") == 0) { r.special=1; r.code=5; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; } // NOTE: This is also special since it needs seperate memory addressing to seperate from rip
 		if (strcmp(reg, "rsi") == 0) { r.code=6; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		if (strcmp(reg, "rdi") == 0) { r.code=7; r.rex_w=1; r.size=64; r.rex_needed = 1; return r; }
 		// Extended 64-bit (Need REX.R=1 or REX.B=1)
@@ -153,7 +154,7 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
 		if (strcmp(reg, "r14") == 0)  { r.code=6; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
 		if (strcmp(reg, "r15") == 0)  { r.code=7; r.rex_ex=1; r.rex_w=1; r.size=64; r.rex_needed=1; return r; }
 		// Special 64-bit
-		if (strcmp(reg, "rip") == 0) { r.code=5, r.rex_b=0; r.rex_w=0; r.size=64; r.rex_needed=0; return r; }
+		if (strcmp(reg, "rip") == 0) { r.special=1; r.code=5, r.rex_b=0; r.rex_w=0; r.size=64; r.rex_needed=0; return r; }
 	}
 
     // 32-bit
@@ -233,13 +234,18 @@ static RegInfo encode_register(int bits, const char *reg, bool* error) {
     return r;
 }
 
-static uint8_t make_rex(RegInfo reg, RegInfo rm) {
+static uint8_t make_rex(RegInfo reg, RegInfo rm, bool keep_rex_w) {
     uint8_t rex = 0b01000000;
     bool needed = false;
 
     if (reg.valid && reg.rex_needed) needed = true;
     if (rm.valid && rm.rex_needed) needed = true;
     if (!needed) return 0;
+
+	if (!keep_rex_w) {
+		if (reg.rex_w) reg.rex_w = false;
+		if (rm.rex_w) rm.rex_w = false;
+	}
 
     if (reg.valid == false) {
         if (rm.rex_w || rm.size == 64) {
@@ -1150,6 +1156,13 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
         }
     }
 
+	if (base_r.valid && base_r.type != NORMAL_REGISTER) {
+		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, base_r.name, 0, "Memory base register must be a GPR register!\n");
+		fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+		print_ir(ir);
+		return false;
+	}
+
     if (!base_r.valid && !*is_symbol) {
         if (src->valid) {
             *operand_mod = OPERAND_REG_TO_MEM_DISP32;
@@ -1505,13 +1518,6 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             default: break;
         }
 
-		if (r_reg->valid && r_rm->valid) {
-			if (r_reg->type == SSE2_REGISTER || r_rm->type == SSE2_REGISTER) {
-				if (r_reg->rex_w) r_reg->rex_w = false;
-				if (r_rm->rex_w) r_rm->rex_w = false;
-			}
-		}
-
         int no_bytes = 0;
 
 		bool privileged_inst = false;
@@ -1524,7 +1530,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             emit_bytes(out, &p, 1);
         }
 
-		uint8_t rex = make_rex(*r_reg, *r_rm);
+		bool keep_rex_w = !(r_reg->valid && r_rm->valid && (r_reg->type != NORMAL_REGISTER || r_rm->type != NORMAL_REGISTER) && (!r_reg->special && !r_rm->special));
+		uint8_t rex = make_rex(*r_reg, *r_rm, keep_rex_w);
         if (rex) emit_bytes(out, &rex, 1);
 
 		if (r_reg->valid && r_rm->valid && operand_mod == OPERAND_REG_TO_REG) {
@@ -1776,7 +1783,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					if (inst_buf) free(inst_buf);
 					return false;
                 }
-                if (bits == 64 && src.valid && src.code == 0b101) {
+                if (bits == 64 && src.valid && src.code == 0b101 && src.special) {
                     if (src.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -1901,7 +1908,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					if (inst_buf) free(inst_buf);
 					return false;
                 }
-                if (bits == 64 && dest.valid && dest.code == 0b101) {
+                if (bits == 64 && dest.valid && dest.code == 0b101 && dest.special) {
                     if (dest.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -2076,7 +2083,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					if (inst_buf) free(inst_buf);
 					return false;
                 }
-                if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
+                if (bits == 64 && dest.valid && dest.code == 0b101 && !dest.rex_w && dest.special) rip_mode = true;
                 if (dest.valid && dest.code == 0b100) rsp_sib = true;
 
                 if (rip_mode) {
@@ -2123,7 +2130,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					if (inst_buf) free(inst_buf);
 					return false;
                 }
-                if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_ex) rip_mode = true;
+                if (bits == 64 && src.valid && src.code == 0b101 && !src.rex_w && src.special) rip_mode = true;
                 if (src.valid && src.code == 0b100) rsp_sib = true;
 
                 if (rip_mode) {
@@ -2185,7 +2192,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 bool rip_mode = false;
                 bool rbp_mode = false;
                 bool rsp_sib = false;
-                if (bits == 64 && dest.valid && dest.code == 0b101) {
+                if (bits == 64 && dest.valid && dest.code == 0b101 && dest.special) {
                     if (dest.rex_w) rbp_mode = true;
                     else rip_mode = true;
                 }
@@ -2238,7 +2245,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 
                 bool rip_mode = false;
                 bool rsp_sib = false;
-                if (dest.valid && dest.code == 0b101 && !dest.rex_ex) rip_mode = true;
+                if (dest.valid && dest.code == 0b101 && !dest.rex_w && dest.special) rip_mode = true;
                 if (dest.valid && dest.code == 0b100) rsp_sib = true;
 
                 if (rip_mode) {
