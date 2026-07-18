@@ -5,6 +5,9 @@
 
 Pheonix Assembler Collection - Many architectures, same syntax!
 
+# About this Document
+This document only provides brief information of PAC, alongside some tests.
+
 # Features
 1. Inbuilt-Linker
 2. Multiple Architecture Support
@@ -52,13 +55,18 @@ See the [Syntax Guide](docs/Syntax.md) for the complete language reference.
 **NOTE: Tests done on a ~300 line snake game.**
 
 ## Speed
-After timing the Assembling and Linking on a Tuned + Optimised Release Build of PAC, the results are as follows :-
+After timing the Assembling and Linking on a Release Build of PAC, the results are as follows :-
 
 1. Total Time taken to Assemble and Link the game -> ~0.005 seconds or ~5 milliseconds
 2. Total Time taken to only Assemble the game -> ~0.003 seconds or ~3 millisecond
 3. Total Time taken to generate IR Nodes for the game -> ~0.003 seconds or ~3 milliseconds
 4. Total Time taken to generate AST Nodes for the game -> ~0.003 seconds or ~3 milliseconds
 5. Total Time taken to generate tokens for the game -> ~0.002 second or ~2 millisecond
+
+Hardware Used (Basic Indormation that corrolates to speed):
+1. CPU - Intel i3
+2. Ram - 16GB
+3. Drive - SATA 100GB
 
 ## Memory Usage
 After analyzing the memory usage (***heaptrack***) by Assembling and Linking on a Tuned + Optimised Release Build of PAC, the results are as follows :-
@@ -102,7 +110,7 @@ For the following examples, these contents are used ->
 Assembling + Linking with an Optimised Release Build of PAC
 
 **This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
-**This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
+
 ```shell
 	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest -a x86 -b 32
 	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
