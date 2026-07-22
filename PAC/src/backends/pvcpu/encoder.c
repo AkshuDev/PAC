@@ -316,7 +316,6 @@ static RegInfo encode_register(const char *reg, bool unlocked, bool* error) {
 
     fprintf(stderr, COLOR_RED "Unknown register: %s\n" COLOR_RESET, reg);
 	*error = true;
-	
 	r.code = 0xFF;
     r.valid = false;
     return r;
@@ -365,12 +364,13 @@ static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool 
         case ASM_MCMP: return 0x10C;
 
         // Movement
-        case ASM_MOV: // for 4-bit
+        case ASM_MOV: { // for 4-bit
             if (op_size == 64) return 0x119;
             else if (op_size == 32) return 0x118;
             else if (op_size == 16) return 0x117;
             else if (op_size == 8) return 0x116;
             else return 0x115;
+		}
         case ASM_MOVB: return 0x116;
         case ASM_MOVW: return 0x117;
         case ASM_MOVD: return 0x118;
@@ -379,19 +379,22 @@ static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool 
         case ASM_RREG: *special_usage = true; return 0x11B;
 
         // Jumping and more
-        case ASM_JMP: 
+        case ASM_JMP: {
             *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12C;
-        case ASM_CALL: 
+		}
+        case ASM_CALL: {
             *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12D;
-        case ASM_RET:
+        }
+		case ASM_RET: {
             *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12E;
-        case ASM_EXCEPTION:
+		}
+        case ASM_EXCEPTION: {
             if (!unlocked) {
                 fprintf(stderr, COLOR_RED "Privilaged Instruction is not allowed!\n" COLOR_CYAN "\tTip: Try re-assembling with '--unlock'\n" COLOR_RESET);
                 break;
@@ -399,6 +402,7 @@ static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool 
             *special_usage = true;
             *mode = MODE_SRC_IMM;
             return 0x12F;
+		}
         case ASM_JZ: *special_usage = true; return 0x130;
         case ASM_JNZ: *special_usage = true; return 0x131;
         case ASM_JL: *special_usage = true; return 0x132;
@@ -408,9 +412,10 @@ static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool 
         case ASM_JE: *special_usage = true; return 0x136;
         case ASM_JNE: *special_usage = true; return 0x137;
 
-        default:
+        default: {
             *valid = false;
             return 0x0; // Default ASM_NOP but with valid flag off
+		}
     }
     *valid = false;
     return 0;
