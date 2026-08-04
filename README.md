@@ -27,7 +27,7 @@ PAC Currently supports -
 # Supported Formats
 PAC has an entire pipeline for both encoding and linking, and so to increase performance and reduce file size, PAC supports only ***ELF64*** as output after encoding and input to linker.
 
-The PAC Linker infact supports multiple formats, but only takes ***ELF64 Object files*** as an input. Supported formats include -
+The PAC Linker in-fact supports multiple formats, but only takes ***ELF64 Object files*** as an input. Supported formats include -
 1. Elf64
 2. Elf32
 3. PE 32 (Under implementation)
@@ -51,7 +51,7 @@ The PAC Linker infact supports multiple formats, but only takes ***ELF64 Object 
 # Syntax
 See the [Syntax Guide](docs/Syntax.md) for the complete language reference.
 
-# Optimisations and Speed
+# Optimizations and Speed
 **NOTE: Tests done on a ~300 line snake game.**
 
 ## Speed
@@ -63,13 +63,13 @@ After timing the Assembling and Linking on a Release Build of PAC, the results a
 4. Total Time taken to generate AST Nodes for the game -> ~0.003 seconds or ~3 milliseconds
 5. Total Time taken to generate tokens for the game -> ~0.002 second or ~2 millisecond
 
-Hardware Used (Basic Indormation that corrolates to speed):
+Hardware Used (Basic Information that correlates to speed):
 1. CPU - Intel i3
 2. Ram - 16GB
 3. Drive - SATA 100GB
 
 ## Memory Usage
-After analyzing the memory usage (***heaptrack***) by Assembling and Linking on a Tuned + Optimised Release Build of PAC, the results are as follows :-
+After analyzing the memory usage (***heaptrack***) by Assembling and Linking on a Tuned + Optimized Release Build of PAC, the results are as follows :-
 
 1. Peak Memory Usage: ~144KB (Kilobytes)
 2. Total allocations: ~4000
@@ -107,7 +107,7 @@ For the following examples, these contents are used ->
 
 ## Example on x86 32-bit and x86_64 64-bit
 ## Example on x86 32-bit and x86_64 64-bit
-Assembling + Linking with an Optimised Release Build of PAC
+Assembling + Linking with an Optimized Release Build of PAC
 
 **This test used Elf64 Output with x86, and so OS will deny this executable, doesn't mean its wrong, just be aware as PAC doesn't enforce ABI, but OS does** ->
 
