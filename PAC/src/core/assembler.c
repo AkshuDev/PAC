@@ -287,7 +287,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
 							cursec.size = sectab->sections[current_section].size; // ensure it updated
 							if ((uint64_t)section_node->directive.size < cursec.size) {
-								PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
+								PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'");
 								PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
 								symtab_free(symtab);
 								section_free(sectab);
@@ -308,7 +308,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 						if (node->directive.start >= 0) {
 							if (cvaddr > (size_t)node->directive.start) {
-								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "value provided using ':start' overlaps current virtual address, try an higher value!");
+								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "value provided using ':start' overlaps current virtual address, try an higher value");
 								symtab_free(symtab);
 								section_free(sectab);
 								free_ast(ctx->parser->root);
@@ -333,7 +333,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 			case AST_LABEL: {
 				if (current_section < 0) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -350,7 +350,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 			case AST_DECLIDENTIFIER: {
 				if (current_section < 0) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to define data in undefined section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Tried to define data in undefined section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -361,7 +361,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 				size_t size = 0;
 				char* value = (char*)malloc(100);
 				if (!value) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation Failed!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation Failed");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -395,7 +395,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 									val_max_size *= 2;
 									tmp = realloc(value, val_max_size);
 									if (!tmp) {
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed");
 										symtab_free(symtab);
 										section_free(sectab);
 										free_ast(ctx->parser->root);
@@ -419,7 +419,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 									tmp = realloc(value, val_max_size);
 									if (!tmp) {
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed");
 										symtab_free(symtab);
 										section_free(sectab);
 										free_ast(ctx->parser->root);
@@ -437,7 +437,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							}
 
 							default: {
-								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type");
 								symtab_free(symtab);
 								section_free(sectab);
 								free_ast(ctx->parser->root);
@@ -474,7 +474,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 									char* tmp = realloc(value, size + 1);
 
 									if (!tmp) {
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed!");
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Memory Allocation failed");
 										symtab_free(symtab);
 										section_free(sectab);
 										free_ast(ctx->parser->root);
@@ -488,7 +488,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							}
 
 							default: {
-								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type!");
+								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->decl_identifier.name, strlen(node->decl_identifier.name), "Unknown Type");
 								symtab_free(symtab);
 								section_free(sectab);
 								free_ast(ctx->parser->root);
@@ -505,14 +505,14 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 				free(value);
 				cvaddr += size;
 				if (current_section >= 0) sectab->sections[current_section].size += size;
-				else PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Definitions outside any sections are skipped!");
+				else PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Definitions outside any sections are skipped");
 
 				break;
 			}
 
 			case AST_RESERVE: {
 				if (current_section < 0) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in unknown section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in unknown section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -521,7 +521,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 				Section cursec = sectab->sections[current_section];
 				if (strcmp(cursec.name, ".bss") != 0) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in non bss section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->reserve.name, strlen(node->reserve.name), "Tried to reserve data in non bss section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -550,7 +550,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
 			case AST_INSTRUCTION: {
 				if (current_section < 0) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -576,8 +576,14 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
             sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
             cursec.size = sectab->sections[current_section].size; // ensure it updated
             if ((uint64_t)section_node->directive.size < cursec.size) {
-                PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'!");
-                PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
+				char size_buf[16];
+				snprintf(size_buf, sizeof(size_buf), "%lld", (long long)section_node->directive.size);
+                PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, size_buf, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'. Allocated Size"); // Shows as "Allocated Size - <lex>"
+				
+				snprintf(size_buf, sizeof(size_buf), "%lld", (long long)cursec.size);
+				PAC_NOTEF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, size_buf, strlen(section_node->directive.arg), "The current section size is"); // Shows as "The current section size is - <lex>"
+                
+				PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
                 symtab_free(symtab);
                 section_free(sectab);
                 free_ast(ctx->parser->root);
@@ -592,7 +598,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
     }
 
     if (ctx->entry_label == NULL) {
-        PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No entry point specified, defaulting to the first label/func!");
+        PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No entry point specified, defaulting to the first label/func");
         if (first_label_node) { ctx->entry_label = first_label_node->label.name; }
 		else { PAC_WARNINGF(ctx->cur_file, 0, 0, NULL, 0, NULL, 1, "No Assembly in file?"); ctx->no_instructions = true; }
     } else {
@@ -641,7 +647,7 @@ IRList assemble(Assembler* ctx) {
 						continue;
 					}
 					default: {
-						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Invalid AST Directive Type!");
+						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Invalid AST Directive Type");
 						symtab_free(symtab);
 						section_free(sectab);
 						free_ast(ctx->parser->root);
@@ -653,7 +659,7 @@ IRList assemble(Assembler* ctx) {
 			case AST_LABEL: {
 				// assign label addr = current offset in section
 				if (current_section < 0 && sectab->sections) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->label.name, strlen(node->label.name), "Tried to define labels in undefined section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -668,7 +674,7 @@ IRList assemble(Assembler* ctx) {
 			}
 			case AST_INSTRUCTION: {
 				if (current_section < 0 && sectab->sections) {
-					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section!");
+					PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Tried to define instructions in undefined section");
 					symtab_free(symtab);
 					section_free(sectab);
 					free_ast(ctx->parser->root);
@@ -708,7 +714,7 @@ IRList assemble(Assembler* ctx) {
 										}
 
 										default: {
-											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here");
 											symtab_free(symtab);
 											section_free(sectab);
 											free_ast(ctx->parser->root);
@@ -716,7 +722,7 @@ IRList assemble(Assembler* ctx) {
 										}
 									}
 								} else if (op->identifier->type != AST_IDENTIFIER) {
-									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier!");
+									PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Identifier doesn't have type AST_Identifier");
 									symtab_free(symtab);
 									section_free(sectab);
 									free_ast(ctx->parser->root);
@@ -749,7 +755,8 @@ IRList assemble(Assembler* ctx) {
 						case OPERAND_DISPLACEMENT: // A displacement operand outside of memory, is a sign for negative LIT_INT
 						case OPERAND_LIT_INT: {
 							char buf[128];
-							snprintf(buf, sizeof(buf), "%lld", (long long)op->int_val);
+							if (op->int_val < 0) snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)(-1 * op->int_val));
+							else snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->int_val);
 							ir.operands[j] = strdup(buf);
 							break;
 						}
@@ -787,7 +794,7 @@ IRList assemble(Assembler* ctx) {
 													snprintf(buf, sizeof(buf), "%lld", (long long)opmem_op->identifier->literal.int_val);
 													break;
 												default:
-													PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+													PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here");
 													symtab_free(symtab);
 													section_free(sectab);
 													free_ast(ctx->parser->root);
@@ -802,8 +809,8 @@ IRList assemble(Assembler* ctx) {
 												snprintf(buf, sizeof(buf), "UNRESOLVED");
 											}
 										} else {
-											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier!");
-											PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 0, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!");
+											PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier");
+											PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 0, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes");
 											symtab_free(symtab);
 											section_free(sectab);
 											free_ast(ctx->parser->root);
@@ -845,7 +852,7 @@ IRList assemble(Assembler* ctx) {
 												ir.operands[j] = strdup(buf);
 												break;
 											} default: {
-												PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here!");
+												PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here");
 												symtab_free(symtab);
 												section_free(sectab);
 												free_ast(ctx->parser->root);
@@ -862,8 +869,8 @@ IRList assemble(Assembler* ctx) {
 											snprintf(buf, sizeof(buf), "UNRESOLVED");
 										}
 									} else {
-										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier!");
-										PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 1, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes!");
+										PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Identifier doesn't have type AST_Identifier");
+										PAC_TIPF(ctx->cur_file, node->line, node->col, NULL, 0, NULL, 1, "This is an internal error, but it could be caused by the user, try using '--parseout' to take a look at all the generated AST Nodes");
 										symtab_free(symtab);
 										section_free(sectab);
 										free_ast(ctx->parser->root);
@@ -930,6 +937,7 @@ void print_ir(const IRInstruction* ir) {
 
 void print_ir_list(const IRList* list) {
     printf(COLOR_CYAN "NOTE: Addresses/Sizes provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding\n" COLOR_RESET);
+	printf(COLOR_CYAN "NOTE: Any hex value symbolizes memory address reference, not literal value\n" COLOR_RESET);
     printf(COLOR_YELLOW "=== IR Dump (%zu instructions) ===\n" COLOR_RESET, list->count);
     for (size_t i = 0; i < list->count; i++) {
         print_ir(&list->instructions[i]);
@@ -950,6 +958,7 @@ char* symtype_to_str(SymbolType type) {
 }
 
 void print_symtab(SymbolTable* symtab, SectionTable* sectab) {
+	printf(COLOR_CYAN "NOTE: Symbol Dump shows raw bytes present in memory for the symbol\n" COLOR_RESET);
     printf(COLOR_YELLOW "=== Symbol Dump (%zu symbols) ===\n" COLOR_RESET, symtab->count);
     for (size_t i = 0; i < symtab->count; i++) {
         Symbol sym = symtab->symbols[i];

@@ -426,7 +426,7 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
     char buf[128]; 
     size_t len = strlen(op);
     if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
-		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Memory Operand!");
+		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Memory Operand");
 		fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 		print_ir(ir);
         return false;
@@ -563,7 +563,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         }
 
         if (inst.arch != PVCPU) {
-			PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Architecture Unsupported Instruction!");
+			PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Architecture Unsupported Instruction");
 			fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 			print_ir(&inst);
 			if (inst_buf) free(inst_buf);

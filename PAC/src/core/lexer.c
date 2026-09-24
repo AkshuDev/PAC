@@ -941,8 +941,8 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
 		case ASM_STI: return "sti";
 		case ASM_STC: return "stc";
 		case ASM_FWAIT: return "fwait";
-		case ASM_LAHF: return "lafh";
-		case ASM_SAHF: return "safh";
+		case ASM_LAHF: return "lahf";
+		case ASM_SAHF: return "sahf";
         case ASM_SYSCALL: return "syscall";
 		case ASM_INT: return "int";
         case ASM_LEA: return "lea";
