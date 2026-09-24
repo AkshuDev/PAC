@@ -29,5 +29,5 @@ void pac_strdup(char* src, char* dest);
 void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size);
 bool is_sdigit(const char *str);
 
-size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr);
+size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr); // +1 index
 OperandType classify_operand(const char* op);

@@ -299,8 +299,7 @@ void perform_lexout(Args* args, char** file_l, int idx, int count) {
             free(tk.lexeme); // free EOF
             break;
         }
-        printf(COLOR_GREEN "[%3d:%-3d]" COLOR_RESET " %-20s '%s'\n",
-               tk.line, tk.column, token_type_to_str(tk.type), tk.lexeme);
+        printf(COLOR_GREEN "[%3d:%-3d]" COLOR_RESET " %-20s '%s'\n", tk.line, tk.column, token_type_to_str(tk.type), tk.lexeme);
         free(tk.lexeme);
     }
 

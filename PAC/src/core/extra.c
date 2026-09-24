@@ -247,21 +247,25 @@ unsigned int arch_bits(enum Architecture arch) {
 }
 
 size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr) {
+	if (!symtab) return 0;
+	
     for (size_t i = 0; i < symtab->count; i++) {
         Symbol sym = symtab->symbols[i];
         if (sym.type != SYM_IDENTIFIER && sym.type != SYM_LABEL) continue;
         if (sym.addr2 == addr) { // match
             // we found it
-            return i;
+            return i+1;
         }
     }
     return 0;
 }
 
 OperandType classify_operand(const char* op) {
+	if (!op) return (OperandType)-1;
+
     if (op[0] == '0' && op[1] == 'x') return OPERAND_LABEL; // print, exit
     if (op[0] == '[') return OPERAND_MEMORY; // [0x1234], [var], [%rax + 0x1234], [%rax - 0x1234]
-    if (isdigit(op[0])) return OPERAND_LIT_INT; // 42, 0x1234
+    if (isdigit(op[0]) || (op[0] == '-' && isdigit(op[1]))) return OPERAND_LIT_INT; // 42, 0x1234
     if (isalpha(op[0])) return OPERAND_REGISTER; // %rax, %r8
     return (OperandType)-1;
 }

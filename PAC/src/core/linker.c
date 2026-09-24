@@ -748,10 +748,8 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 	hdr_phdr->p_flags = PF_R;
 	hdr_phdr->p_align = PAGE_SIZE;
 
-	size_t total_size = 0;
 	for (size_t i = 0; i < order.count; i++) {
 		OutSection* osec = &outsecs[i];
-		total_size += osec->padded_size;
 		Elf64_Phdr ophdr_R = {0};
 		Elf64_Phdr* ophdr = &ophdr_R;
 
@@ -1458,10 +1456,8 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 	hdr_phdr->p_flags = PF_R;
 	hdr_phdr->p_align = PAGE_SIZE;
 
-	size_t total_size = 0;
 	for (size_t i = 0; i < order.count; i++) {
 		OutSection* osec = &outsecs[i];
-		total_size += osec->padded_size;
 		Elf32_Phdr ophdr_R = {0};
 		Elf32_Phdr* ophdr = &ophdr_R;
 
