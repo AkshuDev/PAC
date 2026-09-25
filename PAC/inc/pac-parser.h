@@ -3,9 +3,15 @@
 #define PAC_PARSER
 
 #include <stdint.h>
-#include <pac-lexer.h>
 #include <stddef.h>
 #include <stdbool.h>
+
+#include <pac-lexer.h>
+
+typedef struct { // Literal integer value (supports upto UINT64_MAX and -UINT64_MAX)
+	uint64_t value;
+	bool neg;
+} IntMax;
 
 typedef enum {
     AST_PROGRAM,
@@ -38,7 +44,7 @@ typedef struct ASTOperand {
     OperandType type;
     union {
         char* reg; // Register name
-        int64_t int_val; // Literal integer value
+        IntMax int_val;
         double float_val; // Literal float value
         char* label; // Label name
         struct ASTOperand** mem_addr; // Memory expression
@@ -67,14 +73,14 @@ typedef struct ASTDirective {
     PAC_TokenType type;
     char* arg;
     size_t aligment;
-    int64_t start;
-    int64_t size;
+    uint64_t start;
+    uint64_t size;
 } ASTDirective;
 
 typedef struct ASTLiteral {
     PAC_TokenType type;
     union {
-        int64_t int_val;
+        IntMax int_val;
         double float_val;
         char* str_val;
     };

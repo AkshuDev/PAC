@@ -281,19 +281,26 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 						size_t def_alignment = default_section_alignment(cursec.name);
 						size_t alignment = (section_node->directive.aligment != 0) ? section_node->directive.aligment : def_alignment;
 
-						if (section_node->directive.size < 0) {
+						if (section_node->directive.size <= 0) {
 							sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
 						} else {
 							sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
 							cursec.size = sectab->sections[current_section].size; // ensure it updated
-							if ((uint64_t)section_node->directive.size < cursec.size) {
-								PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'");
+							if (section_node->directive.size < cursec.size) {
+								char size_buf[16];
+								
+								snprintf(size_buf, sizeof(size_buf), "%lld", (long long)section_node->directive.size);
+								PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, size_buf, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'. Allocated Size"); // Shows as "Allocated Size - <lex>"
+								
+								snprintf(size_buf, sizeof(size_buf), "%lld", (long long)cursec.size);
+								PAC_NOTEF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, size_buf, strlen(section_node->directive.arg), "The current section size is"); // Shows as "The current section size is - <lex>"
+								
 								PAC_TIPF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, section_node->directive.arg, strlen(section_node->directive.arg), "The size of sections is aligned up to match the section alignment, try an aligned size when using ':size'");
 								symtab_free(symtab);
 								section_free(sectab);
 								free_ast(ctx->parser->root);
 								exit(PAC_Error_SectionFull);
-							} else if ((uint64_t)section_node->directive.size > cursec.size) {
+							} else if (section_node->directive.size > cursec.size) {
 								sectab->sections[current_section].size = align_up((size_t)section_node->directive.size, alignment);
 								cvaddr += section_node->directive.size - cursec.size; // padding
 							}
@@ -306,15 +313,15 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 						size_t def_align = default_section_alignment(node->directive.arg);
 						size_t alignment = (node->directive.aligment != 0) ? node->directive.aligment : def_align;
 
-						if (node->directive.start >= 0) {
-							if (cvaddr > (size_t)node->directive.start) {
+						if (node->directive.start > 0) {
+							if (cvaddr > node->directive.start) {
 								PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "value provided using ':start' overlaps current virtual address, try an higher value");
 								symtab_free(symtab);
 								section_free(sectab);
 								free_ast(ctx->parser->root);
 								exit(PAC_Error_InvalidSectionLayout);
-							} else if (cvaddr < (size_t)node->directive.start) {
-								cvaddr = align_up((size_t)node->directive.start, alignment);
+							} else if (cvaddr < node->directive.start) {
+								cvaddr = align_up(node->directive.start, alignment);
 							} else {
 								cvaddr = align_up(cvaddr, alignment);
 							}
@@ -389,7 +396,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							case LIT_BIN:
 							case LIT_HEX:
 							case LIT_CHAR: {
-								num = (uint64_t)node->decl_identifier.array_values[i]->literal.int_val;
+								num = node->decl_identifier.array_values[i]->literal.int_val.value;
 								elem_size = token_type_size(node->decl_identifier.opt_specified_type);
 								if (val_size + elem_size >= val_max_size) {
 									val_max_size *= 2;
@@ -455,7 +462,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							case LIT_BIN:
 							case LIT_HEX:
 							case LIT_CHAR: {
-								uint64_t num = (uint64_t)val->literal.int_val;
+								uint64_t num = (uint64_t)val->literal.int_val.value;
 								memcpy(value, &num, size);
 								break;
 							}
@@ -570,12 +577,12 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
         size_t def_alignment = default_section_alignment(cursec.name);
         size_t alignment = (section_node->directive.aligment != 0) ? section_node->directive.aligment : def_alignment;
 
-        if (section_node->directive.size < 0) {
+        if (section_node->directive.size == 0) {
             sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
         } else {
             sectab->sections[current_section].size = align_up((size_t)cursec.size, alignment);
             cursec.size = sectab->sections[current_section].size; // ensure it updated
-            if ((uint64_t)section_node->directive.size < cursec.size) {
+            if (section_node->directive.size < cursec.size) {
 				char size_buf[16];
 				snprintf(size_buf, sizeof(size_buf), "%lld", (long long)section_node->directive.size);
                 PAC_ERRORF(ctx->cur_file, section_node->line, section_node->col, ctx->cur_file_src, ctx->cur_file_len, size_buf, strlen(section_node->directive.arg), "Tried to define more data then allocated using ':size'. Allocated Size"); // Shows as "Allocated Size - <lex>"
@@ -588,7 +595,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
                 section_free(sectab);
                 free_ast(ctx->parser->root);
                 exit(PAC_Error_SectionFull);
-            } else if ((uint64_t)section_node->directive.size > cursec.size) {
+            } else if (section_node->directive.size > cursec.size) {
                 sectab->sections[current_section].size = align_up((size_t)section_node->directive.size, alignment);
                 cvaddr += section_node->directive.size - cursec.size; // padding
             }
@@ -708,7 +715,11 @@ IRList assemble(Assembler* ctx) {
 									switch (op->identifier->literal.type) {
 										case LIT_INT: {
 											done = false;
-											snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+											if (op->identifier->literal.int_val.neg)
+												snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)op->identifier->literal.int_val.value);
+											else
+												snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->identifier->literal.int_val.value);
+											
 											ir.operands[j] = strdup(buf);
 											break;
 										}
@@ -755,8 +766,8 @@ IRList assemble(Assembler* ctx) {
 						case OPERAND_DISPLACEMENT: // A displacement operand outside of memory, is a sign for negative LIT_INT
 						case OPERAND_LIT_INT: {
 							char buf[128];
-							if (op->int_val < 0) snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)(-1 * op->int_val));
-							else snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->int_val);
+							if (op->int_val.neg) snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)(op->int_val.value));
+							else snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->int_val.value);
 							ir.operands[j] = strdup(buf);
 							break;
 						}
@@ -790,15 +801,20 @@ IRList assemble(Assembler* ctx) {
 										if (opmem_op->identifier->type == AST_LITERAL) {
 											char buf[128];
 											switch (opmem_op->identifier->literal.type) {
-												case LIT_INT:
-													snprintf(buf, sizeof(buf), "%lld", (long long)opmem_op->identifier->literal.int_val);
+												case LIT_INT: {
+													if (opmem_op->identifier->literal.int_val.neg)
+														snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)opmem_op->identifier->literal.int_val.value);
+													else
+														snprintf(buf, sizeof(buf), "%llu", (unsigned long long)opmem_op->identifier->literal.int_val.value);
 													break;
-												default:
+												}
+												default: {
 													PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, "", 0, "Only integer supported here");
 													symtab_free(symtab);
 													section_free(sectab);
 													free_ast(ctx->parser->root);
 													exit(PAC_Error_InvalidIdentifier);
+												}
 											}
 										} else if (opmem_op->identifier->type == AST_IDENTIFIER) {
 											Symbol* sym;
@@ -841,14 +857,17 @@ IRList assemble(Assembler* ctx) {
 								}
 
 								if (opmem_op->type == OPERAND_REGISTER) {
-									if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val);
-									else snprintf(buf, sizeof(buf), "[%s + %lld]", opmem_op->reg, (long long)opmem_disp->int_val);
+									if (!opmem_disp->int_val.neg) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val.value);
+									else snprintf(buf, sizeof(buf), "[%s - %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val.value);
 								} else if (opmem_op->type == OPERAND_IDENTIFIER) {
 									if (op->identifier->type == AST_LITERAL) {
 										char buf[128];
 										switch (op->identifier->literal.type) {
 											case LIT_INT: {
-												snprintf(buf, sizeof(buf), "%lld", (long long)op->identifier->literal.int_val);
+												if (op->identifier->literal.int_val.neg)
+													snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)op->identifier->literal.int_val.value);
+												else
+													snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->identifier->literal.int_val.value);
 												ir.operands[j] = strdup(buf);
 												break;
 											} default: {
@@ -863,8 +882,8 @@ IRList assemble(Assembler* ctx) {
 										Symbol* sym;
 										bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
 										if (got_sym) {
-											if (opmem_disp->int_val >= 0) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (long long)sym->addr, (unsigned long long)opmem_disp->int_val);
-											else snprintf(buf, sizeof(buf), "[0x%llX + %lld]", (long long)sym->addr, (long long)opmem_disp->int_val);
+											if (!opmem_disp->int_val.neg) snprintf(buf, sizeof(buf), "[0x%llX + %llu]", (unsigned long long)sym->addr, (unsigned long long)opmem_disp->int_val.value);
+											else snprintf(buf, sizeof(buf), "[0x%llX - %llu]", (unsigned long long)sym->addr, (unsigned long long)opmem_disp->int_val.value);
 										} else {
 											snprintf(buf, sizeof(buf), "UNRESOLVED");
 										}

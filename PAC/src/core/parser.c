@@ -40,8 +40,8 @@ static size_t macro_count = 0;
 static size_t macro_cap = 0;
 
 static size_t nxt_secalignment = 0;
-static int64_t nxt_secstart = -1;
-static int64_t nxt_secsize = -1;
+static uint64_t nxt_secstart = 0;
+static uint64_t nxt_secsize = 0;
 
 static size_t funccount = 0;
 static bool in_func = false;
@@ -349,19 +349,22 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 			} 
 			case LIT_INT: {
 				op->type = OPERAND_LIT_INT;
-				op->int_val = strtoll(p->current.lexeme, NULL, 10);
+				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
+				op->int_val.neg = false;
 				parser_advance(p);
 				break;
 			} 
 			case LIT_BIN: {
 				op->type = OPERAND_LIT_INT;
-				op->int_val = strtoll(p->current.lexeme, NULL, 2);
+				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
+				op->int_val.neg = false;
 				parser_advance(p);
 				break;
 			}
 			case LIT_HEX: {
 				op->type = OPERAND_LIT_INT;
-				op->int_val = strtoll(p->current.lexeme, NULL, 16);
+				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+				op->int_val.neg = false;
 				parser_advance(p);
 				break;
 			}
@@ -373,7 +376,8 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 			}
 			case LIT_CHAR: {
 				op->type = OPERAND_LIT_CHAR;
-				op->int_val = (int64_t)p->current.lexeme[0];
+				op->int_val.value = (uint64_t)p->current.lexeme[0];
+				op->int_val.neg = false;
 				parser_advance(p);
 				break;
 			}
@@ -383,22 +387,26 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 
 				switch (p->current.type) {
 					case LIT_INT: {
-						op->int_val = strtoll(p->current.lexeme, NULL, 10);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
+						op->int_val.neg = false;
 						parser_advance(p);
 						break;
 					}
 					case LIT_BIN: {
-						op->int_val = strtoll(p->current.lexeme, NULL, 2);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
+						op->int_val.neg = false;
 						parser_advance(p);
 						break;
 					}
 					case LIT_HEX: {
-						op->int_val = strtoll(p->current.lexeme, NULL, 16);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+						op->int_val.neg = false;
 						parser_advance(p);
 						break;
 					}
 					case LIT_CHAR: {
-						op->int_val = (int64_t)p->current.lexeme[0];
+						op->int_val.value = (uint64_t)p->current.lexeme[0];
+						op->int_val.neg = false;
 						parser_advance(p);
 						break;
 					}
@@ -418,22 +426,26 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 
 				switch (p->current.type) {
 					case LIT_INT: {
-						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 10);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
+						op->int_val.neg = true;
 						parser_advance(p);
 						break;
 					}
 					case LIT_BIN: {
-						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 2);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
+						op->int_val.neg = true;
 						parser_advance(p);
 						break;
 					}
 					case LIT_HEX: {
-						op->int_val = 0 - strtoll(p->current.lexeme, NULL, 16);
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+						op->int_val.neg = true;
 						parser_advance(p);
 						break;
 					}
 					case LIT_CHAR: {
-						op->int_val = 0 - (int64_t)p->current.lexeme[0];
+						op->int_val.value = (uint64_t)p->current.lexeme[0];
+						op->int_val.neg = true;
 						parser_advance(p);
 						break;
 					}
@@ -764,8 +776,8 @@ static ASTNode* parse_directive(Parser* p, bool only_lit) {
     node->directive.start = nxt_secstart;
     node->directive.size = nxt_secsize;
     nxt_secalignment = 0;
-    nxt_secsize = -1; // N/A
-    nxt_secstart = -1; // N/A
+    nxt_secsize = 0; // N/A
+    nxt_secstart = 0; // N/A
     parser_advance(p);
 
 	char* label = NULL;
@@ -797,15 +809,18 @@ static ASTNode* parse_literal(Parser* p) {
     ASTLiteral* op = &node->literal;
     if (parser_check(p, LIT_INT)) {
         node->literal.type = LIT_INT;
-        op->int_val = strtoll(p->current.lexeme, NULL, 10);
+        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
+		op->int_val.neg = false;
         parser_advance(p);
     } else if (parser_check(p, LIT_BIN)) {
         node->literal.type = LIT_BIN;
-        op->int_val = strtoll(p->current.lexeme, NULL, 2);
+        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
+		op->int_val.neg = false;
         parser_advance(p);
     } else if (parser_check(p, LIT_HEX)) {
         node->literal.type = LIT_HEX;
-        op->int_val = strtoll(p->current.lexeme, NULL, 16);
+        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+		op->int_val.neg = false;
         parser_advance(p);
     } else if (parser_check(p, LIT_FLOAT)) {
         node->literal.type = LIT_FLOAT;
@@ -813,7 +828,7 @@ static ASTNode* parse_literal(Parser* p) {
         parser_advance(p);
     } else if (parser_check(p, LIT_CHAR)) {
         node->literal.type = LIT_CHAR;
-        op->int_val = (int64_t)p->current.lexeme[0];
+        op->int_val.value = (uint64_t)p->current.lexeme[0];
         parser_advance(p);
     } else if (parser_check(p, LIT_STRING)) {
         node->literal.type = LIT_STRING;
@@ -934,7 +949,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
             parser_advance(p);
             if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
                 ASTNode* arrsize_node = parse_literal(p);
-                array_len = arrsize_node->literal.int_val;
+                array_len = arrsize_node->literal.int_val.value;
                 free_ast(arrsize_node);
             } else if (p->current.type == RBRACKET) {
                 // Pass
@@ -1140,7 +1155,8 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			
 			if (is_sdigit(str)) {
 				node->literal.type = LIT_INT;
-				node->literal.int_val = strtol(str, NULL, hex ? 16 : octal ? 8 : 10);
+				node->literal.int_val.value = (uint64_t)strtoull(str, NULL, hex ? 16 : octal ? 8 : 10);
+				node->literal.int_val.neg = false;
 			} else {
 				node->literal.type = LIT_STRING;
 				node->literal.str_val = (char*)malloc(len + 1);
@@ -1286,7 +1302,7 @@ ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefi
 		parser_advance(p);
 		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
 			ASTNode* arrsize_node = parse_literal(p);
-			array_len = arrsize_node->literal.int_val;
+			array_len = arrsize_node->literal.int_val.value;
 			free_ast(arrsize_node);
 		} else if (p->current.type == RBRACKET) {
 			PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->reserve.name, strlen(node->reserve.name), "Size of Array not specified, defaulting to 1");
@@ -1889,7 +1905,7 @@ ASTNode* parse_program(Parser* p) {
 					exit(PAC_Error_InvalidAlignment);
 				}
 
-				nxt_secalignment = stmt->literal.int_val;
+				nxt_secalignment = stmt->literal.int_val.value;
 				free_ast(stmt);
 				stmt = NULL;
 				break;
@@ -1908,7 +1924,7 @@ ASTNode* parse_program(Parser* p) {
 					free_ast(root);
 					exit(PAC_Error_InvalidAlignment);
 				}
-				nxt_secstart = stmt->literal.int_val;
+				nxt_secstart = stmt->literal.int_val.value;
 				free_ast(stmt);
 				stmt = NULL;
 				break;
@@ -1927,7 +1943,7 @@ ASTNode* parse_program(Parser* p) {
 					free_ast(root);
 					exit(PAC_Error_InvalidAlignment);
 				}
-				nxt_secsize = stmt->literal.int_val;
+				nxt_secsize = stmt->literal.int_val.value;
 				free_ast(stmt);
 				stmt = NULL;
 				break;
@@ -2015,17 +2031,19 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
             
             for (size_t i = 0; i < operand_count; i++) {
                 ASTOperand* opr = operands[i];
+				char* neg = opr->int_val.neg ? "-" : "";
+
                 switch (opr->type) {
                     case OPERAND_LABEL:
                         snprintf(out, maxsize, "%s%s, ", operand, opr->label);
                         snprintf(operand, maxsize, "%s", out);
                         break;
                     case OPERAND_LIT_INT:
-                        snprintf(out, maxsize, "%s%ld, ", operand, opr->int_val);
+                        snprintf(out, maxsize, "%s%s%llu, ", operand, neg, (unsigned long long)opr->int_val.value);
                         snprintf(operand, maxsize, "%s", out);
                         break;
                     case OPERAND_LIT_CHAR:
-                        snprintf(out, maxsize, "%s%ld, ", operand, opr->int_val);
+                        snprintf(out, maxsize, "%s%s%llu, ", operand, neg, (unsigned long long)opr->int_val.value);
                         snprintf(operand, maxsize, "%s", out);
                         break;
                     case OPERAND_LIT_FLOAT:
@@ -2050,7 +2068,7 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
                         size_t operand_size = strlen(operand);
                         operand[operand_size - 1] = '+';
                         operand[operand_size - 2] = ' ';
-                        snprintf(out, maxsize, "%s %ld, ", operand, opr->int_val);
+                        snprintf(out, maxsize, "%s %s%llu, ", operand, neg, (unsigned long long)opr->int_val.value);
                         snprintf(operand, maxsize, "%s", out);
                         break;
                     case OPERAND_MEMORY:
@@ -2096,21 +2114,22 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
         case AST_LITERAL:
             ASTLiteral* op = &node->literal;
             PAC_TokenType type = op->type;
+			char* neg = op->int_val.neg ? "-" : "";
             switch (type) {
                 case LIT_INT:
-                    snprintf(out, maxsize, "[Literal.Int] %ld", op->int_val);
+                    snprintf(out, maxsize, "[Literal.Int] %s%llu", neg, (unsigned long long)op->int_val.value);
                     break;
                 case LIT_BIN:
-                    snprintf(out, maxsize, "[Literal.Bin] %ld", op->int_val);
+                    snprintf(out, maxsize, "[Literal.Bin] %s%llu", neg, (unsigned long long)op->int_val.value);
                     break;
                 case LIT_HEX:
-                    snprintf(out, maxsize, "[Literal.Hex] %ld", op->int_val);
+                    snprintf(out, maxsize, "[Literal.Hex] %s%llu", neg, (unsigned long long)op->int_val.value);
                     break;
                 case LIT_FLOAT:
                     snprintf(out, maxsize, "[Literal.Float] %f", op->float_val);
                     break;
                 case LIT_CHAR:
-                    snprintf(out, maxsize, "[Literal.Char] %ld", op->int_val);
+                    snprintf(out, maxsize, "[Literal.Char] %s%llu", neg, (unsigned long long)op->int_val.value);
                     break;
                 case LIT_STRING:
                     snprintf(out, maxsize, "[Literal.String] %s", op->str_val);
