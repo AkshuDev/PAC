@@ -14,7 +14,7 @@
     "Build": {
         "Date": "2026-04-16",
         "AllowedSigners": "keys/allowed_signers",
-        "SignatureIdentity": "pheonix-pac"
+        "SignatureIdentity": "pheonix-package-index"
     },
     
     "Binaries": [
