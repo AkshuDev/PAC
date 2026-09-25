@@ -1008,7 +1008,7 @@ void print_symtab(SymbolTable* symtab, SectionTable* sectab) {
 				printf("\\x%02X", (unsigned char)*p);
 			}
 		}
-		printf(" " COLOR_GREEN "in section: %s of size " COLOR_RESET "0x%lX \n", sectab->sections[sym.section_index].name, sym.size);
+		printf(" " COLOR_GREEN "in section: %s of size " COLOR_RESET "0x%llX \n", sectab->sections[sym.section_index].name, (unsigned long long)sym.size);
     }
 
     printf(COLOR_YELLOW "=== End Symbol ===\n" COLOR_RESET);

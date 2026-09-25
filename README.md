@@ -366,19 +366,20 @@ Assembling + Linking with an Optimized Release Build of PAC
 ```shell
 	[user@host PAC]$ bin/linux/x86_64/pac tests/simpleTest_x86.pasm -o tests/bin/simpleTest --asmout
 	Assembling file: tests/simpleTest_x86.pasm
-	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func!
+	tests/simpleTest_x86.pasm: warning: No entry point specified, defaulting to the first label/func
 	NOTE: Addresses/Sizes provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding
-	=== IR Dump (9 instructions) ===
-	[IR] [0x20] mov ax, 0
-	[IR] [0x2F] mov eax, 4
-	[IR] [0x3E] mov ebx, 1
-	[IR] [0x4D] lea ecx, [0x0]
-	[IR] [0x5C] mov edx, 17
-	[IR] [0x6B] int 128
-	[IR] [0x7A] mov eax, 1
-	[IR] [0x89] mov ebx, 0
-	[IR] [0x98] int 128
+	NOTE: Any hex value symbolizes memory address reference, not literal value
+	=== IR Dump (8 instructions) ===
+	[IR] [0x20] mov eax, 4
+	[IR] [0x2F] mov ebx, 1
+	[IR] [0x3E] lea ecx, [0x0]
+	[IR] [0x4D] mov edx, 17
+	[IR] [0x5C] int 128
+	[IR] [0x6B] mov eax, 1
+	[IR] [0x7A] mov ebx, 0
+	[IR] [0x89] int 128
 	=== End IR ===
+	NOTE: Symbol Dump shows raw bytes present in memory for the symbol
 	=== Symbol Dump (3 symbols) ===
 	[FILE] tests/simpleTest_x86.pasm
 	[IDENTIFIER] msg at 0x0 => Pretty Neat huh?\x0A in section: .rodata of size 0x11
@@ -386,7 +387,7 @@ Assembling + Linking with an Optimized Release Build of PAC
 	=== End Symbol ===
 	=== Section Dump (2 sections) ===
 	[0x0] .rodata => 24 bytes
-	[0x20] .text => 279 bytes
+	[0x20] .text => 248 bytes
 	=== End Section ===
 ```
 

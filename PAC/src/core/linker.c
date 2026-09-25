@@ -125,13 +125,13 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 		Elf64_Rela* reloc = &irel->rela[k];
 		
 		if (irel->sec->sh_info > ofile->section_count) {
-			printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' needs relocation written to an unknown section, skipping\n" COLOR_RESET, k, j, ofile->name);
+			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' needs relocation written to an unknown section, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		} 
 
 		InSection* isec = &ofile->sections[irel->sec->sh_info];
 		if (reloc->r_offset > isec->sh.sh_size) {
-			printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside section, skipping\n" COLOR_RESET, k, j, ofile->name);
+			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside section, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		}
 
@@ -139,16 +139,16 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 		size_t rtype = ELF64_R_TYPE(reloc->r_info);
 
 		if (rsym + 1 > ofile->symbol_count) {
-			printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' requires unknown symbol, skipping\n" COLOR_RESET, k, j, ofile->name);
+			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' requires unknown symbol, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		}
 
 		Elf64_Sym* sym = &ofile->symbols[rsym];
 		if (ELF64_ST_TYPE(sym->st_info) != STT_OBJECT && ELF64_ST_TYPE(sym->st_info) != STT_FUNC) {
-			printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' uses symbol whose type is neither Func or Object, skipping\n" COLOR_RESET, k, j, ofile->name);
+			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' uses symbol whose type is neither Func or Object, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		} else if (sym->st_shndx > ofile->section_count) {
-			printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' uses symbol which is placed in an unknown section, skipping\n" COLOR_RESET, k, j, ofile->name);
+			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' uses symbol which is placed in an unknown section, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		}
 
@@ -159,10 +159,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_PVCPU_8:
 			case R_X86_64_8: {
 				if (off + sizeof(uint8_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7F) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				*(uint8_t*)(&ofile->data[off]) = (uint8_t)addr;
@@ -171,10 +171,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_PVCPU_16:
 			case R_X86_64_16: {
 				if (off + sizeof(uint16_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint16_t));
@@ -183,10 +183,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_PVCPU_32:
 			case R_X86_64_32: {
 				if (off + sizeof(uint32_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFFFFFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint32_t));
@@ -195,10 +195,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_PVCPU_64:
 			case R_X86_64_64: {
 				if (off + sizeof(uint64_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFFFFFFFFFFFFFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint64_t));
@@ -208,10 +208,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_X86_64_PC8: {
 				addr = addr - (isec->loaded_vaddr + reloc->r_offset);
 				if (off + sizeof(uint8_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7F) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				*(uint8_t*)(&ofile->data[off]) = (uint8_t)addr;
@@ -221,10 +221,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_X86_64_PC16: {
 				addr = addr - (isec->loaded_vaddr + reloc->r_offset);
 				if (off + sizeof(uint16_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint16_t));
@@ -234,10 +234,10 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_X86_64_PC32: {
 				addr = addr - (isec->loaded_vaddr + reloc->r_offset);
 				if (off + sizeof(uint32_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFFFFFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint32_t));
@@ -247,17 +247,17 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			case R_X86_64_PC64: {
 				addr = addr - (isec->loaded_vaddr + reloc->r_offset);
 				if (off + sizeof(uint64_t) > ofile->data_len) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' is outside file, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' is outside file, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				} else if (addr > 0x7FFFFFFFFFFFFFFF) {
-					printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, k, j, ofile->name);
+					printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' cannot be fulfilled since ADDR cannot fit, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 					continue;
 				}
 				memcpy(&ofile->data[off], &addr, sizeof(uint64_t));
 				break;
 			}
 			default: {
-				printf(COLOR_YELLOW "Linker Warning: Relocation %lu within Reloc Section %lu file '%s' has invalid/unsupported type, skipping\n" COLOR_RESET, k, j, ofile->name);
+				printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' has invalid/unsupported type, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 				continue;
 			}
 		}

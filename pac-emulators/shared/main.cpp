@@ -11,7 +11,7 @@ int safe_strToInt(const std::string &str) {
 
     // Check for non digits after the string
     if (idx != str.length()) {
-      throw std::invalid_argument("Non-numeric characters found!");
+      throw std::invalid_argument("Non-numeric characters found");
     }
 
     return value;

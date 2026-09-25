@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <elf.h>
 
+#include <pac-encoder.h>
 #include <pac-lexer.h>
 #include <pac-parser.h>
 #include <pac-extra.h>
@@ -1067,7 +1068,7 @@ static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
     return sib;
 }
 
-static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, int64_t* imm, int* operand_mod, bool* is_symbol) {
+static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, IntMax* imm, int* operand_mod, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
@@ -1088,7 +1089,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
     }
     *w = '\0';
 
-    *imm = 0;
+    *imm = (IntMax){0};
 
     RegInfo base_r = {0};
     
@@ -1143,7 +1144,8 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
         }
 
         if (!sib) {
-            *imm += sign * strtoll(term, NULL, base);
+			uint64_t v = (uint64_t)strtoull(term, NULL, base);
+            intmax_add(imm, v, sign);
         } else {
             uint64_t sib_mult = strtoll(term, NULL, base);
             if (sib_mult != 1 && sib_mult != 2 && sib_mult != 4 && sib_mult != 8) {
@@ -1171,7 +1173,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
             *operand_mod = OPERAND_MEM_DISP32_TO_REG;
             *src = (RegInfo){0};
         }
-    } else if (*imm == 0 && !*is_symbol) {
+    } else if (imm->value == 0 && !*is_symbol) {
         if (!*issrc) {
             *operand_mod = OPERAND_REG_TO_MEM;
             *dest = base_r;
@@ -1181,7 +1183,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
             *src = base_r;
             *issrc = false;
         }
-    } else if (*imm >= -128 && *imm <= 127 && !*is_symbol) {
+    } else if ((imm->value <= 128 && imm->neg) && (imm->value <= 127 && !imm->neg) && !*is_symbol) {
         if (!*issrc) {
             *operand_mod = OPERAND_REG_TO_MEM_DISP8;
             *dest = base_r;
@@ -1207,7 +1209,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
     return true;
 }
 
-bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
+bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, SymbolMapEntry* symbol_list, size_t symbol_list_size) {
     // [REX prefix] [Opcode] [ModR/M] [SIB] [Displacement] [Immediate]
     // REX prefix = 0100WRXB
     size_t cur_symbol_idx = 0;
@@ -1230,16 +1232,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         IRInstruction inst = irlist->instructions[i];
 
         for (size_t si = cur_symbol_idx; si < symbol_list_size; si++) {
-            uint64_t ent = symbol_list[si];
-            uint64_t sym_idx = (uint64_t)((uint32_t)ent);
-            uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
+            SymbolMapEntry ent = symbol_list[si];
+            uint32_t sym_idx = ent.sym_idx;
+            uint32_t ir_idx = ent.ir_idx;
 
-            if (ir_idx > i) break;
-
-            if (ir_idx == i && sym_idx < ctx->symbols->count) {
+            if ((size_t)ir_idx > i) break;
+            if ((size_t)ir_idx == i && (size_t)sym_idx < ctx->symbols->count) {
                 Symbol* sym = &ctx->symbols->symbols[sym_idx];
                 sym->addr = inst_written;
-                cur_symbol_idx = si;
+                cur_symbol_idx = si + 1;
             }
         }
 
@@ -1255,8 +1256,8 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         RegInfo dest = {0};
         RegInfo sib_index = {0};
         uint8_t sib_scale = 0;
-        int64_t imm = 0;
-		int64_t simm = 0;
+        IntMax imm = {0};
+		IntMax simm = {0};
 
         bool issrc = false;
         bool is_symbol = false;
@@ -1281,10 +1282,12 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     break;
                 case OPERAND_LIT_INT:
                     if (operand_mod == OPERAND_REG_TO_REG) {
-						imm = strtol(operand, NULL, 10);
+						if (operand && operand[0] == '-') imm.neg = true;
+						imm.value = (uint64_t)strtoull(imm.neg ? &operand[1] : operand, NULL, 10);
 						operand_mod = OPERAND_IMM_TO_REG;
 					} else {
-						simm = strtol(operand, NULL, 10);
+						if (operand && operand[0] == '-') simm.neg = true;
+						simm.value = (uint64_t)strtoull(simm.neg ? &operand[1] : operand, NULL, 10);
 
 						if (operand_mod == OPERAND_REG_TO_MEM) operand_mod = OPERAND_IMM_TO_MEM;
 						else if (operand_mod == OPERAND_MEM_DISP32) operand_mod = OPERAND_IMM_TO_MEM_DISP32;
@@ -1300,8 +1303,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					}
                     break;
                 case OPERAND_LABEL:
-                    imm = strtoul(operand, NULL, 16); // resolve symbol
-                    if (inst.opcode >= ASM_CALL && inst.opcode <= ASM_JLE) {
+                    if (operand && operand[0] == '-') imm.neg = true;
+					imm.value = (uint64_t)strtoull(imm.neg ? &operand[1] : operand, NULL, 16); // resolve symbol
+                    
+					if (inst.opcode >= ASM_CALL && inst.opcode <= ASM_JLE) {
                         operand_mod = OPERAND_MEM_DISP32;
                     } else {
                         // could be imm
@@ -1356,11 +1361,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             }
             case OPERAND_IMM32_TO_REG:
             case OPERAND_IMM_TO_REG: {
-                if (imm >= 0) {
-					if (imm < UINT8_MAX) operand_mod = OPERAND_IMM8_TO_REG;
-				} else {
-					if (imm < INT8_MAX && imm > INT8_MIN) operand_mod = OPERAND_IMM8_TO_REG;
-				}
+				if (imm.value < UINT8_MAX) operand_mod = OPERAND_IMM8_TO_REG;
                 break;
             }
             default: break;
@@ -1386,33 +1387,17 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                 r_reg = &dest;
                 r_rm = &src;
 
-				if (imm > 0) {
-					uint64_t sz = UINT8_MAX;
-					if (dest.size == 16) sz = UINT16_MAX;
-					else if (dest.size == 32) sz = UINT32_MAX;
-					else if (dest.size == 64) sz = UINT64_MAX;
-					
-					if (dest.valid && sz < (uint64_t)imm) {
-						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
-						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
-						print_ir(&inst);
-						if (inst_buf) free(inst_buf);
-						return false;
-					}
-				} else {
-					int64_t sz = INT8_MAX;
-					int64_t msz = INT8_MIN;
-					if (dest.size == 16) {sz = INT16_MAX; msz = INT16_MIN;}
-					else if (dest.size == 32) {sz = INT32_MAX; msz = INT32_MIN;}
-					else if (dest.size == 64) {sz = INT64_MAX; msz = INT64_MIN;}
-					
-					if (dest.valid && (sz < imm || msz > imm)) {
-						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
-						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
-						print_ir(&inst);
-						if (inst_buf) free(inst_buf);
-						return false;
-					}
+				uint64_t sz = UINT8_MAX;
+				if (dest.size == 16) sz = UINT16_MAX;
+				else if (dest.size == 32) sz = UINT32_MAX;
+				else if (dest.size == 64) sz = UINT64_MAX;
+				
+				if (dest.valid && sz < imm.value) {
+					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
+					fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					if (inst_buf) free(inst_buf);
+					return false;
 				}
                 
                 if (dest.valid && dest.rex_ex) {
@@ -1471,33 +1456,17 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             case OPERAND_IMM32_TO_REG: {
                 r_reg = &dest;
                 r_rm = &src;
-                if (imm > 0) {
-					uint64_t sz = UINT8_MAX;
-					if (dest.size == 16) sz = UINT16_MAX;
-					else if (dest.size == 32) sz = UINT32_MAX;
-					else if (dest.size == 64) sz = UINT64_MAX;
-					
-					if (dest.valid && sz < (uint64_t)imm) {
-						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
-						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
-						print_ir(&inst);
-						if (inst_buf) free(inst_buf);
-						return false;
-					}
-				} else {
-					int64_t sz = INT8_MAX;
-					int64_t msz = INT8_MIN;
-					if (dest.size == 16) {sz = INT16_MAX; msz = INT16_MIN;}
-					else if (dest.size == 32) {sz = INT32_MAX; msz = INT32_MIN;}
-					else if (dest.size == 64) {sz = INT64_MAX; msz = INT64_MIN;}
-					
-					if (dest.valid && (sz < imm || msz > imm)) {
-						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
-						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
-						print_ir(&inst);
-						if (inst_buf) free(inst_buf);
-						return false;
-					}
+                uint64_t sz = UINT8_MAX;
+				if (dest.size == 16) sz = UINT16_MAX;
+				else if (dest.size == 32) sz = UINT32_MAX;
+				else if (dest.size == 64) sz = UINT64_MAX;
+				
+				if (dest.valid && sz < imm.value) {
+					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, dest.name, 0, "Size Mismatch between IMM and Register");
+					fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
+					print_ir(&inst);
+					if (inst_buf) free(inst_buf);
+					return false;
 				}
                 
                 if (dest.valid && dest.rex_ex) {
@@ -1707,14 +1676,16 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         break;
                     }
                 }
-                size_t symindex = get_sym_index_via_addr(ctx->symbols, imm) + 1;
-				if ((symindex - 1) == 0) {
+                
+				size_t symindex = get_sym_index_via_addr(ctx->symbols, imm.value);
+				if (symindex == 0) {
 					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid symbol address");
 					fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 					print_ir(&inst);
 					if (inst_buf) free(inst_buf);
 					return false;
 				}
+				symindex -= 1;
 
                 add_reloc(text_sec, inst_written + text_off, symindex, bits == 64 ? R_X86_64_PC32 : R_X86_64_32, bits == 64 ? -4 : 0);
                 emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
@@ -1764,7 +1735,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         break;
                     default: break;
                 }
-                emit_bytes(out, (uint8_t*)&imm, 1);
+                emit_bytes(out, (uint8_t*)&imm.value, 1);
                 break;
             }
             case OPERAND_IMM_TO_REG: {
@@ -1815,7 +1786,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     default: break;
                 }
                 for (size_t i = 0; i < sz; i++) {
-                    uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                    uint8_t imm_part = (imm.value >> (i * 8)) & 0xFF;
                     emit_bytes(out, &imm_part, 1);
                 }
                 break;
@@ -2045,7 +2016,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     default: break;
                 }
                 for (size_t i = 0; i < 4; i++) {
-                    uint8_t imm_part = (imm >> (i * 8)) & 0xFF;
+                    uint8_t imm_part = (imm.value >> (i * 8)) & 0xFF;
                     emit_bytes(out, &imm_part, 1);
                 }
                 break;
@@ -2149,14 +2120,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     emit_bytes(out, &sib, 1);
                 }
                 if (is_symbol) {
-                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm) + 1;
-					if ((symindex - 1) == 0) {
+                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm.value);
+					if (symindex == 0) {
 						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid symbol address");
 						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 						print_ir(&inst);
 						if (inst_buf) free(inst_buf);
 						return false;
 					}
+					symindex -= 1;
 
                     if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
                         add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
@@ -2167,9 +2139,9 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     }
                 } else {
                     if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        emit_bytes(out, (uint8_t*)&imm, 1);
+                        emit_bytes(out, (uint8_t*)&imm.value, 1);
                     } else {
-                        emit_bytes(out, (uint8_t*)&imm, 4);
+                        emit_bytes(out, (uint8_t*)&imm.value, 4);
                     }
                 }
                 break;
@@ -2203,14 +2175,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     emit_bytes(out, &sib, 1);
                 }
                 if (is_symbol) {
-                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm) + 1;
-					if ((symindex - 1) == 0) {
+                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm.value);
+					if (symindex == 0) {
 						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid symbol address");
 						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 						print_ir(&inst);
 						if (inst_buf) free(inst_buf);
 						return false;
 					}
+					symindex -= 1;
 
                     if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
                         add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
@@ -2221,9 +2194,9 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     }
                 } else {
                     if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
-                        emit_bytes(out, (uint8_t*)&imm, 1);
+                        emit_bytes(out, (uint8_t*)&imm.value, 1);
                     } else {
-                        emit_bytes(out, (uint8_t*)&imm, 4);
+                        emit_bytes(out, (uint8_t*)&imm.value, 4);
                     }
                 }
                 break;
@@ -2296,7 +2269,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 }
-				emit_bytes(out, (uint8_t*)&simm, 4);
+				emit_bytes(out, (uint8_t*)&simm.value, 4);
                 break;
 			}
 			case OPERAND_IMM_TO_MEM_DISP8:
@@ -2333,14 +2306,15 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     emit_bytes(out, &sib, 1);
                 }
                 if (is_symbol) {
-                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm) + 1;
-					if ((symindex - 1) == 0) {
+                    size_t symindex = get_sym_index_via_addr(ctx->symbols, imm.value);
+					if (symindex == 0) {
 						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid symbol address");
 						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 						print_ir(&inst);
 						if (inst_buf) free(inst_buf);
 						return false;
 					}
+					symindex -= 1;
 
                     if (operand_mod == OPERAND_IMM_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
                         add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
@@ -2351,12 +2325,12 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                     }
                 } else {
                     if (operand_mod == OPERAND_IMM_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        emit_bytes(out, (uint8_t*)&imm, 1);
+                        emit_bytes(out, (uint8_t*)&imm.value, 1);
                     } else {
-                        emit_bytes(out, (uint8_t*)&imm, 4);
+                        emit_bytes(out, (uint8_t*)&imm.value, 4);
                     }
                 }
-				emit_bytes(out, (uint8_t*)&simm, 4);
+				emit_bytes(out, (uint8_t*)&simm.value, 4);
                 break;
 			}
 			default: break;
@@ -2364,7 +2338,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
     }
 
     if (inst_written > text_sec->size) {
-        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %lu bytes\n\tReserved Size: %lu bytes\n" COLOR_RESET, inst_written, text_sec->size);
+        fprintf(stderr, COLOR_RED "Error: Somehow the contents of an section exceed the section's reserved size!\n\tCurrent Size: %llu bytes\n\tReserved Size: %llu bytes\n" COLOR_RESET, (unsigned long long)inst_written, (unsigned long long)text_sec->size);
 		if (inst_buf) free(inst_buf);
         return false;
     } else if (inst_written < text_sec->size) {

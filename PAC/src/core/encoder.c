@@ -27,6 +27,18 @@ static int get_max_inst_size(enum Architecture arch) {
     }
 }
 
+static int compare_symbol_map(const void* a, const void* b) {
+	const SymbolMapEntry* x = (const SymbolMapEntry*)a;
+	const SymbolMapEntry* y = (const SymbolMapEntry*)b;
+	
+    if (x->ir_idx < y->ir_idx) return -1;
+    if (x->ir_idx > y->ir_idx) return 1;
+
+    if (x->sym_idx < y->sym_idx) return -1;
+    if (x->sym_idx > y->sym_idx) return 1;
+    return 0;
+}
+
 bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch) {
     // Sort Symbols
 	size_t local_symbols = ctx->symbols->count;
@@ -251,7 +263,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     bool ret = false;
     size_t symbol_list_size = 0;
     size_t symbol_list_cap = 64;
-    uint64_t* symbol_list = (uint64_t*)calloc(symbol_list_cap, sizeof(uint64_t));
+    SymbolMapEntry* symbol_list = (SymbolMapEntry*)calloc(symbol_list_cap, sizeof(SymbolMapEntry));
     size_t cur_symbol_idx = 0;
     if (symbol_list == NULL) {
         fprintf(stderr, COLOR_RED "Error: Failed to allocate memory!\n" COLOR_RESET);
@@ -266,18 +278,20 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
     }
 
     uint64_t max_inst_size = get_max_inst_size(arch);
-
     for (uint64_t i = 0; i < ctx->symbols->count; i++) {
         Symbol* sym = &ctx->symbols->symbols[i];
         if (sym->section_index == (text_sec_idx - 5)) {
             uint32_t ir_idx = (uint32_t)((sym->addr - text_sec->base) / max_inst_size);
-            uint64_t mapping = i;
-            mapping |= (uint64_t)(ir_idx) << 32;
+			SymbolMapEntry mapping = {
+				.ir_idx = ir_idx,
+				.sym_idx = i
+			};
+
             symbol_list[cur_symbol_idx++] = mapping;
             symbol_list_size += 1;
             if (symbol_list_size >= symbol_list_cap) {
-                symbol_list_cap *= 2;
-                uint64_t* new_symlist = (uint64_t*)realloc(symbol_list, symbol_list_cap);
+                symbol_list_cap += 64;
+                SymbolMapEntry* new_symlist = (SymbolMapEntry*)realloc(symbol_list, symbol_list_cap * sizeof(*symbol_list));
                 if (new_symlist == NULL) {
                     fprintf(stderr, COLOR_RED "Error: Failed to allocate memory!\n" COLOR_RESET);
                     fclose(out);
@@ -294,6 +308,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
             }
         }
     }
+	qsort(symbol_list, symbol_list_size, sizeof(*symbol_list), compare_symbol_map);
 
     fseek(out, 0, SEEK_END);
     size_t curr_size = ftell(out);

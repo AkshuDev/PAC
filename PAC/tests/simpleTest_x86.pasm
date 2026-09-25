@@ -5,7 +5,6 @@
 	:global _start
 
 _start:
-	mov %ax, 0 // Uselss but fun
 	mov %eax, 4
 	mov %ebx, 1
 	lea %ecx, [msg]

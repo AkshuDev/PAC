@@ -25,10 +25,38 @@ PAC also offers users a way to create their own types using '**.type**' keyword,
     .endstruct
 ```
 
-#### Structures
+### Defining Data
+To define data you must use this format '**Name!Type = Value**', for example
+
+```pac-asm
+	mydata!ubyte = 0x75
+```
+
+For arrays, you can use '**\[Size\]**', however specifying size is completely optional since PAC can figure size out itself, for example
+
+```pac-asm
+	mystring!ubyte[6] = "Hello"
+	mystring2!ubyte[] = "Hello World!"
+```
+
+### Reserving Data
+To reserve data you must use this format '**:res Name!Type**', for example
+
+```pac-asm
+	:res mydata!ubyte
+```
+
+For arrays, you can use '**\[Size\]**', however in the case of reserving data, specifying size is mandatory since PAC can't figure reserve size itself, for example
+
+```pac-asm
+	:res myreserve!ubyte[6]
+	:res myreserve2!ubyte[] // ERROR, size is required!
+```
+
+### Structures
 PAC offers structures, here is how to use them -
 
-##### Making Structures
+#### Making Structures
 
 To Define Structures, you must use the '**.struct**' keyword to open a Structure Block, Then type the structure name, after this you can use '**:res**' keyword to define the Structure as '*Reserved*' or in simple terms, allocated in sections like '**.bss**'
 Then you follow this format to define a new field: '**Name!Type**', for example
@@ -54,7 +82,7 @@ Example -
 	.endstruct
 ```
 
-##### Accessing Structures
+#### Accessing Structures
 To Access your created Structures you need to use this format: '**Structure-Name.Field**', For example -
 ```pac-asm
     mov %qg0, MyStruct.myField
@@ -105,25 +133,25 @@ Example -
     :section .text // Defining .text section
 ```
 
-#### Align
-You can change any section's alignment value via the '**:align**' keyword. Example -
+### Align
+You can change any section's alignment value via the '**:align**' keyword (Comes before definition). Example -
 ```pac-asm
+	:align 8 // Align to 8-bytes
     :section .symbols // Symbol Section
-        :align 8 // Align to 8-bytes
 ```
 
-#### Start
-You can also define any section's starting address using the '**:start**' keyword. Example -
+### Start
+You can also define any section's starting address using the '**:start**' keyword (Comes before definition). Example -
 ```pac-asm
+	:start 0xFFFF // Start at 0xFFFF
     :section .stack // Stack Section
-        :start 0xFFFF // Start at 0xFFFF
 ```
 
-#### Size
-You can also define any section's **MAX** size, only for that specific file, using the '**:size**' keyword. Example -
+### Size
+You can also define any section's **MAX** size, only for that specific file, using the '**:size**' keyword (Comes before definition). Example -
 ```pac-asm
+	:size 0xFF // Size = 256/0xFF bytes
     :section .data // Data Section
-        :size 0xFF // Size = 256/0xFF bytes
 ```
 
 ## Functions and Labels
@@ -150,6 +178,26 @@ To Access a function, just add a '$' prefix to the function name. Example -
     call $myfunc
 ```
 
+### Labels
+Labels are an easy way to access memory locations, so instead of calculating memory offsets, using a label makes the process a lot easier. Or they can be called "Traditional Assembly Functions". However PAC treats labels as "Traditional Assembly Functions".
+
+Example -
+```pac-asm
+	mylabel:
+		// Assembly goes here
+```
+
+### Labels in functions
+Labels in functions are just well, normal labels.
+
+Example -
+```pac-asm
+	.func myfunc:
+		mylabel:
+			// Assembly goes here
+	.endfunc
+```
+
 #### Accessing Labels inside Functions
 To Access a label inside a function, you have to use this format '**$Function Name.Label Name**'. Example -
 ```pac-asm
@@ -157,15 +205,6 @@ To Access a label inside a function, you have to use this format '**$Function Na
 ```
 
 **NOTE: Such an access only works within the parent function of that label**
-
-### Labels
-Labels are an easy way to access memory locations, so instead of calculating memory offsets, using a label makes the process a lot easier. Or they can be called "Traditional Assembly Functions". 
-
-Example -
-```pac-asm
-mylabel:
-	// Assembly goes here
-```
 
 ## Preprocessing
 All preprocessor statements start with a '@'

@@ -10,7 +10,7 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
-VERSION := 1.0.2
+VERSION := 1.0.3
 WORK_JSON := $(NFX_DIR)/build.json
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
@@ -30,14 +30,17 @@ RESET := \033[0m
 dirs:
 	@mkdir -p $(BUILD_DIR) $(KEY_DIR) $(NFX_DIR)
 
+pre-build:
+	@make --no-print-directory -C PAC BUILD=release clean
+
 build-linux:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(PAC_LINUX)
-	@make -C PAC BUILD=release
+	@make --no-print-directory -C PAC BUILD=release
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(PAC_LINUX)
 
 build-windows:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(PAC_WINDOWS)
-	@make -C PAC BUILD=release build_win
+	@make --no-print-directory -C PAC BUILD=release build_win
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(PAC_WINDOWS)
 
 prepare-json:
@@ -73,7 +76,7 @@ date:
 	@jq '.Build.Date = "$(BUILD_DATE)"' $(WORK_JSON) > $(WORK_JSON).tmp && mv $(WORK_JSON).tmp $(WORK_JSON)
 	@printf "$(GREEN)==> Build date set to $(BUILD_DATE)\n$(RESET)"
 
-zip: dirs build-linux build-windows canonical
+zip: dirs pre-build build-linux build-windows canonical
 	@printf "$(YELLOW)==> Creating Zip... (%s) \n$(RESET)" $(ZIP)
 	@cp $(CANON_NFX) nfx.json
 	@zip -r $(ZIP) \
@@ -112,7 +115,7 @@ verify:
 		< $(ZIP)
 	@printf "$(GREEN)==> Verification complete! \n$(RESET)"
 
-all: dirs build-linux build-windows hashes sizes canonical zip sign verify
+all: dirs pre-build build-linux build-windows hashes sizes canonical zip sign verify
 	@printf "$(GREEN)==> Packaged at %s (unsigned) and %s (signed) \n$(RESET)" $(ZIP) $(SIG)
 
 clean:

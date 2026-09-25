@@ -20,6 +20,7 @@
 
 #include <pac-extra.h>
 #include <pac-asm.h>
+#include <pac-parser.h>
 
 typedef struct {
 	uint32_t magic;
@@ -270,3 +271,28 @@ OperandType classify_operand(const char* op) {
     return (OperandType)-1;
 }
 
+void intmax_add(IntMax* imax, uint64_t v, int sign) {
+	if (sign < 0) {
+		if (imax->neg) {
+			imax->value += v;
+		} else if (imax->value >= v) {
+			imax->value -= v;
+		} else {
+			imax->value = v - imax->value;
+			imax->neg = true;
+		}
+	} else {
+		if (imax->neg) {
+			if (imax->value >= v) {
+				imax->value -= v;
+			} else {
+				imax->value = v - imax->value;
+				imax->neg = false;
+			}
+		} else {
+			imax->value += v;
+		}
+	}
+
+	if (imax->value == 0) imax->neg = false;
+}

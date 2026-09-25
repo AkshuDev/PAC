@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <pac-asm.h>
+#include <pac-parser.h>
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_BOLD    "\033[1m"
@@ -31,3 +32,4 @@ bool is_sdigit(const char *str);
 
 size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr); // +1 index
 OperandType classify_operand(const char* op);
+void intmax_add(IntMax* imax, uint64_t v, int sign);

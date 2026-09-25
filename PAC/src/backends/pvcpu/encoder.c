@@ -10,6 +10,7 @@
 #include <pac-parser.h>
 #include <pac-extra.h>
 #include <pac-err.h>
+#include <pac-encoder.h>
 
 #include <pac-asm.h>
 #include <pac-pvcpu-encoder.h>
@@ -421,7 +422,7 @@ static uint64_t get_opcode(PAC_TokenType opcode, bool* valid, int op_size, bool 
     return 0;
 }
 
-static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, int64_t* imm, Modes* mode, bool* is_symbol) {
+static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, IntMax* imm, Modes* mode, bool* is_symbol) {
     // remove brackets
     char buf[128]; 
     size_t len = strlen(op);
@@ -442,7 +443,7 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
     }
     *w = '\0';
 
-    *imm = 0;
+    *imm = (IntMax){0};
 
     RegInfo base_r = {0};
     
@@ -485,7 +486,8 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
             *is_symbol = false;
         }
 
-		*imm += sign * strtoll(term, NULL, base);
+		uint64_t v = (uint64_t)strtoull(term, NULL, base);
+		intmax_add(imm, v, sign);
     }
 
     if (!base_r.valid && !*is_symbol) {
@@ -496,7 +498,7 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
             *mode = MODE_STORE_IMMADDR;
             *src = (RegInfo){0};
         }
-    } else if (*imm == 0 && !*is_symbol) {
+    } else if (imm->value == 0 && !*is_symbol) {
         if (!*issrc) {
             *mode = MODE_STORE_REGADDR;
             *dest = base_r;
@@ -526,7 +528,7 @@ static bool parse_memory_operand(bool unlocked, Assembler* ctx, IRInstruction* i
     return true;
 }
 
-bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, uint64_t* symbol_list, size_t symbol_list_size) {
+bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlocked, size_t text_off, Section* text_sec, SymbolMapEntry* symbol_list, size_t symbol_list_size) {
 	(void)bits;
 
     size_t cur_symbol_idx = 0;
@@ -549,13 +551,12 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         IRInstruction inst = irlist->instructions[i];
 
         for (size_t si = cur_symbol_idx; si < symbol_list_size; si++) {
-            uint64_t ent = symbol_list[si];
-            uint64_t sym_idx = (uint64_t)((uint32_t)ent);
-            uint64_t ir_idx = (uint64_t)((uint32_t)(ent >> 32));
+            SymbolMapEntry ent = symbol_list[si];
+            uint32_t sym_idx = ent.sym_idx;
+            uint32_t ir_idx = ent.ir_idx;
 
-            if (ir_idx > i) break;
-
-            if (ir_idx == i && sym_idx < ctx->symbols->count) {
+            if ((size_t)ir_idx > i) break;
+            if ((size_t)ir_idx == i && (size_t)sym_idx < ctx->symbols->count) {
                 Symbol* sym = &ctx->symbols->symbols[sym_idx];
                 sym->addr = inst_written;
                 cur_symbol_idx = si;
@@ -572,7 +573,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 
         RegInfo src = {0};
         RegInfo dest = {0};
-        int64_t imm = 0;
+        IntMax imm = {0};
         bool special_mode_usage_opcode = false;
 
         uint8_t flags = 0;
@@ -601,10 +602,11 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                     break;
 				}
                 case OPERAND_LIT_INT: {
-                    imm = strtoul(operand, NULL, 10);
+					if (operand && operand[0] == '-') imm.neg = true;
+                    imm.value = (uint64_t)strtoull(imm.neg ? &operand[1] : operand, NULL, 10);
                     is_symbol = false;
                     mode = mode == MODE_REG_REG ? MODE_REG_IMM : mode;
-                    if (imm > 0b111111) {
+                    if (imm.value > 0b111111) {
                         mode = mode == MODE_REG_REG ? MODE_REG_EXTIMM : mode;
                     }
                     break;
@@ -614,15 +616,16 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                     break;
 				}
                 case OPERAND_LABEL: {
-                    size_t addr = strtoul(operand, NULL, 16); // resolve symbol
-                    imm = (int64_t)get_sym_index_via_addr(ctx->symbols, addr) + 1;
-					if ((imm - 1) <= 0) {
+                    size_t addr = (size_t)strtoull(operand, NULL, 16); // resolve symbol
+                    imm.value = (uint64_t)get_sym_index_via_addr(ctx->symbols, addr);
+					if (imm.value == 0) {
 						PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, operand, 0, "Unknown Symbol");
 						fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 						print_ir(&inst);
 						if (inst_buf) free(inst_buf);
 						return false;
 					}
+					imm.value -= 1;
 
                     mode = MODE_REG_EXTIMM;
                     is_symbol = true;
@@ -662,7 +665,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 			return false;
         } 
 
-        if (mode == MODE_SRC_IMM && imm < 0b111111) mode = MODE_SRC_REG_IMM;
+        if (mode == MODE_SRC_IMM && imm.value < 0b111111) mode = MODE_SRC_REG_IMM;
 
 		switch (mode) {
 			case MODE_REG_REG:
@@ -671,7 +674,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 			case MODE_STORE_REGADDR:
 			case MODE_SRC_REG_IMM: {
 				if (src.valid) dest = src;
-				src.code = (uint8_t)imm;
+				src.code = (uint8_t)imm.value;
 				if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
 				break;
 			}
@@ -691,14 +694,15 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 			case MODE_STORE_PC_REL: {
 				if (!(flags & FLAGS_IMM)) flags |= FLAGS_IMM;
             	if (!(flags & FLAGS_64)) flags |= FLAGS_64;
-				size_t symindex = get_sym_index_via_addr(ctx->symbols, imm) + 1;
-				if ((symindex) == 0) {
+				size_t symindex = get_sym_index_via_addr(ctx->symbols, imm.value);
+				if (symindex == 0) {
 					PAC_ERRORF(ctx->cur_file, inst.line, inst.col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid symbol address");
 					fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 					print_ir(&inst);
 					if (inst_buf) free(inst_buf);
 					return false;
 				}
+				symindex -= 1;
 
 				add_reloc(text_sec, inst_written + text_off, symindex, R_PVCPU_PC_64, 0);
 				break;
@@ -728,10 +732,10 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 		rsrc = src.valid ? src.code : 0;
         rdest = dest.valid ? dest.code : 0;
 
-        if (flags & FLAGS_IMM && imm > UINT32_MAX) {
+        if (flags & FLAGS_IMM && imm.value > UINT32_MAX) {
             if (!(flags & FLAGS_64))
                 flags |= FLAGS_64;
-        } else if (flags & FLAGS_IMM && imm <= UINT32_MAX && (flags & FLAGS_64)) {
+        } else if (flags & FLAGS_IMM && imm.value <= UINT32_MAX && (flags & FLAGS_64)) {
             flags &= ~FLAGS_64;
         } else if (flags & FLAGS_IMM && is_symbol) flags |= FLAGS_64;
 
@@ -745,7 +749,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         emit_bytes(out, (uint8_t*)&outbytes, 4);
 
         if (flags & FLAGS_IMM)
-            emit_bytes(out, (uint8_t*)&imm, flags & FLAGS_64 ? 8 : 4);
+            emit_bytes(out, (uint8_t*)&imm.value, flags & FLAGS_64 ? 8 : 4);
     }
 
     if (inst_written > text_sec->size) {
