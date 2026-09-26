@@ -10,7 +10,7 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
-VERSION := 1.0.3
+VERSION := 1.0.4
 WORK_JSON := $(NFX_DIR)/build.json
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 

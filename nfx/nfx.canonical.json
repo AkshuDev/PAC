@@ -11,7 +11,7 @@
         "linux"
       ],
       "Path": "PAC/bin/linux/x86_64/pac",
-      "Sha256": "a53f731360faff988cb724924fd59cd1ace2de9d845eed63a5593cd81ddad8e8",
+      "Sha256": "cef9cb22e84460c05eadc1f1587a7c71d9af1b05dae4b2840b6f69b75a7801e0",
       "Size": 211840
     },
     {
@@ -24,15 +24,16 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Sha256": "e9542d95cd62894372ea38c051155091ffbdf50ff43bcba41b803e5d87b7fe0d",
+      "Sha256": "1aea6b226b2328d1c8929cc5df06889898293e679fee81adcfa44348e82d7178",
       "Size": 363487
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-09-26 00:25",
+    "Date": "2026-09-26 21:00",
     "SignatureIdentity": "pheonix-package-index"
   },
+  "Changelog": "CHANGELOG.md",
   "Conflicts": [],
   "Dependencies": [],
   "Description": "Pheonix Assembler Collection",
@@ -41,5 +42,5 @@
   "Name": "PAC",
   "Readme": "README.md",
   "Status": "stable",
-  "Version": "1.0.1"
+  "Version": "1.0.4"
 }

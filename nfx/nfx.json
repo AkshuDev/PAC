@@ -2,11 +2,12 @@
     "Name": "PAC",
     "Description": "Pheonix Assembler Collection",
 
-    "Version": "1.0.1",
+    "Version": "1.0.4",
     "Author": "Pheonix-Studios",
 
     "License": "LICENSE",
     "Readme": "README.md",
+    "Changelog": "CHANGELOG.md",
 
     "Id": "pheonix_studios.pac",
     "Status": "stable",
