@@ -11,8 +11,8 @@
         "linux"
       ],
       "Path": "PAC/bin/linux/x86_64/pac",
-      "Sha256": "cef9cb22e84460c05eadc1f1587a7c71d9af1b05dae4b2840b6f69b75a7801e0",
-      "Size": 211840
+      "Sha256": "7aaa7c1b2eb71ebe37c29d727597b844bdd7f61ebdf1c07d18bf9b8e54d57200",
+      "Size": 220144
     },
     {
       "Arch": [
@@ -24,13 +24,13 @@
         "windows"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Sha256": "1aea6b226b2328d1c8929cc5df06889898293e679fee81adcfa44348e82d7178",
-      "Size": 363487
+      "Sha256": "893df09e82adffbb5da43b64765a75b61836048d1b8910bdd7d98ddc7b875329",
+      "Size": 368840
     }
   ],
   "Build": {
     "AllowedSigners": "keys/allowed_signers",
-    "Date": "2026-09-26 21:00",
+    "Date": "2026-09-27 00:21",
     "SignatureIdentity": "pheonix-package-index"
   },
   "Changelog": "CHANGELOG.md",

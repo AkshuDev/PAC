@@ -244,6 +244,7 @@ typedef enum {
     // Literals
     LIT_INT,
     LIT_HEX,
+	LIT_OCTAL,
     LIT_BIN,
     LIT_FLOAT,
     LIT_STRING,
@@ -267,15 +268,15 @@ typedef enum {
 typedef struct {
     PAC_TokenType type;
     char* lexeme;
-    int line;
-    int column;
+    size_t line;
+    size_t column;
 } Token;
 
 typedef struct {
     const char* src;
     size_t pos;
-    int line;
-    int column;
+    size_t line;
+    size_t column;
     size_t len;
     const char* file;
 } Lexer;

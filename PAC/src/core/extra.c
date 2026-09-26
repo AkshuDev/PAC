@@ -29,9 +29,7 @@ typedef struct {
 } PAC_MHDR;
 
 enum Architecture archs_to_archenum(char* arch) {
-    if (!arch) {
-        return UNKNOWN_ARCH;
-    }
+    if (!arch) return UNKNOWN_ARCH;
 
     if (strcmp(arch, "x86_64") == 0 || strcmp(arch, "x64") == 0) {
         return x86_64;
@@ -53,6 +51,8 @@ enum Architecture archs_to_archenum(char* arch) {
 }
 
 void archenum_to_archs(enum Architecture arch, char* archs) {
+	if (!archs) return;
+
     switch (arch) {
         case x86_64:
             strcpy(archs, "x86_64");
@@ -81,9 +81,10 @@ void archenum_to_archs(enum Architecture arch, char* archs) {
     }
 }
 
-void freeliness(char** lines, int num_lines) {
-    if (lines == NULL) return;
-    for (int i = 0; i < num_lines; i++) {
+void freeliness(char** lines, size_t num_lines) {
+    if (!lines) return;
+
+    for (size_t i = 0; i < num_lines; i++) {
         if (lines[i] != NULL) {
             free(lines[i]);
         }
@@ -91,11 +92,11 @@ void freeliness(char** lines, int num_lines) {
     free(lines);
 }
 
-char** splitlines(const char* s, int* num_lines) {
-    if (s == NULL) return NULL;
+char** splitlines(const char* s, size_t* num_lines) {
+    if (!s || !num_lines) return NULL;
 
     // First pass: Count the number of lines
-    int count = 0;
+    size_t count = 0;
     const char* ptr = s;
     while (*ptr != '\0') {
         if (*ptr == '\n') {
@@ -116,13 +117,11 @@ char** splitlines(const char* s, int* num_lines) {
 
     // Allocate memory for the array of line pointers
     char** lines = (char**)malloc(count * sizeof(char*));
-    if (lines == NULL) {
-        return NULL;
-    }
+    if (!lines) return NULL;
 
     // Second pass: Extract and copy each line
     ptr = s;
-    int line_index = 0;
+    size_t line_index = 0;
     const char* start_of_line = s;
 
     while (*ptr != '\0') {
@@ -137,6 +136,7 @@ char** splitlines(const char* s, int* num_lines) {
             if (lines[line_index] == NULL) {
                 // Free previously allocated memory and return NULL to indicate failure
                 freeliness(lines, line_index);
+
                 *num_lines = 0;
                 return NULL;
             }
@@ -155,6 +155,7 @@ char** splitlines(const char* s, int* num_lines) {
         lines[line_index] = (char*)malloc((line_len + 1) * sizeof(char));
         if (lines[line_index] == NULL) {
             freeliness(lines, line_index);
+
             *num_lines = 0;
             return NULL;
         }
@@ -167,6 +168,8 @@ char** splitlines(const char* s, int* num_lines) {
 }
 
 void rmchr(char* str, char c) {
+	if (!str) return;
+
     size_t read = 0;
     size_t write = 0;
     while (str[read] != '\0') {
@@ -180,7 +183,7 @@ void rmchr(char* str, char c) {
 }
 
 void pac_strdup(char* src, char* dest) {
-    if (src == NULL || dest == NULL) return;
+    if (!src || !dest) return;
     strcpy(dest, src);
 }
 
@@ -199,6 +202,7 @@ void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size) {
 }
 
 bool is_sdigit(const char *str) {
+	if (!str) return false;
     if (*str == '\0') return false;
 
     while (*str) {
@@ -272,6 +276,8 @@ OperandType classify_operand(const char* op) {
 }
 
 void intmax_add(IntMax* imax, uint64_t v, int sign) {
+	if (!imax) return;
+	
 	if (sign < 0) {
 		if (imax->neg) {
 			imax->value += v;

@@ -27,7 +27,7 @@ static int get_max_inst_size(enum Architecture arch) {
     }
 }
 
-static int compare_symbol_map(const void* a, const void* b) {
+static int compare_symbol_map(const void* a, const void* b) { // qsort doesn't pass invalid pointers
 	const SymbolMapEntry* x = (const SymbolMapEntry*)a;
 	const SymbolMapEntry* y = (const SymbolMapEntry*)b;
 	
@@ -40,6 +40,8 @@ static int compare_symbol_map(const void* a, const void* b) {
 }
 
 bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch) {
+	if (!ctx || !output_file || !irlist) return false;
+
     // Sort Symbols
 	size_t local_symbols = ctx->symbols->count;
 	size_t global_symbols = 0;
@@ -539,6 +541,8 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 }
 
 bool encode_binary(Assembler* ctx, const char* output_file, IRList* irlist, int bits, bool unlocked, enum Architecture arch) {
+	if (!ctx || !output_file || !irlist) return false;
+
     FILE* out = fopen(output_file, "wb");
     if (!out) {
         printf(COLOR_RED "Error: Unable to open output file!\n" COLOR_RESET);

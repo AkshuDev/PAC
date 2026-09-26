@@ -68,6 +68,8 @@ typedef struct {
 } SectionOrder;
 
 static char* linker_read_file(const char* path, size_t* len) {
+	if (!path || !len) return NULL;
+
     FILE* f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, COLOR_RED "Linker Error: Cannot open file '%s'\n" COLOR_RESET, path);
@@ -78,6 +80,11 @@ static char* linker_read_file(const char* path, size_t* len) {
     rewind(f);
 
     char* buffer = malloc(size + 1);
+	if (!buffer) {
+		fclose(f);
+		return NULL;
+	}
+
     fread(buffer, 1, size, f);
     buffer[size] = '\0';
     fclose(f);
@@ -85,7 +92,7 @@ static char* linker_read_file(const char* path, size_t* len) {
     return buffer;
 }
 
-char* linker_format_to_str(LinkerFormat outformat) {
+const char* linker_format_to_str(LinkerFormat outformat) {
     switch (outformat) {
         case ELF64: return "elf64";
         case ELF32: return "elf32";
@@ -98,7 +105,8 @@ char* linker_format_to_str(LinkerFormat outformat) {
 }
 
 LinkerFormat str_to_linker_format(char* s) {
-    if (s == NULL || !s) return (LinkerFormat)-1;
+    if (!s) return (LinkerFormat)-1;
+
     if (strcmp(s, "elf64") == 0) return ELF64;
     else if (strcmp(s, "elf32") == 0) return ELF32;
     else if (strcmp(s, "win64") == 0) return WIN64;
@@ -109,18 +117,21 @@ LinkerFormat str_to_linker_format(char* s) {
 }
 
 static void free_objfile(ObjectFile* objfiles, size_t objfile_count) {
-    if (objfile_count < 1) return;
+    if (objfile_count < 1 || !objfiles) return;
+
     for (size_t i = 0; i < objfile_count; i++) {
         ObjectFile* objfile = &objfiles[i];
-        free(objfile->data);
+        if (objfile->data) free(objfile->data);
 
         if (objfile->section_count < 1) continue;
-        free(objfile->sections);
+        if (objfile->sections) free(objfile->sections);
     }
     free(objfiles);
 }
 
 static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
+	if (!irel || !ofile) return;
+
 	for (size_t k = 0; k < irel->rela_count; k++) {
 		Elf64_Rela* reloc = &irel->rela[k];
 		
@@ -265,7 +276,7 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 }
 
 static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
-    if (input_files == NULL || input_file_count == 0) {
+    if (!input_files || input_file_count == 0) {
         fprintf(stderr, COLOR_RED "Linker Error: No input files provided!\n" COLOR_RESET);
         return false;
     }
@@ -973,7 +984,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 }
 
 static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
-    if (input_files == NULL || input_file_count == 0) {
+    if (!input_files || input_file_count == 0) {
         fprintf(stderr, COLOR_RED "Linker Error: No input files provided!\n" COLOR_RESET);
         return false;
     }

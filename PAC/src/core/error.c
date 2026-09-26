@@ -228,6 +228,8 @@ const char* PAC_ErrorString(PAC_Errors error) {
 }
 
 char* pac_get_line(const char* src, size_t pos) {
+	if (!src) return NULL;
+	
     const char* start = src + pos;
     while (start > src && *(start - 1) != '\n') start--;
 
@@ -244,15 +246,15 @@ char* pac_get_line(const char* src, size_t pos) {
 void pac_diag(
     PACDiagLevel level,
     const char* file,
-    int line,
-    int column,
+    size_t line,
+    size_t column,
     const char* src,
     size_t src_len,
     const char* lexeme, // offending token
-    int lexeme_len,
+    size_t lexeme_len,
     const char* msg 
 ) {
-    const int MAX_LINE_WIDTH = 80;
+    const size_t MAX_LINE_WIDTH = 80;
     char lvl[120];
     char* color = COLOR_RED;
 
@@ -278,40 +280,35 @@ void pac_diag(
             break;
     }
 
-	char lbuf[12];
-	char cbuf[12];
+	char lbuf[24];
+	char cbuf[24];
 
 	if (line > 0) {
 		lbuf[0] = ':';
-		snprintf(lbuf + 1, sizeof(lbuf)-1, "%d", line);
+		snprintf(lbuf + 1, sizeof(lbuf)-1, "%llu", (unsigned long long)line);
 	} else
 		lbuf[0] = '\0';
 	if (column > 0) {
 		cbuf[0] = ':';
-		snprintf(cbuf + 1, sizeof(cbuf)-1, "%d", column);
+		snprintf(cbuf + 1, sizeof(cbuf)-1, "%llu", (unsigned long long)column);
 	} else
 		cbuf[0] = '\0';
 
-	lbuf[11] = '\0';
-	cbuf[11] = '\0';
+	lbuf[23] = '\0';
+	cbuf[23] = '\0';
 
-    if (lexeme) fprintf(stderr, "%s%s%s: %s %s - (\"%s\")\n" COLOR_RESET, file, lbuf, cbuf, lvl, msg, lexeme);
-	else fprintf(stderr, "%s%s%s: %s %s\n" COLOR_RESET, file, lbuf, cbuf, lvl, msg);
+    if (lexeme) fprintf(stderr, "%s%s%s: %s %s - (\"%.*s\")\n" COLOR_RESET, file ? file : "<unknown file>", lbuf, cbuf, lvl, msg ? msg : "", (int)lexeme_len, lexeme);
+	else fprintf(stderr, "%s%s%s: %s %s\n" COLOR_RESET, file ? file : "<unknown file>", lbuf, cbuf, lvl, msg ? msg : "");
 
     if (src != NULL && src_len > 0 && line > 0) {
-        int src_linecount = 0;
+        size_t src_linecount = 0;
         char** src_lines = splitlines(src, &src_linecount);
-        if (src_linecount < 1) {
-            return;
-        }
-        int start = line - 2;
-        if (start < 1) {
-            start = 1;
-        }
-        int end = line + 1;
-        if (end > src_linecount) end = src_linecount;
+        if (src_linecount < 1 || !src_lines) return;
 
-        for(int ln = start; ln <= end; ln++) {
+        size_t start = (size_t)max((int64_t)(line - 2), (int64_t)1);
+		size_t end = min(line + 1, src_linecount);
+
+        for(size_t ln = start; ln <= end; ln++) {
             char prefix = ' ';
             char* line_color = COLOR_GRAY;
             if (ln == line) {
@@ -320,15 +317,22 @@ void pac_diag(
             }
 
             char prefixstr[30];
-            snprintf(prefixstr, sizeof(prefixstr), "%s%c %d | ", line_color, prefix, ln);
+            snprintf(prefixstr, sizeof(prefixstr), "%s%c %llu | ", line_color, prefix, (unsigned long long)ln);
 
-            fprintf(stderr, "%s%s\n" COLOR_RESET, prefixstr, src_lines[ln - 1]);
+			char* src_line = src_lines[ln - 1];
+			size_t src_line_len = strlen(src_line);
+            
+			if (src_line_len > MAX_LINE_WIDTH) fprintf(stderr, "%s%.*s...\n" COLOR_RESET, prefixstr, (int)MAX_LINE_WIDTH-3, src_line);
+			else fprintf(stderr, "%s%s\n" COLOR_RESET, prefixstr, src_line);
+
             if (ln == line && column != 0) {
-                int caret_offset = ((strlen(prefixstr) - strlen(line_color)) + column) - 1; // Arrays are 0 based
+                size_t caret_offset = ((strlen(prefixstr) - strlen(line_color)) + column) - 1; // Arrays are 0 based
                 char output[MAX_LINE_WIDTH];
-                if (caret_offset > MAX_LINE_WIDTH - 1) return;
+                if (caret_offset > MAX_LINE_WIDTH - 1) continue;
+
                 memset(output, ' ', caret_offset);
-				memset(output + caret_offset, '^', lexeme_len > 0 && caret_offset + lexeme_len < MAX_LINE_WIDTH ? lexeme_len : 1);
+				memset(output + caret_offset, '^', lexeme_len > 0 && caret_offset + lexeme_len <= MAX_LINE_WIDTH ? lexeme_len : 1);
+
 				size_t nullT = lexeme_len > 0 && caret_offset + lexeme_len < MAX_LINE_WIDTH ? caret_offset + lexeme_len : caret_offset + 1;
 				output[nullT] = '\0';
                 fprintf(stderr, "%s%s\n" COLOR_RESET, color, output);

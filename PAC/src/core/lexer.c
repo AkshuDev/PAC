@@ -8,6 +8,8 @@
 #include <pac-err.h>
 
 Lexer init_lexer(const char* src, size_t len, const char* file) {
+	if (!src || !file) return (Lexer){0};
+
     Lexer lex;
     lex.src = src;
     lex.column = 1;
@@ -19,13 +21,17 @@ Lexer init_lexer(const char* src, size_t len, const char* file) {
 }
 
 // Utility
-char peek(Lexer* lex) {
+static char peek(Lexer* lex) {
+	if (!lex) return '\0';
+
     if (lex->pos >= lex->len) // len = number of chars before '\0'
         return '\0';
     return lex->src[lex->pos];
 }
 
-char advance(Lexer* lex) {
+static char advance(Lexer* lex) {
+	if (!lex) return '\0';
+	
     char c = peek(lex);
     if (c == '\0') return '\0';
     
@@ -39,7 +45,9 @@ char advance(Lexer* lex) {
     return c;
 }
 
-bool match(Lexer* lex, char expected) {
+static bool match(Lexer* lex, char expected) {
+	if (!lex) return false;
+
     if (lex->src[lex->pos] == expected) {
         advance(lex);
         return true;
@@ -48,18 +56,22 @@ bool match(Lexer* lex, char expected) {
 }
 
 // Tokens
-Token make_token(Lexer* lex, PAC_TokenType type, const char* start, size_t len) {
+static Token make_token(Lexer* lex, PAC_TokenType type, const char* start, size_t len) {
+	if (!lex || !start) return (Token){.type=UNKNOWN, .line=0, .column=0, .lexeme=NULL};
+
     Token tk;
     tk.type = type;
     tk.lexeme = (char*)malloc(len + 1);
     memcpy(tk.lexeme, start, len);
     tk.lexeme[len] = '\0';
-    tk.line = lex->line;
-    tk.column = lex->column - (int)len;
+    tk.line = max(lex->line, 1);
+    tk.column = max((int64_t)lex->column - (int64_t)len, 1);
     return tk;
 }
 
-PAC_TokenType check_keyword(const char* str) {
+static PAC_TokenType check_keyword(const char* str) {
+	if (!str) return UNKNOWN;
+
     // Data types
     if (strcmp(str, "byte") == 0) return T_BYTE;
     if (strcmp(str, "short") == 0) return T_SHORT;
@@ -268,14 +280,17 @@ PAC_TokenType check_keyword(const char* str) {
 
     if (strcmp(str, "nop") == 0) return ASM_NOP;
 
-    return -1; // Not a keyword
+    return UNKNOWN; // Not a keyword
 }
 
-Token lex_identifier(Lexer* lx) {
+static Token lex_identifier(Lexer* lx) {
+	if (!lx) return (Token){.type=UNKNOWN, .line=0, .column=0, .lexeme=NULL};
+
     size_t start = lx->pos - 1;
     while (isalnum(peek(lx)) || peek(lx) == '_' || peek(lx) == '$' || peek(lx) == '.') advance(lx);
-    size_t length = lx->pos - start;
-    char* text = (char*)malloc(length + 1);
+	size_t length = lx->pos - start;
+    
+	char* text = (char*)malloc(length + 1);
     strncpy(text, &lx->src[start], length);
     text[length] = '\0';
 
@@ -293,7 +308,7 @@ Token lex_identifier(Lexer* lx) {
 
     // Check if keyword
     PAC_TokenType type = check_keyword(text);
-    if ((int)type != -1) {
+    if (type != UNKNOWN) {
         Token tk = make_token(lx, type, &lx->src[start], length);
         free(text);
         return tk;
@@ -304,11 +319,15 @@ Token lex_identifier(Lexer* lx) {
     return tk;
 }
 
-void skip_whitespace(Lexer* lx) {
+static void skip_whitespace(Lexer* lx) {
+	if (!lx) return;
+
     while (isspace(peek(lx)) && peek(lx) != '\n') advance(lx);
 }
 
 Token next_token(Lexer* lx) {
+	if (!lx) return (Token){.type=UNKNOWN, .line=0, .column=0, .lexeme=NULL};
+
     skip_whitespace(lx);
     char c = peek(lx);
 
@@ -321,6 +340,7 @@ Token next_token(Lexer* lx) {
         advance(lx); // consume opening "
         size_t start = lx->pos;
         bool multiline = false;
+
         while (peek(lx) != '"' && peek(lx) != '\0'){ 
             advance(lx);
             if (peek(lx) == '\\') {
@@ -330,6 +350,7 @@ Token next_token(Lexer* lx) {
                 break;
             } else if (peek(lx) == '\n' && multiline) multiline = false;
         }
+
         size_t len = lx->pos - start;
         char* str = (char*)malloc(len + 1);
         if (!str) {
@@ -342,12 +363,13 @@ Token next_token(Lexer* lx) {
         rmchr(str, '\\');
 
         if (peek(lx) != '"') {
-            printf("%d\n", lx->line);
-            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, (char*)str, len, "Unterminated string literal\n");
+            printf("%zu\n", lx->line);
+            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, (char*)str, len, "Unterminated string literal");
             free(str);
             exit(PAC_Error_UnterminatedString);
         }
         advance(lx); // consume closing "
+
         Token tk = make_token(lx, LIT_STRING, str, len);
         free(str);
         return tk;
@@ -375,9 +397,10 @@ Token next_token(Lexer* lx) {
                     value[0] = ch;
                     break;
                 }
-                default:
+                default: {
                     value[0] = esc; // fallback
                     break;
+				}
             }
         } else {
             // Regular char (non-escaped)
@@ -387,7 +410,7 @@ Token next_token(Lexer* lx) {
         // Expect closing quote
         if (peek(lx) != '\'') {
             char c = peek(lx);
-            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, &c, 1, "Unterminated character literal\n");
+            PAC_ERRORF(lx->file, lx->line, lx->column, lx->src, lx->len, &c, 1, "Unterminated character literal");
             exit(PAC_Error_UnterminatedString);
         }
 
@@ -401,9 +424,11 @@ Token next_token(Lexer* lx) {
     if (c == '@') {
         size_t start = lx->pos - 1;
         while (isalnum(peek(lx))) advance(lx);
+
         size_t length = lx->pos - start;
         char* text = strndup(&lx->src[start], length);
         PAC_TokenType typ = check_keyword(text);
+
         Token tk = make_token(lx, typ, &lx->src[start], length);
         free(text);
         return tk;
@@ -413,8 +438,10 @@ Token next_token(Lexer* lx) {
         advance(lx); // consume '%'
         size_t start = lx->pos - 1;
         while (isalnum(peek(lx))) advance(lx);
+
         size_t length = lx->pos - start;
         char* text = strndup(&lx->src[start], length);
+
         Token tk = make_token(lx, REGISTER, &lx->src[start], length);
         free(text);
         return tk;
@@ -422,14 +449,16 @@ Token next_token(Lexer* lx) {
 
     if (c == ':') {
         size_t start = lx->pos - 1;
-        int ogline = lx->line;
-        int ogcol = lx->column;
+        size_t ogline = lx->line;
+        size_t ogcol = lx->column;
+
         while (isalnum(peek(lx))) advance(lx);
         size_t length = lx->pos - start;
+
         char* text = strndup(&lx->src[start], length);
         PAC_TokenType typ = check_keyword(text);
         Token tk;
-        if ((int)typ != -1) {
+        if (typ != UNKNOWN) {
             tk = make_token(lx, typ, &lx->src[start], length);
         } else {
             lx->line = ogline;
@@ -437,6 +466,7 @@ Token next_token(Lexer* lx) {
             lx->pos = start + 1;
             tk = make_token(lx, COLON, ";", 1);
         }
+
         free(text);
         return tk;
     }
@@ -449,10 +479,12 @@ Token next_token(Lexer* lx) {
     }
     if (c == '/' && peek(lx) == '*') { // Block comment
         size_t start = lx->pos - 1;
+
         advance(lx); // skip *
         while (!(peek(lx) == '*' && lx->src[lx->pos + 1] == '/') && peek(lx) != '\0') advance(lx);
         advance(lx); advance(lx); // skip */
-        return make_token(lx, COMMENT_BLOCK, &lx->src[start], lx->pos - start);
+        
+		return make_token(lx, COMMENT_BLOCK, &lx->src[start], lx->pos - start);
     }
 
 
@@ -469,7 +501,11 @@ Token next_token(Lexer* lx) {
             advance(lx); // consume 'b'
             while (peek(lx) == '0' || peek(lx) == '1') advance(lx);
             return make_token(lx, LIT_BIN, &lx->src[start], lx->pos - start);
-        } else {
+        } else if (c == '0' && (peek(lx) >= '0' && peek(lx) <= '7')) {
+			// Octal literal
+			while (peek(lx) >= '0' && peek(lx) <= '7') advance(lx);
+			return make_token(lx, LIT_OCTAL, &lx->src[start], lx->pos - start);
+		} else {
             // Decimal literal
             while (isdigit(peek(lx))) advance(lx);
             return make_token(lx, LIT_INT, &lx->src[start], lx->pos - start);
@@ -563,8 +599,10 @@ Token next_token(Lexer* lx) {
 }
 
 void free_token(Token* t) {
-    if (t && t->lexeme)
-        free(t->lexeme);
+	if (!t) return;
+
+    if (t && t->lexeme) free(t->lexeme);
+	memset(t, 0, sizeof(Token));
 }
 
 const char* token_type_to_str(PAC_TokenType type) {
@@ -812,6 +850,7 @@ const char* token_type_to_str(PAC_TokenType type) {
         // Literals
         case LIT_INT: return "LIT_INT";
         case LIT_HEX: return "LIT_HEX";
+		case LIT_OCTAL: return "LIT_OCTAL";
         case LIT_BIN: return "LIT_BIN";
         case LIT_FLOAT: return "LIT_FLOAT";
         case LIT_STRING: return "LIT_STRING";

@@ -165,7 +165,16 @@ bool parse_args(int argc, char** argv, Args* args) {
                 args->asmout = true;
                 break;
             case 't':
-                args->base = (size_t)strtoul(optarg, NULL, 10);
+				if (optarg) {
+                	if (optarg[0] == '0' && (optarg[1] == 'x' || optarg[1] == 'X'))
+						args->base = (size_t)strtoul(optarg, NULL, 16);
+					else if (optarg[0] == '\\')
+						args->base = (size_t)strtoul(optarg, NULL, 8);
+					else if (optarg[0] == '0' && optarg[1] == 'b')
+						args->base = (size_t)strtoul(optarg, NULL, 2);
+					else
+						args->base = (size_t)strtoul(optarg, NULL, 10);
+				}
                 break;
             case 1003:
                 args->savetemps = true;
@@ -299,7 +308,7 @@ void perform_lexout(Args* args, char** file_l, int idx, int count) {
             free(tk.lexeme); // free EOF
             break;
         }
-        printf(COLOR_GREEN "[%3d:%-3d]" COLOR_RESET " %-20s '%s'\n", tk.line, tk.column, token_type_to_str(tk.type), tk.lexeme);
+        printf(COLOR_GREEN "[%3zu:%-3zu]" COLOR_RESET " %-20s '%s'\n", tk.line, tk.column, token_type_to_str(tk.type), tk.lexeme);
         free(tk.lexeme);
     }
 
@@ -559,13 +568,16 @@ int main(int argc, char** argv) {
         section_free(&sectab);
     }
 
-    if (!args.only_asm) pac_link(args.entry_label, args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
+	bool linking_success = false;
+    if (!args.only_asm) {
+		linking_success = pac_link(args.entry_label, args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
+	}
 
     if (args.input_count > 1) {
         for (int i = 0; i < args.input_count; i++) {
             char* outfile = encoded_files[i];
             if (!args.savetemps && !args.only_asm) remove(outfile);
-            free(encoded_files[i]);
+            if (encoded_files[i]) free(encoded_files[i]);
         }
     } else {
         if (args.only_asm && !args.savetemps)
@@ -573,11 +585,11 @@ int main(int argc, char** argv) {
         else
             remove(encoded_files[0]);
 
-        free(encoded_files[0]);
+        if (encoded_files[0]) free(encoded_files[0]);
     }
 
-    free(encoded_files);
+    if (encoded_files) free(encoded_files);
 	if (args.inc_dirs) free(args.inc_dirs);
 
-    return PAC_Success;
+    return linking_success ? PAC_Success : PAC_Error_LinkingFailed;
 }

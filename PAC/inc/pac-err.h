@@ -20,12 +20,12 @@ char* pac_get_line(const char* src, size_t pos);
 void pac_diag(
     PACDiagLevel level,
     const char* file,
-    int line,
-    int column,
+    size_t line,
+    size_t column,
     const char* src,
     size_t src_len,
     const char* lexeme, // offending token
-    int lexeme_len,
+    size_t lexeme_len,
     const char* msg 
 );
 
@@ -289,6 +289,7 @@ typedef enum PAC_Errors
     PAC_Error_LinkerScriptError,             // Linker script syntax or semantic error
     PAC_Error_MemoryAccessViolation,         // Memory access violation during linking
     PAC_Error_LinkerOutOfMemory,             // Linker memory exhausted
+	PAC_Error_LinkingFailed,                 // Linker memory exhausted
     PAC_Error_InvalidSegmentAlignment,       // Segment misaligned
     PAC_Error_CodeOverflow,                  // Code section exceeds maximum capacity
 

@@ -18,13 +18,14 @@
 
 #define align_up(val, to) (((val) + (to) - 1) & ~((to) - 1))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
+#define min(a, b) (((a) < (b)) ? (a) : (b))
 
 enum Architecture archs_to_archenum(char* arch);
 enum Architecture host_arch(void);
 unsigned int arch_bits(enum Architecture arch);
 void archenum_to_archs(enum Architecture arch, char* archs);
-void freeliness(char** lines, int num_lines);
-char** splitlines(const char* s, int* num_lines);
+void freeliness(char** lines, size_t num_lines);
+char** splitlines(const char* s, size_t* num_lines);
 void rmchr(char* str, char c);
 void pac_strdup(char* src, char* dest);
 void* recalloc(void* ptr, size_t old_count, size_t new_count, size_t size);

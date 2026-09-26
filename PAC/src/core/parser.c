@@ -235,7 +235,11 @@ static bool parser_match(Parser* p, PAC_TokenType type) {
 }
 
 ASTNode* create_node(ASTNodeType type, Parser* p) {
+	if (!p) return NULL;
+
     ASTNode* node = calloc(1, sizeof(ASTNode));
+	if (!node) return NULL;
+
     node->type = type;
     node->line = p->current.line;
     node->col = p->current.column;
@@ -245,17 +249,21 @@ ASTNode* create_node(ASTNodeType type, Parser* p) {
 }
 
 void add_child(ASTNode* parent, ASTNode* child) {
+	if (!parent || !child) return;
+
     parent->children = realloc(parent->children, sizeof(ASTNode*) * (parent->child_count + 1));
     parent->children[parent->child_count++] = child;
 }
 
 void free_ast(ASTNode* node) {
     if (!node) return;
+
     for (size_t i = 0; i < node->child_count; i++) {
         free_ast(node->children[i]);
     }
     if (node->children) free(node->children);
-    switch(node->type) {
+    
+	switch(node->type) {
         case AST_INSTRUCTION:
             for(size_t i = 0; i < node->inst.operand_count; i++) {
                 ASTOperand* op = node->inst.operands[i];
@@ -324,7 +332,8 @@ void free_ast(ASTNode* node) {
         default:
             break;
     }
-    if (node) free(node);
+	
+    free(node);
 }
 
 static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
@@ -368,6 +377,13 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				parser_advance(p);
 				break;
 			}
+			case LIT_OCTAL: {
+				op->type = OPERAND_LIT_INT;
+				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
+				op->int_val.neg = false;
+				parser_advance(p);
+				break;
+			}
 			case LIT_FLOAT: {
 				op->type = OPERAND_LIT_FLOAT;
 				op->float_val = strtod(p->current.lexeme, NULL);
@@ -400,6 +416,12 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 					}
 					case LIT_HEX: {
 						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+						op->int_val.neg = false;
+						parser_advance(p);
+						break;
+					}
+					case LIT_OCTAL: {
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
 						op->int_val.neg = false;
 						parser_advance(p);
 						break;
@@ -439,6 +461,12 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 					}
 					case LIT_HEX: {
 						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+						op->int_val.neg = true;
+						parser_advance(p);
+						break;
+					}
+					case LIT_OCTAL: {
+						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
 						op->int_val.neg = true;
 						parser_advance(p);
 						break;
@@ -519,6 +547,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 			case LIT_INT:
 			case LIT_BIN:
 			case LIT_HEX:
+			case LIT_OCTAL:
 			case LIT_FLOAT:
 			case LIT_CHAR: {
 				parser_advance(p);
@@ -532,6 +561,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 					case LIT_INT:
 					case LIT_BIN:
 					case LIT_HEX:
+					case LIT_OCTAL:
 					case LIT_CHAR: {
 						parser_advance(p);
 						break;
@@ -634,9 +664,9 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 
 				if (ret != -1) {
 					if (!m->auto_gen)
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition");
 					else
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition");
 					if (m->type == MACRO_TYPE_NTYPE)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
@@ -682,9 +712,9 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 
 				if (ret != -1) {
 					if (!m->auto_gen)
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition");
 					else
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, node->label.name, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition");
 					if (m->type == MACRO_TYPE_NTYPE)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
@@ -700,9 +730,9 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 
 				if (ret != -1) {
 					if (!m->auto_gen)
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous definition");
 					else
-						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition\n");
+						PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(p->current.lexeme), "Auto-Generated Label/Function conflicts with previous Auto-Generated definition");
 					if (m->type == MACRO_TYPE_NTYPE)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
@@ -744,9 +774,9 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
 
 			if (ret != -1) {
 				if (!m->auto_gen)
-					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous definition\n");
+					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous definition");
 				else
-					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous Auto-Generated definition\n");
+					PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Label/Function conflicts with previous Auto-Generated definition");
 				if (m->type == MACRO_TYPE_NTYPE)
 						PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
 					else if (m->type == MACRO_TYPE_USER_MACRO)
@@ -820,6 +850,11 @@ static ASTNode* parse_literal(Parser* p) {
     } else if (parser_check(p, LIT_HEX)) {
         node->literal.type = LIT_HEX;
         op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
+		op->int_val.neg = false;
+        parser_advance(p);
+    } else if (parser_check(p, LIT_OCTAL)) {
+        node->literal.type = LIT_OCTAL;
+        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
 		op->int_val.neg = false;
         parser_advance(p);
     } else if (parser_check(p, LIT_FLOAT)) {
@@ -947,7 +982,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
             is_array = true;
             array_len = -1; // Auto
             parser_advance(p);
-            if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
+            if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN) {
                 ASTNode* arrsize_node = parse_literal(p);
                 array_len = arrsize_node->literal.int_val.value;
                 free_ast(arrsize_node);
@@ -980,9 +1015,9 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 
 		if (ret != -1) {
 			if (!m->auto_gen)
-				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous definition\n");
+				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous definition");
 			else
-				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous Auto-Generated definition\n");
+				PAC_WARNINGF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Identifier conflicts with previous Auto-Generated definition");
 				
 			if (m->type == MACRO_TYPE_NTYPE)
 				PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
@@ -1142,12 +1177,16 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 		if (m->type == MACRO_TYPE_USER_MACRO) {
 			bool hex = false;
 			bool octal = false;
+			bool binary = false;
 			if (str[0] != '\0') {
 				if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
 					str = value + 2;
 					hex = true;
-				} else if (str[0] == '\\' && str[1] == '0') {
+				} else if (str[0] == '0' && (str[1] == 'b' || str[1] == 'B')) {
 					str = value + 2;
+					binary = true;
+				} else if (str[0] == '0' && (str[1] >= '0' && str[1] <= '7')) {
+					str = value + 1;
 					octal = true;
 				}
 			}
@@ -1155,7 +1194,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			
 			if (is_sdigit(str)) {
 				node->literal.type = LIT_INT;
-				node->literal.int_val.value = (uint64_t)strtoull(str, NULL, hex ? 16 : octal ? 8 : 10);
+				node->literal.int_val.value = (uint64_t)strtoull(str, NULL, hex ? 16 : octal ? 8 : binary ? 2 : 10);
 				node->literal.int_val.neg = false;
 			} else {
 				node->literal.type = LIT_STRING;
@@ -1300,7 +1339,7 @@ ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefi
 		is_array = true;
 		array_len = 1;
 		parser_advance(p);
-		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_BIN) {
+		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN) {
 			ASTNode* arrsize_node = parse_literal(p);
 			array_len = arrsize_node->literal.int_val.value;
 			free_ast(arrsize_node);
@@ -1392,6 +1431,10 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 				parser_advance(p);
 			} else if (parser_check(p, LIT_HEX)) {
 				long long out = strtoll(p->current.lexeme, NULL, 16);
+				snprintf(value, sizeof(value), "%lld", out);
+				parser_advance(p);
+			} else if (parser_check(p, LIT_OCTAL)) {
+				long long out = strtoll(p->current.lexeme, NULL, 8);
 				snprintf(value, sizeof(value), "%lld", out);
 				parser_advance(p);
 			} else if (parser_check(p, LIT_STRING)) {
@@ -1759,6 +1802,7 @@ void parse_symbols(Parser* p) {
 			}
 			case LIT_BIN:
 			case LIT_HEX:
+			case LIT_OCTAL:
 			case LIT_INT:
 			case LIT_FLOAT:
 			case LIT_CHAR:
@@ -1779,7 +1823,7 @@ void parse_symbols(Parser* p) {
 					free_ast(stmt);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
 					exit(PAC_Error_InvalidAlignment);
-				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX && stmt->literal.type != LIT_OCTAL) {
 					free_ast(stmt);
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
 					exit(PAC_Error_InvalidAlignment);
@@ -1879,6 +1923,7 @@ ASTNode* parse_program(Parser* p) {
 			}
 			case LIT_BIN:
 			case LIT_HEX:
+			case LIT_OCTAL:
 			case LIT_INT:
 			case LIT_FLOAT:
 			case LIT_CHAR:
@@ -1898,7 +1943,7 @@ ASTNode* parse_program(Parser* p) {
 					free_ast(stmt);
 					free_ast(root);
 					exit(PAC_Error_InvalidAlignment);
-				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX && stmt->literal.type != LIT_OCTAL) {
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':align'");
 					free_ast(stmt);
 					free_ast(root);
@@ -1918,7 +1963,7 @@ ASTNode* parse_program(Parser* p) {
 					free_ast(stmt);
 					free_ast(root);
 					exit(PAC_Error_InvalidAlignment);
-				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX && stmt->literal.type != LIT_OCTAL) {
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer/hex/bin literal when using ':start'");
 					free_ast(stmt);
 					free_ast(root);
@@ -1937,7 +1982,7 @@ ASTNode* parse_program(Parser* p) {
 					free_ast(stmt);
 					free_ast(root);
 					exit(PAC_Error_InvalidAlignment);
-				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX) {
+				} else if (stmt->literal.type != LIT_BIN && stmt->literal.type != LIT_INT && stmt->literal.type != LIT_HEX && stmt->literal.type != LIT_OCTAL) {
 					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only pass integer literal when using ':size'");
 					free_ast(stmt);
 					free_ast(root);
@@ -2124,6 +2169,9 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
                     break;
                 case LIT_HEX:
                     snprintf(out, maxsize, "[Literal.Hex] %s%llu", neg, (unsigned long long)op->int_val.value);
+                    break;
+				case LIT_OCTAL:
+                    snprintf(out, maxsize, "[Literal.Octal] %s%llu", neg, (unsigned long long)op->int_val.value);
                     break;
                 case LIT_FLOAT:
                     snprintf(out, maxsize, "[Literal.Float] %f", op->float_val);

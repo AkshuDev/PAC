@@ -1159,7 +1159,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
     }
 
 	if (base_r.valid && base_r.type != NORMAL_REGISTER) {
-		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, base_r.name, 0, "Memory base register must be a GPR register!\n");
+		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, base_r.name, 0, "Memory base register must be a GPR register!");
 		fprintf(stderr, COLOR_RED "Generated IR of this Instruction: \n\t" COLOR_RESET);
 		print_ir(ir);
 		return false;

@@ -1,6 +1,7 @@
 NFX := nfx/nfx.json
 LICENSE := LICENSE
 README := README.md
+CHANGELOG := CHANGELOG.md
 DOCS := docs
 
 PAC_LINUX := PAC/bin/linux/x86_64/pac
@@ -85,6 +86,7 @@ zip: dirs pre-build build-linux build-windows canonical
 		$(PAC_WINDOWS) \
 		$(LICENSE) \
 		$(README) \
+		$(CHANGELOG) \
 		$(DOCS) \
 		$(KEY_DIR)/allowed_signers
 	@rm nfx.json

@@ -13,16 +13,22 @@
 #include <pac-asm.h>
 
 void symtab_init(SymbolTable* tab) {
+	if (!tab) return;
+
     tab->symbols = NULL;
     tab->count = 0;
     tab->capacity = 0;
 }
 
 void symtab_add(SymbolTable* tab, const char* name, SymbolType type, uint64_t addr, char* value, size_t val_size, size_t section_index, uint64_t size, PAC_TokenType type_of_data, bool isglobal) {
+	if (!tab || !name || !value) return;
+
     if (tab->count >= tab->capacity) {
         tab->capacity = tab->capacity ? tab->capacity * 2 : 16;
         tab->symbols = realloc(tab->symbols, tab->capacity * sizeof(Symbol));
     }
+	if (!tab->symbols) return;
+
     Symbol* sym = &tab->symbols[tab->count++];
     sym->name = strdup(name);
     sym->type = type;
@@ -44,6 +50,9 @@ void symtab_add(SymbolTable* tab, const char* name, SymbolType type, uint64_t ad
 }
 
 bool symtab_get(SymbolTable* tab, const char* name, Symbol** out) {
+	if (!name || !tab || !out) return false;
+	if (!tab->symbols) return false;
+
     for (size_t i = 0; i < tab->count; i++) {
         if (strcmp(tab->symbols[i].name, name) == 0) {
             if (out) *out = &tab->symbols[i];
@@ -54,26 +63,34 @@ bool symtab_get(SymbolTable* tab, const char* name, Symbol** out) {
 }
 
 void symtab_free(SymbolTable* tab) {
-    for (size_t i = 0; i < tab->count; i++) {
-        free(tab->symbols[i].name);
-        free(tab->symbols[i].value);
-    }
-    free(tab->symbols);
+	if (!tab) return;
+
+	if (tab->symbols) {
+		for (size_t i = 0; i < tab->count; i++) {
+			if (tab->symbols[i].name) free(tab->symbols[i].name);
+			if (tab->symbols[i].value) free(tab->symbols[i].value);
+		}
+    
+		free(tab->symbols);
+	}
+
     memset(tab, 0, sizeof(*tab));
 }
 
 void section_add(SectionTable* table, const char* name, uint64_t base, uint64_t alignment) {
+	if (!table || !name) return;
+
     if (table->count >= table->capacity) {
 		size_t cap = table->capacity ? table->capacity * 2 : 8;
         Section* s = table->sections ? (Section*)realloc(table->sections, cap * sizeof(Section)) : (Section*)malloc(cap * sizeof(Section));
 		if (!s) {
-			PAC_WARNINGF("Unknown File", 0, 0, NULL, 0, name, 0, "Allocation failed for section\n");
+			PAC_WARNINGF("Unknown File", 0, 0, NULL, 0, name, 0, "Allocation failed for section");
 			return;
 		}
 		table->capacity = cap;
 		table->sections = s;
     }
-	if (!name) return;
+	if (!table->sections) return;
 
     Section* sec = &table->sections[table->count++];
     sec->name = strdup(name);
@@ -86,7 +103,9 @@ void section_add(SectionTable* table, const char* name, uint64_t base, uint64_t 
 }
 
 Section* section_get(SectionTable* table, const char* name) {
-	if (!table || !table->sections) return NULL;
+	if (!table || !name) return NULL;
+	if (!table->sections) return NULL;
+
     for (size_t i = 0; i < table->count; i++) {
         if (strcmp(table->sections[i].name, name) == 0) {
             return &table->sections[i];
@@ -96,28 +115,41 @@ Section* section_get(SectionTable* table, const char* name) {
 }
 
 void section_free(SectionTable* table) {
-	if (!table || !table->sections) return;
+	if (!table) return;
 
-    for (size_t i = 0; i < table->count; i++) {
-        if (table->sections[i].name) free(table->sections[i].name);
-    }
-    free(table->sections);
-    table->sections = NULL;
-    table->count = 0;
-    table->capacity = 0;
+	if (table->sections) {
+		for (size_t i = 0; i < table->count; i++) {
+			if (table->sections[i].name) free(table->sections[i].name);
+			if (table->sections[i].relocs) {
+				if (table->sections[i].relocs) free(table->sections[i].relocs);
+				table->sections[i].reloc_capacity = 0;
+				table->sections[i].reloc_count = 0;
+				table->sections[i].relocs = NULL;
+			}
+		}
+		free(table->sections);
+	}
+
+	memset(table, 0, sizeof(SectionTable));
 }
 
 void add_reloc(Section* sec, uint64_t offset, uint32_t symbol, uint32_t type, int64_t addend) {
+	if (!sec) return;
+
     if (sec->reloc_count == sec->reloc_capacity) {
         sec->reloc_capacity = sec->reloc_capacity ? sec->reloc_capacity * 2 : 16;
         sec->relocs = realloc(sec->relocs, sec->reloc_capacity * sizeof(Relocation));
     }
+	if (!sec->relocs) return;
+
     sec->relocs[sec->reloc_count++] = (Relocation){ offset, symbol, type, addend };
 }
 
 void free_reloc(Section* sec) {
+	if (!sec) return;
+	
     if (sec->relocs) {
-        free(sec->relocs);
+        if (sec->relocs) free(sec->relocs);
         sec->reloc_capacity = 0;
         sec->reloc_count = 0;
         sec->relocs = NULL;
@@ -125,7 +157,9 @@ void free_reloc(Section* sec) {
 }
 
 void free_relocs(SectionTable* sectab) {
-	if (!sectab || !sectab->sections) return;
+	if (!sectab) return;
+	if (!sectab->sections) return;
+
     for (size_t i = 0; i < sectab->count; i++) {
         Section* sec = &sectab->sections[i];
         if (sec->relocs) {
@@ -138,6 +172,8 @@ void free_relocs(SectionTable* sectab) {
 }
 
 void init_assembler(Assembler* ctx, Lexer* lex, Parser* parser, size_t bits, enum Architecture arch, ASTNode* root, SymbolTable* symtable, SectionTable* sectable, char* entry_label) {
+	if (!ctx || !lex || !parser || !root || !symtable || !sectable) return;
+
 	memset(ctx, 0, sizeof(Assembler));
     ctx->arch = arch;
     ctx->bits = bits;
@@ -150,10 +186,14 @@ void init_assembler(Assembler* ctx, Lexer* lex, Parser* parser, size_t bits, enu
 }
 
 static void add_ir(IRList* list, IRInstruction instr) {
+	if (!list) return;
+
     if (list->count >= list->capacity) {    
         list->capacity = list->capacity ? list->capacity * 2 : 16;
         list->instructions = realloc(list->instructions, list->capacity * sizeof(IRInstruction));
     }
+	if (!list->instructions) return;
+	
     list->instructions[list->count++] = instr;
 }
 
@@ -243,6 +283,8 @@ static size_t token_type_size(PAC_TokenType t) {
 }
 
 void assembler_collect_symbols(Assembler* ctx, char* filename) {
+	if (!ctx || !filename) return;
+
 	ctx->no_instructions = false;
 	ctx->cur_file = (char*)ctx->lex->file;
 	ctx->cur_file_src = (char*)ctx->lex->src;
@@ -395,6 +437,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							case LIT_INT:
 							case LIT_BIN:
 							case LIT_HEX:
+							case LIT_OCTAL:
 							case LIT_CHAR: {
 								num = node->decl_identifier.array_values[i]->literal.int_val.value;
 								elem_size = token_type_size(node->decl_identifier.opt_specified_type);
@@ -461,6 +504,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 							case LIT_INT:
 							case LIT_BIN:
 							case LIT_HEX:
+							case LIT_OCTAL:
 							case LIT_CHAR: {
 								uint64_t num = (uint64_t)val->literal.int_val.value;
 								memcpy(value, &num, size);
@@ -614,6 +658,8 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 }
 
 IRList assemble(Assembler* ctx) {
+	if (!ctx) return (IRList){0};
+
 	ctx->cur_file = (char*)ctx->lex->file;
 	ctx->cur_file_src = (char*)ctx->lex->src;
 	ctx->cur_file_len = (size_t)ctx->lex->len;
@@ -925,16 +971,22 @@ IRList assemble(Assembler* ctx) {
 }
 
 void free_ir_list(IRList* list) {
-    for (size_t i = 0; i < list->count; i++) {
-        for (size_t j = 0; j < list->instructions[i].operand_count; j++) {
-            free(list->instructions[i].operands[j]);
-        }
-    }
-    free(list->instructions);
+	if (!list) return;
+
+	if (list->instructions) {
+		for (size_t i = 0; i < list->count; i++) {
+			for (size_t j = 0; j < list->instructions[i].operand_count; j++) {
+				if (list->instructions[i].operands[j]) free(list->instructions[i].operands[j]);
+			}
+		}
+		free(list->instructions);
+	}
+	
     memset(list, 0, sizeof(*list));
 }
 
 void print_ir(const IRInstruction* ir) {
+	if (!ir) return;
     printf(COLOR_GREEN "[IR] [0x%llX]" COLOR_RESET " %s ", (unsigned long long)ir->vaddr, token_type_to_ogstr(ir->opcode));
 
     if (ir->operand_count > 0) {
@@ -957,11 +1009,17 @@ void print_ir(const IRInstruction* ir) {
 void print_ir_list(const IRList* list) {
     printf(COLOR_CYAN "NOTE: Addresses/Sizes provided in IR dump might not be correct as they are fixed in the 2-phase system during encoding\n" COLOR_RESET);
 	printf(COLOR_CYAN "NOTE: Any hex value symbolizes memory address reference, not literal value\n" COLOR_RESET);
-    printf(COLOR_YELLOW "=== IR Dump (%zu instructions) ===\n" COLOR_RESET, list->count);
+    printf(COLOR_YELLOW "=== IR Dump (%zu instructions) ===\n" COLOR_RESET, list ? list->count : 0);
+	if (!list) goto end;
+	if (!list->instructions) goto end;
+
     for (size_t i = 0; i < list->count; i++) {
         print_ir(&list->instructions[i]);
     }
-    printf(COLOR_YELLOW "=== End IR ===\n" COLOR_RESET);
+
+	end: {
+    	printf(COLOR_YELLOW "=== End IR ===\n" COLOR_RESET);
+	}
 }
 
 char* symtype_to_str(SymbolType type) {
@@ -978,7 +1036,11 @@ char* symtype_to_str(SymbolType type) {
 
 void print_symtab(SymbolTable* symtab, SectionTable* sectab) {
 	printf(COLOR_CYAN "NOTE: Symbol Dump shows raw bytes present in memory for the symbol\n" COLOR_RESET);
-    printf(COLOR_YELLOW "=== Symbol Dump (%zu symbols) ===\n" COLOR_RESET, symtab->count);
+    printf(COLOR_YELLOW "=== Symbol Dump (%zu symbols) ===\n" COLOR_RESET, (symtab && sectab) ? symtab->count : 0);
+
+	if (!symtab || !sectab) goto end;
+	if (!symtab->symbols || !sectab->sections) goto end;
+
     for (size_t i = 0; i < symtab->count; i++) {
         Symbol sym = symtab->symbols[i];
 		if (sym.type == SYM_FILE) {
@@ -1011,14 +1073,21 @@ void print_symtab(SymbolTable* symtab, SectionTable* sectab) {
 		printf(" " COLOR_GREEN "in section: %s of size " COLOR_RESET "0x%llX \n", sectab->sections[sym.section_index].name, (unsigned long long)sym.size);
     }
 
-    printf(COLOR_YELLOW "=== End Symbol ===\n" COLOR_RESET);
+	end: {
+    	printf(COLOR_YELLOW "=== End Symbol ===\n" COLOR_RESET);
+	}
 }
 
 void print_sectab(SectionTable* sectab) {
-    printf(COLOR_YELLOW "=== Section Dump (%zu sections) ===\n" COLOR_RESET, sectab->count);
+    printf(COLOR_YELLOW "=== Section Dump (%zu sections) ===\n" COLOR_RESET, sectab ? sectab->count : 0);
+	if (!sectab) goto end;
+
     for (size_t i = 0; i < sectab->count; i++) {
         Section sec = sectab->sections[i];
         printf(COLOR_GREEN "[0x%llX] " COLOR_RESET "%s " COLOR_YELLOW "=> " COLOR_GREEN "%llu bytes\n" COLOR_RESET, (unsigned long long)sec.base, sec.name, (unsigned long long)sec.size);
     }
-    printf(COLOR_YELLOW "=== End Section ===\n" COLOR_RESET);
+    
+	end: {
+		printf(COLOR_YELLOW "=== End Section ===\n" COLOR_RESET);
+	}
 }
