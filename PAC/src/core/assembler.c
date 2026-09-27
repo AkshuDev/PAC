@@ -12,6 +12,8 @@
 
 #include <pac-asm.h>
 
+static uint64_t external_sym_addr = 0xFFFFFFFFFFFFFFFF;
+
 void symtab_init(SymbolTable* tab) {
 	if (!tab) return;
 
@@ -20,7 +22,7 @@ void symtab_init(SymbolTable* tab) {
     tab->capacity = 0;
 }
 
-void symtab_add(SymbolTable* tab, const char* name, SymbolType type, uint64_t addr, char* value, size_t val_size, size_t section_index, uint64_t size, PAC_TokenType type_of_data, bool isglobal) {
+void symtab_add(SymbolTable* tab, const char* name, SymbolType type, uint64_t addr, char* value, size_t val_size, size_t section_index, uint64_t size, PAC_TokenType type_of_data, SymbolVisibility sym_vis) {
 	if (!tab || !name || !value) return;
 
     if (tab->count >= tab->capacity) {
@@ -46,7 +48,7 @@ void symtab_add(SymbolTable* tab, const char* name, SymbolType type, uint64_t ad
 	sym->section_index = section_index;
     sym->size = size;
     sym->type_of_data = type_of_data;
-    sym->is_global = isglobal;
+    sym->sym_vis = sym_vis;
 }
 
 bool symtab_get(SymbolTable* tab, const char* name, Symbol** out) {
@@ -304,7 +306,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 
     ASTNode* section_node = NULL;
 
-    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 1, 0, 0, (PAC_TokenType)-1, false);
+    symtab_add(symtab, filename, SYM_FILE, 0, "\0", 1, 0, 0, (PAC_TokenType)-1, SYM_VIS_LOCAL);
 
     for (size_t i = 0; i < root->child_count; i++) {
         ASTNode* node = root->children[i];
@@ -376,6 +378,9 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 					}
 
 					current_section = sectab->count - 1;
+				} else if (node->directive.type == EXTERNAL) {
+					symtab_add(symtab, node->directive.arg, SYM_IDENTIFIER, external_sym_addr, "\0", 1, current_section, 0, EXTERNAL, SYM_VIS_EXTERNAL);
+					external_sym_addr -= 1;
 				}
 				break;
 			}
@@ -389,7 +394,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 					exit(PAC_Error_SectionNotFound);
 				}
 
-				symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", 1, current_section, 0, (PAC_TokenType)-1, false);
+				symtab_add(symtab, node->label.name, SYM_LABEL, cvaddr, "\0", 1, current_section, 0, (PAC_TokenType)-1, SYM_VIS_LOCAL);
 				if (first_label == NULL) {
 					first_label = &symtab->symbols[symtab->count - 1];
 					first_label_node = node;
@@ -551,7 +556,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 					}
 				}
 
-				symtab_add(symtab, node->decl_identifier.name, SYM_IDENTIFIER, cvaddr, value, size, current_section, (uint64_t)size, type, false);
+				symtab_add(symtab, node->decl_identifier.name, SYM_IDENTIFIER, cvaddr, value, size, current_section, (uint64_t)size, type, SYM_VIS_LOCAL);
 
 				free(value);
 				cvaddr += size;
@@ -592,7 +597,7 @@ void assembler_collect_symbols(Assembler* ctx, char* filename) {
 					size *= node->reserve.array_size;
 				}
 
-				symtab_add(symtab, node->reserve.name, SYM_IDENTIFIER, cvaddr, "\0", 1, current_section, (uint64_t)size, node->reserve.type, false);
+				symtab_add(symtab, node->reserve.name, SYM_IDENTIFIER, cvaddr, "\0", 1, current_section, (uint64_t)size, node->reserve.type, SYM_VIS_LOCAL);
 				cvaddr += size;
 				sectab->sections[current_section].size += size;
 
@@ -693,7 +698,16 @@ IRList assemble(Assembler* ctx) {
 					case GLOBAL: {
 						Symbol* sym;
 						if (symtab_get(symtab, node->directive.arg, &sym)) {
-							sym->is_global = true;
+							sym->sym_vis = SYM_VIS_GLOBAL;
+						} else {
+							PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
+						}
+						continue;
+					}
+					case EXTERNAL: {
+						Symbol* sym;
+						if (symtab_get(symtab, node->directive.arg, &sym)) {
+							sym->sym_vis = SYM_VIS_EXTERNAL;
 						} else {
 							PAC_WARNINGF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, node->directive.arg, strlen(node->directive.arg), "Unknown Symbol");
 						}

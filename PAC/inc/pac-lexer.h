@@ -35,6 +35,7 @@ typedef enum {
     STRUCT_END, // .endstruct
     SECTION, // :section
     GLOBAL, // :global
+	EXTERNAL, // :external
     ALIGN, // :align
     RESERVE, // :res (for bss section only)
     START_SEC, // :start

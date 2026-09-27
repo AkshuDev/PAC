@@ -44,26 +44,42 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 
     // Sort Symbols
 	size_t local_symbols = ctx->symbols->count;
-	size_t global_symbols = 0;
-	(void)global_symbols;
 
 	if (ctx->symbols->count > 0) {
 		Symbol* st_local = (Symbol*)malloc(16 * sizeof(Symbol));
 		size_t st_lcap = 16;
 		size_t st_lcount = 0;
+
 		Symbol* st_global = (Symbol*)malloc(16 * sizeof(Symbol));
 		size_t st_gcap = 16;
 		size_t st_gcount = 0;
-		if (!st_global) { free(st_local); st_local = NULL; st_global = NULL; }
-		if (st_local && st_global) {
+
+		if (!st_global) {
+			if (st_local) free(st_local);
+			st_local = NULL;
+		}
+
+		Symbol* st_external = (Symbol*)malloc(16 * sizeof(Symbol));
+		size_t st_ecap = 16;
+		size_t st_ecount = 0;
+
+		if (!st_external) {
+			if (st_local) free(st_local);
+			if (st_global) free(st_global);
+			st_local = NULL;
+			st_global = NULL;
+		}
+
+		if (st_local && st_global && st_external) {
 			for (size_t i = 0; i < ctx->symbols->count; i++) {
 				Symbol* sym = &ctx->symbols->symbols[i];
-				if (sym->is_global) {
+				if (sym->sym_vis == SYM_VIS_GLOBAL) {
 					if (st_gcount + 1 >= st_gcap) {
 						Symbol* n = (Symbol*)realloc(st_global, (st_gcap + 16) * sizeof(Symbol));
 						if (!n) {
 							free(st_local);
 							free(st_global);
+							free(st_external);
 							break;
 						}
 						st_global = n;
@@ -71,12 +87,27 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 					}
 
 					st_global[st_gcount++] = *sym;
+				} else if (sym->sym_vis == SYM_VIS_EXTERNAL) {
+					if (st_ecount + 1 >= st_ecap) {
+						Symbol* n = (Symbol*)realloc(st_external, (st_ecap + 16) * sizeof(Symbol));
+						if (!n) {
+							free(st_local);
+							free(st_global);
+							free(st_external);
+							break;
+						}
+						st_external = n;
+						st_ecap += 16;
+					}
+
+					st_external[st_ecount++] = *sym;
 				} else {
 					if (st_lcount + 1 >= st_lcap) {
 						Symbol* n = (Symbol*)realloc(st_local, (st_lcap + 16) * sizeof(Symbol));
 						if (!n) {
 							free(st_local);
 							free(st_global);
+							free(st_external);
 							break;
 						}
 						st_local = n;
@@ -87,19 +118,30 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 				}
 			}
 		
-			if (st_lcount + st_gcount == ctx->symbols->count) {
-				for (size_t i = 0; i < st_lcount + st_gcount; i++) {
-					Symbol* sym = i >= st_lcount ? &st_global[i - st_lcount] : &st_local[i];
+			if (st_lcount + st_gcount + st_ecount == ctx->symbols->count) {
+				for (size_t i = 0; i < st_lcount + st_gcount + st_ecount; i++) {
+					Symbol* sym = NULL;
 
+					if (i < st_lcount) {
+						sym = &st_local[i];
+					} else if (i < st_lcount + st_gcount) {
+						sym = &st_global[i - st_lcount];
+					} else {
+						sym = &st_external[i - st_lcount - st_gcount];
+					}
 					memcpy(&ctx->symbols->symbols[i], sym, sizeof(Symbol));
 				}
 			}
 
 			free(st_local);
 			free(st_global);
+			free(st_external);
+
+			st_local = NULL;
+			st_global = NULL;
+			st_external = NULL;
 
 			local_symbols = st_lcount;
-			global_symbols = st_gcount;
 		}
 	}
 	
@@ -474,32 +516,55 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
         // Add name
         switch (sym->type) {
             case SYM_IDENTIFIER:
-                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
-                esym->st_size = (Elf64_Xword)sym->size;
-                esym->st_other = 0;
-                esym->st_shndx = sym->section_index + 5;
-                esym->st_value = (Elf64_Addr)(sym->addr);
+                esym->st_info = ELF64_ST_INFO(sym->sym_vis == SYM_VIS_LOCAL ? STB_LOCAL : STB_GLOBAL, STT_OBJECT);
+				esym->st_other = 0;
+				
+				if (sym->sym_vis == SYM_VIS_EXTERNAL) {
+					esym->st_shndx = SHN_UNDEF;
+					esym->st_value = 0;
+					esym->st_size = 0;
+				} else {
+					esym->st_size = (Elf64_Xword)sym->size;
+					esym->st_shndx = sym->section_index + 5;
+					esym->st_value = (Elf64_Addr)(sym->addr);
+				}
                 break;
             case SYM_LABEL:
-                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
-                esym->st_size = 0;
-                esym->st_other = 0;
-                esym->st_shndx = sym->section_index + 5;
-                esym->st_value = (Elf64_Addr)(sym->addr);
+                esym->st_info = ELF64_ST_INFO(sym->sym_vis == SYM_VIS_LOCAL ? STB_LOCAL : STB_GLOBAL, STT_FUNC);
+				esym->st_size = 0;
+				esym->st_other = 0;
+
+				if (sym->sym_vis == SYM_VIS_EXTERNAL) {
+					esym->st_shndx = SHN_UNDEF;
+					esym->st_value = 0;
+				} else {
+					esym->st_shndx = sym->section_index + 5;
+					esym->st_value = (Elf64_Addr)(sym->addr);
+				}
                 break;
             case SYM_FILE:
-                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_FILE);
-                esym->st_size = 0;
-                esym->st_other = 0;
-                esym->st_value = (Elf64_Addr)(sym->addr);
-                esym->st_shndx = 0;
+                esym->st_info = ELF64_ST_INFO(sym->sym_vis == SYM_VIS_LOCAL ? STB_LOCAL : STB_GLOBAL, STT_FILE);
+				esym->st_shndx = SHN_UNDEF;
+				esym->st_other = 0;
+				esym->st_size = 0;
+                
+				if (sym->sym_vis == SYM_VIS_EXTERNAL) {
+					esym->st_value = 0;
+				} else {
+                	esym->st_value = (Elf64_Addr)(sym->addr);
+				}
                 break;
             default:
-                esym->st_info = ELF64_ST_INFO(sym->is_global == false ? STB_LOCAL : STB_GLOBAL, STT_NOTYPE);
-                esym->st_size = 0;
-                esym->st_other = 0;
-                esym->st_value = (Elf64_Addr)(sym->addr);
-                esym->st_shndx = 0;
+                esym->st_info = ELF64_ST_INFO(sym->sym_vis == SYM_VIS_LOCAL ? STB_LOCAL : STB_GLOBAL, STT_NOTYPE);
+				esym->st_size = 0;
+				esym->st_other = 0;
+				esym->st_shndx = SHN_UNDEF;
+
+				if (sym->sym_vis == SYM_VIS_EXTERNAL) {
+					esym->st_value = 0;
+				} else {
+					esym->st_value = (Elf64_Addr)(sym->addr);
+				}
                 break;
         }
 

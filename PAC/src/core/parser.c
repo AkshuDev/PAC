@@ -799,7 +799,7 @@ static ASTNode* parse_label(Parser* p, bool make_macro) {
     return node;
 }
 
-static ASTNode* parse_directive(Parser* p, bool only_lit) {
+static ASTNode* parse_directive(Parser* p, bool only_lit, bool make_macro) {
     ASTNode* node = create_node(AST_DIRECTIVE, p);
     node->directive.type = p->current.type;
     node->directive.aligment = nxt_secalignment;
@@ -811,14 +811,47 @@ static ASTNode* parse_directive(Parser* p, bool only_lit) {
     parser_advance(p);
 
 	char* label = NULL;
-	if (!only_lit && p->current.type == FUNC_USE) {
-		int ret = 0;
-        struct p_macro* m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_IDENTIFIER, -1);
-		label = m ? m->value : NULL;
+	if (p->current.type == FUNC_USE) {
+		if (node->directive.type == EXTERNAL) {
+			bool func = p->current.lexeme && p->current.lexeme[0] == '$';
+			label = func ? p->current.lexeme+1 : p->current.lexeme;
+		} else if (!only_lit) {
+			int ret = 0;
+			struct p_macro* m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_IDENTIFIER, -1);
+			label = m ? m->value : NULL;
+		}
 	} else if (p->current.type == IDENTIFIER_TOK || p->current.type == LIT_STRING) {
         label = p->current.lexeme;
     }
 
+	if (label && node->directive.type == EXTERNAL && make_macro) {
+		int ret = 0;
+		struct p_macro* m = find_macro(label, &ret, MACRO_TYPE_UNKNOWN, -1);
+
+		if (ret != -1) {
+			if (!m->auto_gen)
+				PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(label), "Label/Function conflicts with previous definition");
+			else
+				PAC_WARNINGF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(label), "Label/Function conflicts with previous Auto-Generated definition");
+			if (m->type == MACRO_TYPE_NTYPE)
+					PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Typedef created here, try renaming your Types?");
+				else if (m->type == MACRO_TYPE_USER_MACRO)
+					PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here, try renaming your Macros?");
+				else if (m->type == MACRO_TYPE_IDENTIFIER)
+					PAC_TIPF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Identifier created here, try renaming your identifiers?");
+				else if (m->line > 0)
+					PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
+		}
+
+		const char* err = new_macro(label, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL); // ensure using the label works!
+		if (err) {
+			free(node);
+			free_ast(p->root);
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(label), err);
+			exit(PAC_Error_Unknown);
+		}
+	}
+	
 	if (label) {
 		node->directive.arg = (char*)malloc(strlen(label) + 1);
 		if (!node->directive.arg) {
@@ -1166,7 +1199,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 	}
 
     ret = 0;
-	m = find_macro(true_name, &ret, MACRO_TYPE_UNKNOWN, -1);
+	m = find_macro(true_name, &ret, MACRO_TYPE_IDENTIFIER, -1);
     char* value = m ? m->value : NULL;
     if (ret == 0) {
 		size_t len = strlen(value);
@@ -1790,8 +1823,9 @@ void parse_symbols(Parser* p) {
 				break;
 			}
 			case SECTION:
+			case EXTERNAL:
 			case GLOBAL: {
-				stmt = parse_directive(p, true);
+				stmt = parse_directive(p, true, true);
 				if (p->current.type == FUNC_USE) parser_advance(p); // Skip dynamic directive values
 				break;
 			}
@@ -1896,14 +1930,16 @@ ASTNode* parse_program(Parser* p) {
             parse_preprocessors(p, false, true); // Already handled
 			continue;
 		}
+		
 		switch (p->current.type) {
 			case LABEL_DEF: {
 				stmt = parse_label(p, false);
 				break;
 			}
 			case SECTION:
+			case EXTERNAL:
 			case GLOBAL: {
-				stmt = parse_directive(p, false);
+				stmt = parse_directive(p, false, false);
 				break;
 			}
 			case COMMENT_LINE:

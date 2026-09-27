@@ -313,7 +313,7 @@ static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFil
 			goto cleanup_n_fail;
             return false;
         }
-        objfile_count++;
+        (*objfile_count)++;
         ObjectFile* ofile = &(*objfiles)[*objfile_count - 1];
         
         memset(ofile, 0, sizeof(ObjectFile));
@@ -540,6 +540,37 @@ static void merge_outsections(SectionOrder* order, OutSection* outsecs, ObjectFi
     }
 }
 
+static void resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
+	if (!objfiles || objfile_count < 1) return;
+
+	for (size_t i = 0; i < objfile_count; i++) {
+		ObjectFile* ofile = &objfiles[i];
+		for (size_t j = 0; j < ofile->symbol_count; j++) {
+			Elf64_Sym* sym = &ofile->symbols[j];
+			const char* name = ofile->strtab + sym->st_name;
+
+			if (sym->st_shndx == SHN_UNDEF && ELF64_ST_BIND(sym->st_info) == STB_GLOBAL) {
+				// External symbol for sure, find the corrosponding symbol in another object file
+				for (size_t k = 0; k < objfile_count; k++) {
+					ObjectFile* ext_ofile = &objfiles[k];
+					for (size_t l = 0; l < ext_ofile->symbol_count; l++) {
+						Elf64_Sym* ext_sym = &ext_ofile->symbols[l];
+						if (ext_sym->st_name > ext_ofile->data_len) continue;
+						
+						const char* ext_name = ext_sym->st_name + ext_ofile->strtab;
+						if (strcmp(name, ext_name) == 0) {
+							sym->st_value = ext_sym->st_value;
+							sym->st_size = ext_sym->st_size;
+							sym->st_info = ext_sym->st_info;
+							sym->st_other = ext_sym->st_other;
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
     if (!input_files || input_file_count == 0 || !outfile) {
         fprintf(stderr, COLOR_RED "Linker Error: No input/output files provided!\n" COLOR_RESET);
@@ -586,6 +617,9 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         free_objfile(objfiles, objfile_count);
         return false;
 	}
+
+	// Resolve Symbols
+	resolve_extern_symbols(objfiles, objfile_count);
 
 	// Precompute PHdrs Count and Recompute Memory Alignment
 	size_t phdr_count = 1;
@@ -830,6 +864,8 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
                 outsym->st_shndx = insym->st_shndx; // e.g., SHN_UNDEF
             }
 
+			const char* name = ofile->strtab + insym->st_name;
+
             // remap symbol value
             if (outsym->st_shndx != SHN_UNDEF)
                 outsym->st_value = ofile->sections[insym->st_shndx].loaded_vaddr + insym->st_value;
@@ -837,7 +873,6 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
                 outsym->st_value = 0;
 
             // copy name to output strtab
-            const char* name = ofile->strtab + insym->st_name;
             outsym->st_name = strtab_off;
             strcpy(&strtab[strtab_off], name);
             strtab_off += strlen(name) + 1;
@@ -1121,7 +1156,8 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
     fseek(f, eh.e_shoff, SEEK_SET);
     fwrite(shdrs, sizeof(Elf64_Shdr), total_sections, f);
-
+	
+	free(shdrs);
 	fclose(f);
 
 	free(outsyms);
@@ -1716,6 +1752,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     fseek(f, eh.e_shoff, SEEK_SET);
     fwrite(shdrs, sizeof(Elf32_Shdr), total_sections, f);
 
+	free(shdrs);
     fclose(f);
 	free(outsyms);
 	free(strtab);
@@ -1738,12 +1775,13 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
         return false;
     }
 	if (base_vaddr != 0) {
-		fprintf(stderr, COLOR_YELLOW "Linker Warning: Using base virtual address as '0' and not '%llX' [Reason: Using binary format]\n" COLOR_RESET, (unsigned long long)base_vaddr);
+		fprintf(stderr, COLOR_YELLOW "Linker Warning: Using base virtual address as '0' and not '0x%llX' [Reason: Using binary format]\n" COLOR_RESET, (unsigned long long)base_vaddr);
 		base_vaddr = 0;
 	}
 	if (entry) {
-		fprintf(stderr, COLOR_YELLOW "Linker Warning: Using first label as entry and not '%s' [Reason: Using binary format]\n" COLOR_RESET, entry);
+		fprintf(stderr, COLOR_YELLOW "Linker Warning: Using first byte as entry and not '%s' [Reason: Using binary format]\n" COLOR_RESET, entry);
 	}
+	fprintf(stderr, COLOR_YELLOW "Linker Warning: Binary output is a very raw format. Section order directly affects the output layout, and executable machine code may appear at an unexpected offset. Using binary format without understanding the section layout can produce invalid or unsafe output\n" COLOR_RESET);
 
 	ObjectFile* objfiles = NULL;
     size_t objfile_count = 0;
@@ -1857,7 +1895,7 @@ bool pac_link(char* entry, char* outfile, char** input_files, size_t input_file_
     }
 	if (!out) return false;
 
-	if (!chmod(outfile, S_IRUSR | S_IXUSR | S_IWUSR)) {
+	if (chmod(outfile, S_IRUSR | S_IXUSR | S_IWUSR) != 0) {
 		perror(COLOR_YELLOW "Linker Warning: Failed to add EXECUTABLE permission to output binary, skipping EXECUTABLE permission\n" COLOR_RESET);
 	}
 	return true;

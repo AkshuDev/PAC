@@ -97,6 +97,7 @@ static PAC_TokenType check_keyword(const char* str) {
     // Labels, Functions, and more
     if (strcmp(str, ":section") == 0) return SECTION;
     if (strcmp(str, ":global") == 0) return GLOBAL;
+	if (strcmp(str, ":external") == 0) return EXTERNAL;
     if (strcmp(str, ":align") == 0) return ALIGN;
     if (strcmp(str, ":res") == 0) return RESERVE;
     if (strcmp(str, ":start") == 0) return START_SEC;
@@ -464,7 +465,7 @@ Token next_token(Lexer* lx) {
             lx->line = ogline;
             lx->column = ogcol;
             lx->pos = start + 1;
-            tk = make_token(lx, COLON, ";", 1);
+            tk = make_token(lx, COLON, ":", 1);
         }
 
         free(text);
@@ -640,6 +641,7 @@ const char* token_type_to_str(PAC_TokenType type) {
         case STRUCT_END: return "STRUCT_END";
         case SECTION: return "SECTION";
         case GLOBAL: return "GLOBAL";
+		case EXTERNAL: return "EXTERNAL";
         case ALIGN: return "ALIGN";
         case RESERVE: return "RESERVE";
         case TYPEDEF: return "TYPEDEF";
@@ -904,6 +906,7 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
         case STRUCT_END: return ".endstruct";
         case SECTION: return ":section";
         case GLOBAL: return ":global";
+		case EXTERNAL: return ":external";
         case ALIGN: return ":align";
         case RESERVE: return ":res";
         case TYPEDEF: return ".type";

@@ -23,17 +23,27 @@ typedef enum {
     SYM_FILE,
 } SymbolType;
 
+typedef enum {
+	SYM_VIS_LOCAL,
+	SYM_VIS_GLOBAL,
+	SYM_VIS_EXTERNAL
+} SymbolVisibility;
+
 typedef struct {
     char* name;
     SymbolType type;
-    uint64_t addr; // address
+    
+	uint64_t addr; // address
     uint64_t addr2; // secondry read-only addr
-    char* value; // constant value
+    
+	char* value; // constant value
 	size_t val_size;
-    size_t section_index; // section the symbol belongs to
+    
+	size_t section_index; // section the symbol belongs to
     uint64_t size; // size
     PAC_TokenType type_of_data;
-    bool is_global;
+
+    SymbolVisibility sym_vis;
 } Symbol;
 
 typedef struct {
