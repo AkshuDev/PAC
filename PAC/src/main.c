@@ -535,31 +535,19 @@ int main(int argc, char** argv) {
             args.bits = 32;
         }
 
-        if (args.linkformat == BINARY && args.input_count == 1) {
-            if (!encode_binary(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
-                free(src);
-                free_relocs(&sectab);
-                symtab_free(&symtab);
-                free_ir_list(&irlist);
-                section_free(&sectab);
-                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-                free(encoded_files);
-				if (args.inc_dirs) free(args.inc_dirs);
-                return PAC_Error_Unknown;
-            }
-        } else {
-            if (!encode(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
-                free(src);
-                free_relocs(&sectab);
-                symtab_free(&symtab);
-                free_ir_list(&irlist);
-                section_free(&sectab);
-                for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-                free(encoded_files);
-				if (args.inc_dirs) free(args.inc_dirs);
-                return PAC_Error_Unknown;
-            }
-        }
+        if (!encode(&assembler, outfile, &irlist, args.bits, args.unlocked, args.arch)) {
+			free(src);
+			free_relocs(&sectab);
+			symtab_free(&symtab);
+			free_ir_list(&irlist);
+			section_free(&sectab);
+
+			for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
+			free(encoded_files);
+			if (args.inc_dirs) free(args.inc_dirs);
+			
+			return PAC_Error_Unknown;
+		}
 
         free(src);
         free_relocs(&sectab);
