@@ -15,6 +15,7 @@ typedef struct { // Literal integer value (supports upto UINT64_MAX and -UINT64_
 
 typedef enum {
     AST_PROGRAM,
+	AST_FAKEPROGRAM, // Doesn't free macros
     AST_INSTRUCTION,
     AST_LABEL,
     AST_DIRECTIVE,

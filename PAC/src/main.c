@@ -59,6 +59,7 @@ void print_usage(const char* prog) {
     printf("\t-t, --base                Base Virtual Address (default: 0x400000 (linux) and 0x140000000 (windows))\n");
     printf("\t-e, --entry               Provide Entry Label/Function (default: The first Label/Function)\n");
     printf("\t-f, --format <elf64/elf32/win64/win32/binary> Target output format (default: elf64)\n");
+	printf("\t-I, --includes <dir>      Provide include directories for the assembly files\n");
     printf("\t--unlock                  Allows the use of privilaged instructions\n");
 	printf("\t--err-info <code> Get Information on any PAC Status/Exit Code\n");
 }
@@ -468,6 +469,7 @@ int main(int argc, char** argv) {
 
     if (args.lexout) {
         perform_lexout(&args, args.input_files, 0, args.input_count);
+		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 

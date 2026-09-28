@@ -920,11 +920,11 @@ IRList assemble(Assembler* ctx) {
 									if (!opmem_disp->int_val.neg) snprintf(buf, sizeof(buf), "[%s + %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val.value);
 									else snprintf(buf, sizeof(buf), "[%s - %llu]", opmem_op->reg, (unsigned long long)opmem_disp->int_val.value);
 								} else if (opmem_op->type == OPERAND_IDENTIFIER) {
-									if (op->identifier->type == AST_LITERAL) {
+									if (opmem_op->identifier->type == AST_LITERAL) {
 										char buf[128];
-										switch (op->identifier->literal.type) {
+										switch (opmem_op->identifier->literal.type) {
 											case LIT_INT: {
-												if (op->identifier->literal.int_val.neg)
+												if (opmem_op->identifier->literal.int_val.neg)
 													snprintf(buf, sizeof(buf), "-%llu", (unsigned long long)op->identifier->literal.int_val.value);
 												else
 													snprintf(buf, sizeof(buf), "%llu", (unsigned long long)op->identifier->literal.int_val.value);
@@ -938,7 +938,7 @@ IRList assemble(Assembler* ctx) {
 												exit(PAC_Error_InvalidIdentifier);
 											}
 										}
-									} else if (op->identifier->type == AST_IDENTIFIER) {
+									} else if (opmem_op->identifier->type == AST_IDENTIFIER) {
 										Symbol* sym;
 										bool got_sym = symtab_get(symtab, opmem_op->identifier->identifier.name, &sym);
 										if (got_sym) {

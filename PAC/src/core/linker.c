@@ -34,9 +34,11 @@ typedef struct {
 	size_t memalign; // vaddr Memory Alignment
     size_t padded_size;
     char* name;
+
     size_t sh_name_off;
     size_t sh_type;
     size_t sh_flags;
+	size_t sh_info;
 } OutSection;
 
 typedef struct {
@@ -47,11 +49,19 @@ typedef struct {
 } InRelocation;
 
 typedef struct {
+	SymbolVisibility vis;
+	InSection* section;
+
+	Elf64_Sym sym;
+} ObjectSymbol;
+
+typedef struct {
     InSection* sections;
     size_t section_count;
 
-    Elf64_Sym* symbols;
+    ObjectSymbol* symbols;
     size_t symbol_count;
+	size_t external_symbol_count;
 
 	InRelocation relas[20];
     size_t rela_count;
@@ -127,6 +137,7 @@ static void free_objfile(ObjectFile* objfiles, size_t objfile_count) {
 
         if (objfile->section_count < 1) continue;
         if (objfile->sections) free(objfile->sections);
+		if (objfile->symbols) free(objfile->symbols);
     }
     free(objfiles);
 }
@@ -156,16 +167,18 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 			continue;
 		}
 
-		Elf64_Sym* sym = &ofile->symbols[rsym];
+		ObjectSymbol* osym = &ofile->symbols[rsym];
+		Elf64_Sym* sym = &osym->sym;
+
 		if (ELF64_ST_TYPE(sym->st_info) != STT_OBJECT && ELF64_ST_TYPE(sym->st_info) != STT_FUNC) {
 			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' uses symbol whose type is neither Func or Object, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
-		} else if (sym->st_shndx > ofile->section_count) {
+		} else if (!osym->section) {
 			printf(COLOR_YELLOW "Linker Warning: Relocation %llu within Reloc Section %llu file '%s' uses symbol which is placed in an unknown section, skipping\n" COLOR_RESET, (unsigned long long)k, (unsigned long long)j, ofile->name);
 			continue;
 		}
 
-		InSection* sec = &ofile->sections[sym->st_shndx];
+		InSection* sec = osym->section;
 		int64_t addr = sym->st_value + sec->loaded_vaddr + reloc->r_addend;
 		size_t off = reloc->r_offset + isec->sh.sh_offset;
 		switch (rtype) {
@@ -384,8 +397,29 @@ static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFil
 
             // Load symbol table
             if (sh->sh_type == SHT_SYMTAB) {
-                ofile->symbols = (Elf64_Sym*)(fdata + sh->sh_offset);
+                Elf64_Sym* symbols = (Elf64_Sym*)(fdata + sh->sh_offset);
                 ofile->symbol_count = sh->sh_size / sh->sh_entsize;
+
+				ofile->symbols = (ObjectSymbol*)calloc(ofile->symbol_count, sizeof(ObjectSymbol));
+				if (!ofile->symbols) {
+					free(fdata);
+					perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
+
+					goto cleanup_n_fail;
+					return false;
+				}
+
+				for (size_t sidx = 0; sidx < ofile->symbol_count; sidx++) {
+					ObjectSymbol* s = &ofile->symbols[sidx];
+					s->sym = symbols[sidx];
+
+					unsigned char bind = ELF64_ST_BIND(s->sym.st_info);
+					s->vis = bind == STB_GLOBAL ? SYM_VIS_GLOBAL : SYM_VIS_LOCAL;
+					if (s->sym.st_shndx == SHN_UNDEF && s->vis == SYM_VIS_GLOBAL) s->vis = SYM_VIS_EXTERNAL;
+					if (s->vis == SYM_VIS_EXTERNAL) ofile->external_symbol_count++;
+
+					s->section = &ofile->sections[s->sym.st_shndx >= ofile->section_count ? 0 : s->sym.st_shndx];
+				}
 
                 Elf64_Shdr* strsec = (Elf64_Shdr*)(fdata + eh->e_shoff + sh->sh_link * eh->e_shentsize);
                 ofile->strtab = fdata + strsec->sh_offset;
@@ -545,16 +579,17 @@ static void resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
 
 	for (size_t i = 0; i < objfile_count; i++) {
 		ObjectFile* ofile = &objfiles[i];
-		for (size_t j = 0; j < ofile->symbol_count; j++) {
-			Elf64_Sym* sym = &ofile->symbols[j];
+		for (size_t j = 1; j < ofile->symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &ofile->symbols[j];
+			Elf64_Sym* sym = &osym->sym;
 			const char* name = ofile->strtab + sym->st_name;
 
-			if (sym->st_shndx == SHN_UNDEF && ELF64_ST_BIND(sym->st_info) == STB_GLOBAL) {
-				// External symbol for sure, find the corrosponding symbol in another object file
+			if (osym->vis == SYM_VIS_EXTERNAL) {
 				for (size_t k = 0; k < objfile_count; k++) {
 					ObjectFile* ext_ofile = &objfiles[k];
 					for (size_t l = 0; l < ext_ofile->symbol_count; l++) {
-						Elf64_Sym* ext_sym = &ext_ofile->symbols[l];
+						ObjectSymbol* ext_osym = &ext_ofile->symbols[l];
+						Elf64_Sym* ext_sym = &ext_osym->sym;
 						if (ext_sym->st_name > ext_ofile->data_len) continue;
 						
 						const char* ext_name = ext_sym->st_name + ext_ofile->strtab;
@@ -563,6 +598,8 @@ static void resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
 							sym->st_size = ext_sym->st_size;
 							sym->st_info = ext_sym->st_info;
 							sym->st_other = ext_sym->st_other;
+							
+							osym->section = ext_osym->section;
 						}
 					}
 				}
@@ -753,14 +790,28 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         free_objfile(objfiles, objfile_count);
         return false;
     }
-    shstrtab[0] = '\0';
     size_t shstrtab_off = 1;
 
+	for (size_t i = 0; i < section_count; i++) {
+        strcpy(&shstrtab[shstrtab_off], outsecs[i].name);
+        outsecs[i].sh_name_off = shstrtab_off;
+        shstrtab_off += strlen(outsecs[i].name) + 1;
+    }
+
     size_t strtab_size = 1; // first byte is null
+	size_t local_syms = 0;
+	size_t global_syms = 0;
     for (size_t i = 0; i < objfile_count; i++) {
-        for (size_t j = 0; j < objfiles[i].symbol_count; j++) {
-            const char* name = objfiles[i].strtab + objfiles[i].symbols[j].st_name;
+        for (size_t j = 1; j < objfiles[i].symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &objfiles[i].symbols[j];
+			if (osym->vis == SYM_VIS_EXTERNAL) continue; // Repeated Symbol
+
+            const char* name = objfiles[i].strtab + osym->sym.st_name;
             strtab_size += strlen(name) + 1;
+
+			// Now also find out local and global symbols
+			if (osym->vis == SYM_VIS_LOCAL) local_syms++;
+			else global_syms++;
         }
     }
     
@@ -781,17 +832,12 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         free_objfile(objfiles, objfile_count);
         return false;
 	}
-	
-    strtab[0] = '\0';
     size_t strtab_off = 1;
 
-    for (size_t i = 0; i < section_count; i++) {
-        strcpy(&shstrtab[shstrtab_off], outsecs[i].name);
-        outsecs[i].sh_name_off = shstrtab_off;
-        shstrtab_off += strlen(outsecs[i].name) + 1;
-    }
-
     OutSection shstr_section = {0};
+	shstrtab[0] = '\0';
+	shstrtab[shstrtab_size-1] = '\0';
+
     shstr_section.name = ".shstrtab";
     shstr_section.buffer = (uint8_t*)shstrtab;
     shstr_section.size = shstrtab_size;
@@ -802,15 +848,12 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     strcpy(&shstrtab[shstrtab_off], ".shstrtab");
     shstrtab_off += 10;
     size_t shstr_index = section_count+1; // index in section header table
-
     file_off = align_up(file_off, shstr_section.max_align);
     shstr_section.out_offset = file_off;
     file_off += shstr_section.padded_size;
 
     // Resolve symbols
-    size_t total_symbols = 0;
-    for (size_t i = 0; i < objfile_count; i++) total_symbols += objfiles[i].symbol_count;
-
+    size_t total_symbols = 1 + local_syms + global_syms; // +1 for NULL
     Elf64_Sym* outsyms = calloc(total_symbols, sizeof(Elf64_Sym));
 	if (!outsyms) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
@@ -830,7 +873,8 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
         return false;
 	}
 
-    size_t sym_index = 0;
+    size_t lsym_index = 1;
+	size_t gsym_index = 1 + local_syms;
 	uint64_t entry_vaddr = 0;
 	bool found_entry = false;
 	
@@ -841,9 +885,14 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 
     for (size_t i = 0; i < objfile_count; i++) {
         ObjectFile* ofile = &objfiles[i];
-        for (size_t j = 0; j < ofile->symbol_count; j++) {
-            Elf64_Sym* insym = &ofile->symbols[j];
-            Elf64_Sym* outsym = &outsyms[sym_index];
+        for (size_t j = 1; j < ofile->symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &ofile->symbols[j];
+			if (osym->vis == SYM_VIS_EXTERNAL) continue; // Repeated Symbol
+
+			size_t* sidx = osym->vis == SYM_VIS_LOCAL ? &lsym_index : &gsym_index;
+
+            Elf64_Sym* insym = &osym->sym;
+            Elf64_Sym* outsym = &outsyms[*sidx];
 
             // copy basic fields
             outsym->st_info = insym->st_info;
@@ -853,7 +902,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
             // remap section index
             if (insym->st_shndx < SHN_LORESERVE) {
                 // find the output section that matches input section
-                InSection* sec = &ofile->sections[insym->st_shndx];
+                InSection* sec = osym->section;
                 for (size_t k = 0; k < section_count; k++) {
                     if (strcmp(sec->name, outsecs[k].name) == 0) {
                         outsym->st_shndx = k + 1;
@@ -882,7 +931,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 				found_entry = true;
 			}
 
-            sym_index++;
+            (*sidx)++;
         }
     }
 
@@ -904,7 +953,8 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 	}
 
     OutSection sym_section = {0};
-    sym_section.name = ".symtab";
+    sym_section.name = ".symtab";sym_section.sh_info = local_syms + 1; // First global sym
+	
     sym_section.buffer = (uint8_t*)outsyms;
     sym_section.size = total_symbols * sizeof(Elf64_Sym);
     sym_section.padded_size = sym_section.size;
@@ -920,6 +970,9 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     size_t symtab_idx = shstr_index + 1;
 
     OutSection str_section = {0};
+	strtab[0] = '\0';
+	strtab[strtab_size-1] = '\0';
+
     str_section.name = ".strtab";
     str_section.buffer = (uint8_t*)strtab;
     str_section.size = strtab_size;
@@ -1142,7 +1195,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     shdrs[symtab_idx].sh_size = sym_section.padded_size;
     shdrs[symtab_idx].sh_addralign = sym_section.max_align;
     shdrs[symtab_idx].sh_link = strtab_idx;
-    shdrs[symtab_idx].sh_info = sym_section.capacity;
+    shdrs[symtab_idx].sh_info = sym_section.sh_info;
     shdrs[symtab_idx].sh_entsize = sizeof(Elf64_Sym);
 
     // .strtab header
@@ -1356,11 +1409,26 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     shstrtab[0] = '\0';
     size_t shstrtab_off = 1;
 
+	for (size_t i = 0; i < section_count; i++) {
+        strcpy(&shstrtab[shstrtab_off], outsecs[i].name);
+        outsecs[i].sh_name_off = shstrtab_off;
+        shstrtab_off += strlen(outsecs[i].name) + 1;
+    }
+
     size_t strtab_size = 1; // first byte is null
+	size_t local_syms = 0;
+	size_t global_syms = 0;
     for (size_t i = 0; i < objfile_count; i++) {
-        for (size_t j = 0; j < objfiles[i].symbol_count; j++) {
-            const char* name = objfiles[i].strtab + objfiles[i].symbols[j].st_name;
+        for (size_t j = 1; j < objfiles[i].symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &objfiles[i].symbols[j];
+			if (osym->vis == SYM_VIS_EXTERNAL) continue; // Repeated Symbol
+
+            const char* name = objfiles[i].strtab + osym->sym.st_name;
             strtab_size += strlen(name) + 1;
+
+			// Now also find out local and global symbols
+			if (osym->vis == SYM_VIS_LOCAL) local_syms++;
+			else global_syms++;
         }
     }
 
@@ -1381,16 +1449,12 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free_objfile(objfiles, objfile_count);
 		return false;
 	}
-    strtab[0] = '\0';
     size_t strtab_off = 1;
 
-    for (size_t i = 0; i < section_count; i++) {
-        strcpy(&shstrtab[shstrtab_off], outsecs[i].name);
-        outsecs[i].sh_name_off = shstrtab_off;
-        shstrtab_off += strlen(outsecs[i].name) + 1;
-    }
-
     OutSection shstr_section = {0};
+	shstrtab[0] = '\0';
+	shstrtab[shstrtab_size-1] = '\0';
+
     shstr_section.name = ".shstrtab";
     shstr_section.buffer = (uint8_t*)shstrtab;
     shstr_section.size = shstrtab_size;
@@ -1407,9 +1471,8 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     file_off += shstr_section.padded_size;
 
     // Resolve symbols
-    size_t total_symbols = 0;
-    for (size_t i = 0; i < objfile_count; i++) total_symbols += objfiles[i].symbol_count;
-
+    size_t total_symbols = 1 + local_syms + global_syms; // +1 for NULL
+    
     Elf32_Sym* outsyms = calloc(total_symbols, sizeof(Elf32_Sym));
 	if (!outsyms) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
@@ -1429,18 +1492,25 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		return false;
 	}
 
-    size_t sym_index = 0;
+    size_t lsym_index = 1;
+	size_t gsym_index = 1 + local_syms;
 	uint64_t entry_vaddr = 0;
 	bool found_entry = false;
 	if (entry == NULL) {
 		entry = "_start";
 		printf(COLOR_YELLOW "Linker Warning: No Entry Label Specified, Defaulting to '_start'\n" COLOR_RESET);
 	}
-    for (size_t i = 0; i < objfile_count; i++) {
+    
+	for (size_t i = 0; i < objfile_count; i++) {
         ObjectFile* ofile = &objfiles[i];
-        for (size_t j = 0; j < ofile->symbol_count; j++) {
-            Elf64_Sym* insym = &ofile->symbols[j];
-            Elf32_Sym* outsym = &outsyms[sym_index];
+        for (size_t j = 1; j < ofile->symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &ofile->symbols[j];
+			if (osym->vis == SYM_VIS_EXTERNAL) continue; // Repeated Symbol
+
+			size_t* sidx = osym->vis == SYM_VIS_LOCAL ? &lsym_index : &gsym_index;
+
+            Elf64_Sym* insym = &osym->sym;
+            Elf32_Sym* outsym = &outsyms[*sidx];
 
             // copy basic fields
             outsym->st_info = insym->st_info;
@@ -1450,7 +1520,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
             // remap section index
             if (insym->st_shndx < SHN_LORESERVE) {
                 // find the output section that matches input section
-                InSection* sec = &ofile->sections[insym->st_shndx];
+                InSection* sec = osym->section;
                 for (size_t k = 0; k < section_count; k++) {
                     if (strcmp(sec->name, outsecs[k].name) == 0) {
                         outsym->st_shndx = k + 1;
@@ -1478,7 +1548,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 				found_entry = true;
 			}
 
-            sym_index++;
+            (*sidx)++;
         }
     }
 
@@ -1500,6 +1570,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 
     OutSection sym_section = {0};
     sym_section.name = ".symtab";
+	sym_section.sh_info = local_syms + 1; // First global sym
     sym_section.buffer = (uint8_t*)outsyms;
     sym_section.size = total_symbols * sizeof(Elf32_Sym);
     sym_section.padded_size = sym_section.size;
@@ -1515,6 +1586,9 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     size_t symtab_idx = shstr_index + 1;
 
     OutSection str_section = {0};
+	strtab[0] = '\0';
+	strtab[strtab_size-1] = '\0';
+
     str_section.name = ".strtab";
     str_section.buffer = (uint8_t*)strtab;
     str_section.size = strtab_size;
@@ -1737,7 +1811,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     shdrs[symtab_idx].sh_size = sym_section.padded_size;
     shdrs[symtab_idx].sh_addralign = sym_section.max_align;
     shdrs[symtab_idx].sh_link = strtab_idx;
-    shdrs[symtab_idx].sh_info = sym_section.capacity;
+    shdrs[symtab_idx].sh_info = sym_section.sh_info;
     shdrs[symtab_idx].sh_entsize = sizeof(Elf32_Sym);
 
     // .strtab header

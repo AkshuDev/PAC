@@ -49,15 +49,22 @@ static char func_start[256];
 
 static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix);
 
-static void free_macros() {
+static void free_macros(void) {
     for (size_t i = 0; i < macro_count; i++) {
 		struct p_macro* m = &macros[i];
         if (m->name != NULL) free(m->name);
         if (m->value != NULL) free(m->value);
+
+		m->name = NULL;
+		m->value = NULL;
+		m->valid = false;
     }
-    macro_count = 0;
-	if (macros) free(macros);
+    
+	macro_count = 0;
 	macro_cap = 0;
+	
+	if (macros) free(macros);
+	macros = NULL;
 }
 
 static const char* alloc_macros(size_t index, size_t sizename, size_t sizeval) {
@@ -329,6 +336,9 @@ void free_ast(ASTNode* node) {
         case AST_PROGRAM:
             free_macros();
             break;
+		case AST_FAKEPROGRAM:
+			break;
+		
         default:
             break;
     }
@@ -813,8 +823,7 @@ static ASTNode* parse_directive(Parser* p, bool only_lit, bool make_macro) {
 	char* label = NULL;
 	if (p->current.type == FUNC_USE) {
 		if (node->directive.type == EXTERNAL) {
-			bool func = p->current.lexeme && p->current.lexeme[0] == '$';
-			label = func ? p->current.lexeme+1 : p->current.lexeme;
+			label = p->current.lexeme ? p->current.lexeme + 1 : p->current.lexeme;
 		} else if (!only_lit) {
 			int ret = 0;
 			struct p_macro* m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_IDENTIFIER, -1);
@@ -843,12 +852,25 @@ static ASTNode* parse_directive(Parser* p, bool only_lit, bool make_macro) {
 					PAC_NOTEF(p->lexer->file, m->line, m->col, p->lexer->src, p->lexer->len, m->name, strlen(m->name), "Macro created here");
 		}
 
-		const char* err = new_macro(label, NULL, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL); // ensure using the label works!
+		bool func = p->current.type == FUNC_USE && p->current.lexeme;
+		char* name = func ? p->current.lexeme : label;
+
+		const char* err = new_macro(name, label, false, MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL); // ensure using the label works!
 		if (err) {
 			free(node);
 			free_ast(p->root);
 			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(label), err);
 			exit(PAC_Error_Unknown);
+		}
+	
+		if (func) {
+			err = new_macro(label, NULL, true, MACRO_TYPE_IDENTIFIER, -1, -1, p->lexer->file, NULL);
+			if (err) {
+				free(node);
+				free_ast(p->root);
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, label, strlen(label), err);
+				exit(PAC_Error_Unknown);
+			}
 		}
 	}
 	
@@ -1199,7 +1221,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 	}
 
     ret = 0;
-	m = find_macro(true_name, &ret, MACRO_TYPE_IDENTIFIER, -1);
+	m = find_macro(true_name, &ret, MACRO_TYPE_UNKNOWN, -1);
     char* value = m ? m->value : NULL;
     if (ret == 0) {
 		size_t len = strlen(value);
@@ -1621,6 +1643,9 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Could not parse the specified file");
 				exit(PAC_Error_FileReadFailed);
 			}
+			
+			iroot->type = AST_FAKEPROGRAM; // ensure no macro free
+
 			for (size_t i = 0; i < iroot->child_count; i++) {
 				ASTNode* child = iroot->children[i];
 				add_child(p->root, child);
@@ -2246,7 +2271,10 @@ void ast_to_str(ASTNode* node, char* out, size_t maxsize) {
         case AST_RESERVE:
             snprintf(out, maxsize, "[Reserve] [%s] %s", token_type_to_str(node->reserve.type), node->reserve.name);
             return;
-        default:
+        case AST_FILE_CHANGE:
+			snprintf(out, maxsize, "[File Change] %s", node->file_change.file_path);
+            return;
+		default:
             strcpy(out, "Unknown");
             return;
     }

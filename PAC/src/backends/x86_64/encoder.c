@@ -1183,7 +1183,7 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
             *src = base_r;
             *issrc = false;
         }
-    } else if ((imm->value <= 128 && imm->neg) && (imm->value <= 127 && !imm->neg) && !*is_symbol) {
+    } else if (((imm->value <= 128 && imm->neg) || (imm->value <= 127 && !imm->neg)) && !*is_symbol) {
         if (!*issrc) {
             *operand_mod = OPERAND_REG_TO_MEM_DISP8;
             *dest = base_r;
