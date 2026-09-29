@@ -26,6 +26,7 @@ typedef enum {
     PP_ELIF, // @elif
     PP_END, // @end
     PP_UNDEF, // @undef
+	PP_SIZEOF, // @sizeof
     // Labels, Functions, and Sections
     LABEL_DEF, // label:
     FUNC_USE, // $func

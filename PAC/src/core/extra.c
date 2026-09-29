@@ -21,6 +21,7 @@
 #include <pac-extra.h>
 #include <pac-asm.h>
 #include <pac-parser.h>
+#include <pac-lexer.h>
 
 typedef struct {
 	uint32_t magic;
@@ -301,4 +302,26 @@ void intmax_add(IntMax* imax, uint64_t v, int sign) {
 	}
 
 	if (imax->value == 0) imax->neg = false;
+}
+
+size_t token_type_size(PAC_TokenType t) {
+    switch (t) {
+        case T_BYTE:
+        case T_UBYTE:
+            return 1;
+        case T_SHORT:
+        case T_USHORT:
+            return 2;
+        case T_INT:
+        case T_UINT:
+        case T_FLOAT:
+            return 4;
+        case T_LONG:
+        case T_ULONG:
+        case T_DOUBLE:
+        case T_PTR:
+            return 8;
+
+        default: return 0;
+    }
 }

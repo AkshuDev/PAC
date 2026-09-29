@@ -93,6 +93,7 @@ static PAC_TokenType check_keyword(const char* str) {
     if (strcmp(str, "@else") == 0) return PP_ELSE;
     if (strcmp(str, "@end") == 0) return PP_END;
     if (strcmp(str, "@inc") == 0) return PP_INC;
+	if (strcmp(str, "@sizeof") == 0) return PP_SIZEOF;
 
     // Labels, Functions, and more
     if (strcmp(str, ":section") == 0) return SECTION;
@@ -631,6 +632,7 @@ const char* token_type_to_str(PAC_TokenType type) {
         case PP_ELIF: return "PP_ELIF";
         case PP_END: return "PP_END";
         case PP_UNDEF: return "PP_UNDEF";
+		case PP_SIZEOF: return "PP_SIZEOF";
 
         // Labels, Functions, and Sections
         case LABEL_DEF: return "LABEL_DEF";
@@ -898,6 +900,7 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
         case PP_ELIF: return "@elif";
         case PP_END: return "@end";
         case PP_UNDEF: return "@undef";
+		case PP_SIZEOF: return "@sizeof";
 
         // Labels, Functions, and Sections
         case FUNC_DEF: return ".func";

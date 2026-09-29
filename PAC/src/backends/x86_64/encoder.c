@@ -1068,9 +1068,9 @@ static uint8_t make_sib(RegInfo index, RegInfo base, uint8_t mult) {
     return sib;
 }
 
-static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, IntMax* imm, int* operand_mod, bool* is_symbol) {
+static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* op, bool* issrc, RegInfo* src, RegInfo* dest, RegInfo* sib_index, uint8_t* sib_scale, IntMax* imm, IntMax* disp, int* operand_mod, bool* is_symbol) {
     // remove brackets
-    char buf[128]; 
+    char buf[128];
     size_t len = strlen(op);
     if (len < 3 || op[0] != '[' || op[len - 1] != ']') {
 		PAC_ERRORF(ctx->cur_file, ir->line, ir->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 0, "Invalid Memory Operand");
@@ -1090,6 +1090,8 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
     *w = '\0';
 
     *imm = (IntMax){0};
+	*disp = (IntMax){0};
+	*is_symbol = false;
 
     RegInfo base_r = {0};
     
@@ -1138,14 +1140,12 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
         int base = 10;
         if (term[0] == '0' && (term[1] == 'x' || term[1] == 'X')) {
             base = 16;
-            *is_symbol = true; // Parser auto-resolves all hex/bin/dec numbers by the user to decimal, only assembler uses hex, that so for only memory addresses
-        } else {
-            *is_symbol = false;
+            if (!*is_symbol) *is_symbol = true; // Parser auto-resolves all hex/bin/dec numbers by the user to decimal, only assembler uses hex, that so for only memory addresses
         }
 
         if (!sib) {
 			uint64_t v = (uint64_t)strtoull(term, NULL, base);
-            intmax_add(imm, v, sign);
+            intmax_add(base == 16 ? imm : disp, v, sign); // IF current value is symbol then add to disp not imm!
         } else {
             uint64_t sib_mult = strtoll(term, NULL, base);
             if (sib_mult != 1 && sib_mult != 2 && sib_mult != 4 && sib_mult != 8) {
@@ -1194,15 +1194,37 @@ static bool parse_memory_operand(Assembler* ctx, IRInstruction* ir, const char* 
             *issrc = false;
         }
     } else {
-        if (*is_symbol && !base_r.valid) {
+        if (*is_symbol && !base_r.valid && ir->operand_count < 2) { // just label
             *operand_mod = OPERAND_MEM_DISP32;
         } else if (!*issrc) {
             *operand_mod = OPERAND_REG_TO_MEM_DISP32;
-            *dest = base_r;
+            
+			*dest = base_r;
+			if (!base_r.valid) {
+				*dest = (RegInfo) {
+					.code = 0b101,
+					.rex_w = false,
+					.special = true,
+					.valid = true,
+					0
+				};
+			}
+
             *issrc = true;
         } else {
             *operand_mod = OPERAND_MEM_DISP32_TO_REG;
-            *src = base_r;
+            
+			*src = base_r;
+			if (!base_r.valid) {
+				*src = (RegInfo) {
+					.code = 0b101,
+					.rex_w = false,
+					.special = true,
+					.valid = true,
+					0
+				};
+			}
+
             *issrc = false;
         }
     }
@@ -1256,6 +1278,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
         RegInfo dest = {0};
         RegInfo sib_index = {0};
         uint8_t sib_scale = 0;
+		IntMax symbol_disp = {0};
         IntMax imm = {0};
 		IntMax simm = {0};
 
@@ -1270,6 +1293,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
             switch (optype) {
                 case OPERAND_REGISTER:
 					bool err = false;
+
                     if (issrc) { src = encode_register(bits, operand, &err); issrc = false; }
                     else {dest = encode_register(bits, operand, &err); issrc = true; }
 
@@ -1297,7 +1321,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					}
 					break;
                 case OPERAND_MEMORY:
-                    if (!parse_memory_operand(ctx, &inst, operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &operand_mod, &is_symbol)) {
+                    if (!parse_memory_operand(ctx, &inst, operand, &issrc, &src, &dest, &sib_index, &sib_scale, &imm, &symbol_disp, &operand_mod, &is_symbol)) {
 						if (inst_buf) free(inst_buf);
 						return false;
 					}
@@ -1687,7 +1711,7 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 				}
 				symindex -= 1;
 
-                add_reloc(text_sec, inst_written + text_off, symindex, bits == 64 ? R_X86_64_PC32 : R_X86_64_32, bits == 64 ? -4 : 0);
+                add_reloc(text_sec, inst_written + text_off, symindex, bits == 64 ? R_X86_64_PC32 : R_X86_64_32, bits == 64 ? (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value) - 4 : (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                 emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                 break;
             }
@@ -2131,10 +2155,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					symindex -= 1;
 
                     if (operand_mod == OPERAND_REG_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value) - 4 : (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {
@@ -2186,10 +2210,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					symindex -= 1;
 
                     if (operand_mod == OPERAND_MEM_DISP8_TO_REG && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value) - 4 : (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {
@@ -2317,10 +2341,10 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
 					symindex -= 1;
 
                     if (operand_mod == OPERAND_IMM_TO_MEM_DISP8 && !rip_mode && !rsp_sib) {
-                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, R_X86_64_8, (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0", 1);
                     } else {
-                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? -4 : 0);
+                        add_reloc(text_sec, inst_written + text_off, symindex, rip_mode ? R_X86_64_PC32 : R_X86_64_32, rip_mode ? (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value) - 4 : (int64_t)(symbol_disp.neg ? -1 * symbol_disp.value : symbol_disp.value));
                         emit_bytes(out, (uint8_t*)"\0\0\0\0", 4);
                     }
                 } else {

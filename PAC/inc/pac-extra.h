@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <pac-lexer.h>
 #include <pac-asm.h>
 #include <pac-parser.h>
 
@@ -34,3 +35,5 @@ bool is_sdigit(const char *str);
 size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr); // +1 index
 OperandType classify_operand(const char* op);
 void intmax_add(IntMax* imax, uint64_t v, int sign);
+
+size_t token_type_size(PAC_TokenType t);

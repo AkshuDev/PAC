@@ -51,7 +51,7 @@
 	fail_socket:
 		// print((char*)err_msg_socket_failed, strlen(err_msg_socket_failed))
 		lea %rdi, [err_msg_socket_failed]
-		mov %rsi, 44
+		mov %rsi, @sizeof(err_msg_socket_failed)
 		call $print
 
 		jmp $wsys_x11_connect.fail
@@ -102,20 +102,11 @@
     // writef(x11_fd, request, 12)
     mov %rdi, [x11_fd]
     lea %rsi, [x11_setup_request]
-    mov %rdx, 12
+    mov %rdx, @sizeof(x11_setup_request)
 	call $writef
 
-    cmp %rax, 12
+    cmp %rax, @sizeof(x11_setup_request)
     jne $wsys_x11_setup.fail
-
-
-    // Read setup reply header.
-    // Header is 8 bytes:
-    // ubyte status
-    // ubyte reason length
-    // ushort major
-    // ushort minor
-    // ushort additional length
 
 	// readf(x11_fd, x11_setup_reply, 8)
     mov %rdi, [x11_fd]
@@ -140,18 +131,18 @@
     mov %rax, [x11_setup_reply+6]
     shl %rax, 2
 
-    mov [x11_setup_extra_size], %rax
+    mov [x11_setup_size], %rax
 
     cmp %rax, 0
     je $wsys_x11_setup.success
 
-	// readf(x11_fd, x11_setup_extra, %rax)
+	// readf(x11_fd, x11_setup_prefix, %rax)
     mov %rdi, [x11_fd]
-    lea %rsi, [x11_setup_extra]
-    mov %rdx, %rax
+    lea %rsi, [x11_setup_prefix]
+    mov %rdx, @sizeof(x11_setup_prefix)
 	call $readf
 
-    cmp %rax, [x11_setup_extra_size]
+    cmp %rax, @sizeof(x11_setup_prefix)
     jne $wsys_x11_setup.fail
 
 	success:
@@ -167,23 +158,67 @@
 	err_msg_socket_failed!ubyte[45] = "[WSYS X11] Failed to connect to X11 socket!", 0xa, 0
 
 :section .data
-    // struct sockaddr_un {
-    //     unsigned short sun_family;
-    //     char sun_path[108];
-    // };
-    //
-    // Total = 110 bytes.
 	.struct x11_sockaddr
-		sun_family!ushort = 256
+		sun_family!ushort = SYS_AF_UNIX
 		sun_path!ubyte[108] = "/tmp/.X11-unix/X0", 0
 	.endstruct
 
     x11_setup_request!ubyte[12] = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     x11_setup_reply!ubyte[8] = 0, 0, 0, 0, 0, 0, 0, 0
 
-    x11_setup_extra_size!ulong = 0
+    x11_setup_size!ulong = 0
 
 :section .bss
 	:res x11_fd!int
+
+	:res x11_root_window!ulong
+	:res x11_root_visual!ulong
+	:res x11_root_depth!ubyte
+
+	:res x11_next_resource_id!ulong
 	
-	:res x11_setup_extra!ubyte[65536]
+	.struct x11_setup_prefix :res
+		release_number!uint
+		resource_id_base!uint
+		resource_id_mask!uint
+		motion_buffer_size!uint
+
+		vendor_length!ushort
+		maximum_request_length!ushort
+
+		roots_len!ubyte
+		pixmap_formats_len!ubyte
+
+		image_byte_order!ubyte
+		bitmap_bit_order!ubyte
+		scanline_unit!ubyte
+		scanline_pad!ubyte
+
+		min_keycode!ubyte
+		max_keycode!ubyte
+
+		unused!ubyte[4]
+	.endstruct
+
+	.struct x11_screen :res
+		root!uint
+		default_colormap!uint
+		white_pixel!uint
+		black_pixel!uint
+		current_input_masks!uint
+
+		width_in_pixels!ushort
+		height_in_pixels!ushort
+		width_in_millimeters!ushort
+		height_in_millimeters!ushort
+
+		min_installed_maps!ushort
+		max_installed_maps!ushort
+
+		root_visual!uint
+
+		backing_stores!ubyte
+		save_unders!ubyte
+		root_depth!ubyte
+		allowed_depths_len!ubyte
+	.endstruct
