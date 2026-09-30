@@ -2,12 +2,12 @@
 
 // This file has all info about PAC
 #define __PAC_VERSION__ "1.0.4"
-#define __PAC_LEXER_VERSION__ "1.0.3lex"
-#define __PAC_PARSER_VERSION__ "1.0.4par"
-#define __PAC_ASSEMBLER_VERSION__ "1.0.4asm"
-#define __PAC_LINKER_VERSION__ "1.0.1lnk"
-#define __PAC_ENCODER_x86_64_VERSION__ "1.0.4enc-x86_64"
-#define __PAC_ENCODER_x86_VERSION__ "1.0.4enc-x86"
+#define __PAC_LEXER_VERSION__ "1.0.4lex"
+#define __PAC_PARSER_VERSION__ "1.0.5par"
+#define __PAC_ASSEMBLER_VERSION__ "1.0.5asm"
+#define __PAC_LINKER_VERSION__ "1.0.2lnk"
+#define __PAC_ENCODER_x86_64_VERSION__ "1.0.5enc-x86_64"
+#define __PAC_ENCODER_x86_VERSION__ "1.0.5enc-x86"
 #define __PAC_ENC_PVCPU_VERSION__ "0.1.7enc-pvcpu"
 
 #define __PAC_INFO__ "PAC-" __PAC_VERSION__ " (Pheonix Assembler Collection - Version " __PAC_VERSION__ ")\n"

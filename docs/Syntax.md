@@ -1,4 +1,4 @@
-# Syntax
+# PAC Syntax
 PAC Syntax isn't just some Assembly, it is high-level Assembly!
 
 PAC Includes Structures/Preprocessing/Functions/Types and more!
@@ -123,7 +123,7 @@ Example -
         :external mylabel // Label
 ```
 
-#### To Export
+### To Export
 To export a function/label to another file, you must use the `:global` keyword with the name of the label or function (**NOTE: Use the `$` Prefix**)
 
 Example -
@@ -241,6 +241,14 @@ All preprocessor statements start with a `@`
 ```
 
 **NOTE: A String literal or macro is mandatory**
+
+### Sizeof
+`@sizeof(<identifier>)` gives the size of an symbol/macro/type in bytes - if defined. Example -
+```pac-asm
+	:section .data
+		myData!ulong[7] = 98, 2
+		myDataSize!ulong = @sizeof(myData) // 56
+```
 
 ## Important Notice
 PAC has many reserved keywords which may be an exact match of the instruction your trying to run and so, in those cases prefixing `inst.` before it, will fix the issue.

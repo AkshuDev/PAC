@@ -21,10 +21,14 @@
 - Fixed bug which caused CLI to not support other number notations such as binary
 - Added higher security against malformed programs
 - Added linker fail check in exit status
+- Added better memory management
 
 ### Additions
 - Added Changelog to package
 - Added Octal Support
+- Added Binary Linking
+- Added 'external' Support
+- Added 'sizeof' Support
 
 ### Known Flaws
 - None

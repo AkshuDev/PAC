@@ -17,7 +17,7 @@ _start:
 .func core
 	// print(msg_start, strlen(msg_start))
 	lea %rdi, [msg_start]
-	mov %rsi, 22
+	mov %rsi, @sizeof(msg_start)
 	call $print
 
 	// wsys_x11_connect()
@@ -28,7 +28,7 @@ _start:
 
 	// print(msg_connected, strlen(msg_connected))
 	lea %rdi, [msg_connected]
-	mov %rsi, 21
+	mov %rsi, @sizeof(msg_connected)
 	call $print
 
 	// wsys_x11_setup()
@@ -39,7 +39,7 @@ _start:
 
 	// print(msg_setup_ok, strlen(msg_setup_ok))
 	lea %rdi, [msg_setup_ok]
-	mov %rsi, 21
+	mov %rsi, @sizeof(msg_setup_ok)
 	call $print
 
 	// wsys_x11_close()
@@ -53,7 +53,7 @@ _start:
 	connect_failed:
 		// print(msg_connect_failed, strlen(msg_connect_failed))
 		lea %rdi, [msg_connect_failed]
-		mov %rsi, 22
+		mov %rsi, @sizeof(msg_connect_failed)
 		call $print
 
 		// exit(1)
@@ -64,7 +64,7 @@ _start:
 	setup_failed:
 		// print(msg_setup_failed, strlen(msg_setup_failed))
 		lea %rdi, [msg_setup_failed]
-		mov %rsi, 17
+		mov %rsi, @sizeof(msg_setup_failed)
 		call $print
 
 		// exit(2)
@@ -74,9 +74,9 @@ _start:
 .endfunc
 
 :section .rodata
-	msg_start!ubyte[23] = "Connecting to X11...", 0xa, 0
-	msg_connected!ubyte[22] = "X11 socket connected", 0xa, 0
-	msg_setup_ok!ubyte[22] = "X11 setup succeeded!", 0xa, 0
+	msg_start!ubyte[] = "Connecting to X11...", 0xa, 0
+	msg_connected!ubyte[] = "X11 socket connected", 0xa, 0
+	msg_setup_ok!ubyte[] = "X11 setup succeeded!", 0xa, 0
 
-	msg_connect_failed!ubyte[23] = "X11 connection failed", 0xa, 0
-	msg_setup_failed!ubyte[18] = "X11 setup failed", 0xa, 0
+	msg_connect_failed!ubyte[] = "X11 connection failed", 0xa, 0
+	msg_setup_failed!ubyte[] = "X11 setup failed", 0xa, 0

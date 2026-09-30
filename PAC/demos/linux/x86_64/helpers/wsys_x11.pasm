@@ -16,6 +16,38 @@
 	:global $wsys_x11_close
 	:global $wsys_x11_setup
 
+// int read_exact(int fd, void* buf, size_t n)
+.func read_exact
+	mov %r8, %rsi // void* cbuf = buf;
+	mov %rbx, %rdx // size_t total = n;
+
+	xor %rcx, %rcx // size_t bytes = 0;
+	loop:
+		// size_t bytes_read = readf(fd, cbuf + bytes, total - bytes);
+		// if (bytes_read <= 0) return false;
+		mov %rsi, %r8
+		add %rsi, %rcx
+		
+		mov %rdx, %rbx
+		sub %rdx, %rcx
+
+		call $readf
+		cmp %rax, 0
+		jle $read_exact.done
+
+		// bytes += bytes_read;
+		// if (bytes >= n) return true;
+		add %rcx, %rax
+		cmp %rcx, %rdx
+		jge $read_exact.done
+
+		jmp $read_exact.loop
+
+	done: // requires bytes read in rcx
+		mov %rax, %rcx
+		ret
+.endfunc
+
 // bool wsys_x11_connect(void)
 .func wsys_x11_connect
 	// Try to connect to /tmp/.X11-unix/X0
@@ -29,7 +61,7 @@
 	cmp %rax, 0
 	jl $wsys_x11_connect.fail_socket
 
-	mov [x11_fd], %rax
+	mov [x11_fd], %eax
 
 	// socket_connect(fd, &x11_sockaddr, 110)
 	mov %rdi, %rax // x11_fd
@@ -59,7 +91,8 @@
 
 // void wsys_x11_close(void)
 .func wsys_x11_close
-    mov %rdi, [x11_fd]
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
 
     mov %rax, SYSCALL_CLOSE
     syscall
@@ -100,7 +133,8 @@
     mov [x11_setup_request+11], %al
 
     // writef(x11_fd, request, 12)
-    mov %rdi, [x11_fd]
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
     lea %rsi, [x11_setup_request]
     mov %rdx, @sizeof(x11_setup_request)
 	call $writef
@@ -108,11 +142,12 @@
     cmp %rax, @sizeof(x11_setup_request)
     jne $wsys_x11_setup.fail
 
-	// readf(x11_fd, x11_setup_reply, 8)
-    mov %rdi, [x11_fd]
+	// read_exact(x11_fd, x11_setup_reply, 8)
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
     lea %rsi, [x11_setup_reply]
     mov %rdx, 8
-	call $readf
+	call $read_exact
 
     cmp %rax, 8
     jne $wsys_x11_setup.fail
@@ -125,22 +160,24 @@
     mov %al, [x11_setup_reply]
 
     cmp %al, 1
-    jne $wsys_x11_setup.success
+    jne $wsys_x11_setup.fail
 
 	// Additional length
-    mov %rax, [x11_setup_reply+6]
+	xor %rax, %rax
+    mov %ax, [x11_setup_reply+6]
     shl %rax, 2
 
     mov [x11_setup_size], %rax
 
-    cmp %rax, 0
-    je $wsys_x11_setup.success
+    cmp %rax, @sizeof(x11_setup_prefix)
+    jl $wsys_x11_setup.fail
 
-	// readf(x11_fd, x11_setup_prefix, %rax)
-    mov %rdi, [x11_fd]
+	// read_exact(x11_fd, x11_setup_prefix, %rax)
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
     lea %rsi, [x11_setup_prefix]
     mov %rdx, @sizeof(x11_setup_prefix)
-	call $readf
+	call $read_exact
 
     cmp %rax, @sizeof(x11_setup_prefix)
     jne $wsys_x11_setup.fail
@@ -155,7 +192,7 @@
 .endfunc
 
 :section .rodata
-	err_msg_socket_failed!ubyte[45] = "[WSYS X11] Failed to connect to X11 socket!", 0xa, 0
+	err_msg_socket_failed!ubyte[] = "[WSYS X11] Failed to connect to X11 socket!", 0xa, 0
 
 :section .data
 	.struct x11_sockaddr

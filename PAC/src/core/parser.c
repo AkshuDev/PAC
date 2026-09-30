@@ -20,6 +20,8 @@ enum p_macro_types {
 };
 
 struct p_macro {
+	size_t idx;
+
 	char* name;
 	char* value;
 	
@@ -49,7 +51,7 @@ static size_t funccount = 0;
 static bool in_func = false;
 static char func_start[256];
 
-static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix);
+static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix, struct p_macro** out_m);
 
 static void free_macros(void) {
     for (size_t i = 0; i < macro_count; i++) {
@@ -143,6 +145,7 @@ static const char* new_macro(char* name, char* value, bool auto_gen, size_t size
 	if (out != NULL) return out;
 	struct p_macro* m = &macros[idx];
 
+	m->idx = idx;
 	m->auto_gen = auto_gen;
 
 	strcpy(m->name, name);
@@ -186,6 +189,7 @@ static const char* new_macroEX(char* name, uint8_t* value, size_t val_size, bool
 	if (out != NULL) return out;
 	struct p_macro* m = &macros[idx];
 
+	m->idx = idx;
 	m->auto_gen = auto_gen;
 
 	strcpy(m->name, name);
@@ -549,7 +553,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				break;
 			}
 			case FUNC_USE: {
-				ASTNode* identnode = parse_identifier(p, false, false, NULL);
+				ASTNode* identnode = parse_identifier(p, false, false, NULL, NULL);
 				op->type = OPERAND_IDENTIFIER;
 				op->identifier = identnode;
 				if (parser_check(p, RBRACKET)) {
@@ -570,7 +574,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				break;
 			}
 			case IDENTIFIER_TOK: {
-				ASTNode* identnode = parse_identifier(p, false, false, NULL);
+				ASTNode* identnode = parse_identifier(p, false, false, NULL, NULL);
 				op->type = OPERAND_IDENTIFIER;
 				op->identifier = identnode;
 				if (parser_check(p, RBRACKET)) {
@@ -646,7 +650,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				break;
 			}
 			case FUNC_USE: {
-				ASTNode* identnode = parse_identifier(p, true, false, NULL);
+				ASTNode* identnode = parse_identifier(p, true, false, NULL, NULL);
 				if (identnode) free_ast(identnode);
 				if (parser_check(p, RBRACKET)) {
 					parser_advance(p);
@@ -662,7 +666,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				break;
 			}
 			case IDENTIFIER_TOK: {
-				ASTNode* identnode = parse_identifier(p, true, false, NULL);
+				ASTNode* identnode = parse_identifier(p, true, false, NULL, NULL);
 				if (identnode) free_ast(identnode);
 				if (parser_check(p, RBRACKET)) {
 					parser_advance(p);
@@ -1000,7 +1004,7 @@ static ASTNode* parse_literal(Parser* p) {
     return node;
 }
 
-static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix) {
+static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix, struct p_macro** out_m) {
 	int ret = 0;
 	struct p_macro* m = NULL;
 
@@ -1151,6 +1155,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 		}
 
 		ASTNode* node = NULL;
+		int final_array_len = array_len > 0 ? array_len : 0;
 		if (!only_macros) {
 			ASTNode* child = NULL;
 			parser_advance(p);
@@ -1174,7 +1179,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 				node->decl_identifier.array_values = NULL;
 				node->decl_identifier.array_value_count = 0;
 
-				const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(p->current.type) * (is_array ? array_len : 1), MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, NULL) : NULL;
+				const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(p->current.type) * (is_array ? (array_len > 0 ? array_len : 0) : 1), MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, out_m) : NULL;
 				if (err) {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, err);
@@ -1182,6 +1187,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 					if (prefix) free(name);
 					exit(PAC_Error_Unknown);
 				}
+				
 				free(true_name);
 				if (prefix) free(name);
 				return node;
@@ -1215,10 +1221,14 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 				}
 				
 				if (p->current.type == IDENTIFIER_TOK) {
-					child = parse_identifier(p, only_macros, add_macros, NULL);
+					child = parse_identifier(p, only_macros, add_macros, NULL, NULL);
 					if (child->type == AST_LITERAL) { // Probably due to macro
 						node->decl_identifier.type = child->literal.type;
+
+						if (child->type == AST_LITERAL) final_array_len += node->literal.type == LIT_STRING ? strlen(child->literal.str_val) : 1;
 					}
+
+					final_array_len++;
 				} else if (p->current.type == PP_SIZEOF) {
 					size_t sz_value = parse_sizeof(p, false);
 					ASTNode* node = create_node(AST_LITERAL, p);
@@ -1226,8 +1236,12 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 					node->literal.int_val.value = sz_value;
 					node->literal.int_val.neg = false;
 					parser_advance(p);
+
+					final_array_len++;
 				} else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
 					child = parse_literal(p);
+					
+					if (child->type == AST_LITERAL) final_array_len += child->literal.type == LIT_STRING ? strlen(child->literal.str_val) : 1;
 				} else {
 					free_ast(p->root);
 					PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Value");
@@ -1255,12 +1269,20 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			} else {
 				bool continue_loop = true;
 				while (continue_loop) {
+					bool inc_fal = false; // inc final array len
+
 					if (!is_array) {
 						continue_loop = false;
 					}
 					if (p->current.type == IDENTIFIER_TOK) {
 					} else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
-						free_ast(parse_literal(p)); // Just there to ya know, do the job
+						ASTNode* lit = parse_literal(p);
+						if (lit->type == AST_LITERAL) {
+							final_array_len += lit->literal.type == LIT_STRING ? strlen(lit->literal.str_val) : 1;
+							inc_fal = true;
+						}
+
+						free_ast(lit); // Just there to ya know, do the job
 					} else {
 						free_ast(p->root);
 						PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, "Unknown Value");
@@ -1271,11 +1293,13 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 
 					if (p->current.type != COMMA) continue_loop = false;
 					else parser_advance(p);
+
+					if (!inc_fal) final_array_len++;
 				}
 			}
 		}
 
-		const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(opt_specified_type), MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, NULL) : NULL;
+		const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(opt_specified_type) * (is_array ? (array_len > 0 ? array_len : final_array_len) : 1), MACRO_TYPE_IDENTIFIER, sline, scol, p->lexer->file, out_m) : NULL;
 		if (err) {
 			free_ast(p->root);
 			PAC_ERRORF(p->lexer->file, sline, scol, p->lexer->src, p->lexer->len, true_name, tsize, err);
@@ -1321,7 +1345,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 			}
 			node = create_node(AST_LITERAL, p);
 			
-			if (is_sdigit(str)) {
+			if (is_sdigit(str) || (str[0] == '-' && is_sdigit(str + 1))) {
 				node->literal.type = LIT_INT;
 				node->literal.int_val.value = (uint64_t)strtoull(str, NULL, hex ? 16 : octal ? 8 : binary ? 2 : 10);
 				node->literal.int_val.neg = false;
@@ -1391,7 +1415,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
     return NULL;
 }
 
-ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefix, bool consume) {
+ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefix, bool consume, struct p_macro** out_m) {
     ASTNode* node = only_macros ? NULL : create_node(AST_RESERVE, p);
     if (consume) parser_advance(p); // consume :res
     if (p->current.type != IDENTIFIER_TOK) {
@@ -1501,7 +1525,7 @@ ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefi
 		node->reserve.name = name;
 	}
     
-	const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(res_type) * (is_array ? array_len : 1), MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, NULL) : NULL;
+	const char* err = add_macros ? new_macro(name, NULL, false, token_type_size(res_type) * (is_array ? array_len : 1), MACRO_TYPE_IDENTIFIER, p->current.line, p->current.column, p->lexer->file, out_m) : NULL;
 	if (err) {
 		free(true_name);
 		if (prefix) free(name);
@@ -1555,42 +1579,42 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 				parser_advance(p);
 			} else if (parser_check(p, LIT_INT)) {
 				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoll(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 10);
+				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 10);
 
 				size = out > 0xFFFFFFFF ? 8 : 4;
 
-				if (neg) snprintf(value, sizeof(value), "%llu", out);
-				else snprintf(value, sizeof(value), "-%llu", out);
+				if (neg) snprintf(value, sizeof(value), "-%llu", out);
+				else snprintf(value, sizeof(value), "%llu", out);
 
 				parser_advance(p);
 			} else if (parser_check(p, LIT_BIN)) {
 				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoll(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 2);
+				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 2);
 
 				size = out > 0xFFFFFFFF ? 8 : 4;
 
-				if (neg) snprintf(value, sizeof(value), "%llu", out);
-				else snprintf(value, sizeof(value), "-%llu", out);
+				if (neg) snprintf(value, sizeof(value), "-%llu", out);
+				else snprintf(value, sizeof(value), "%llu", out);
 				
 				parser_advance(p);
 			} else if (parser_check(p, LIT_HEX)) {
 				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoll(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 16);
+				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 16);
 
 				size = out > 0xFFFFFFFF ? 8 : 4;
 
-				if (neg) snprintf(value, sizeof(value), "%llu", out);
-				else snprintf(value, sizeof(value), "-%llu", out);
+				if (neg) snprintf(value, sizeof(value), "-%llu", out);
+				else snprintf(value, sizeof(value), "%llu", out);
 				
 				parser_advance(p);
 			} else if (parser_check(p, LIT_OCTAL)) {
 				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoll(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 8);
+				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 8);
 
 				size = out > 0xFFFFFFFF ? 8 : 4;
 
-				if (neg) snprintf(value, sizeof(value), "%llu", out);
-				else snprintf(value, sizeof(value), "-%llu", out);
+				if (neg) snprintf(value, sizeof(value), "-%llu", out);
+				else snprintf(value, sizeof(value), "%llu", out);
 				
 				parser_advance(p);
 			} else if (parser_check(p, LIT_STRING)) {
@@ -1889,6 +1913,8 @@ static void parse_struct(Parser* p, bool only_macros, bool add_macros, ASTNode* 
 	bool found = false;
 
 	struct p_macro* m = NULL;
+	size_t midx = 0;
+
 	size_t i = 0;
 	while (!parser_check(p, STRUCT_END)) {
 		if (parser_check(p, SP_EOL)) parser_advance(p);
@@ -1912,18 +1938,19 @@ static void parse_struct(Parser* p, bool only_macros, bool add_macros, ASTNode* 
 				free(name);
 				exit(PAC_Error_MemoryAllocationFailed);
 			}
+
+			midx = m->idx;
 		}
 
-		ASTNode* node = res ? parse_reserve(p, only_macros, add_macros, name, false) : parse_identifier(p, only_macros, add_macros, name);
-		if (node) {
-			add_child(parent, node);
-			
-			if (add_macros) {
-				if (node->type == AST_RESERVE) {
-					m->size += token_type_size(node->reserve.type);
-				} else if (node->type == AST_DECLIDENTIFIER) {
-					m->size += token_type_size(node->decl_identifier.type) * (node->decl_identifier.is_array ? node->decl_identifier.array_size : 1);
-				}
+		struct p_macro* node_m = NULL;
+		ASTNode* node = res ? parse_reserve(p, only_macros, add_macros, name, false, &node_m) : parse_identifier(p, only_macros, add_macros, name, &node_m);
+		
+		if (node) add_child(parent, node);
+		if (node_m) {
+			if (add_macros && (midx < macro_count)) {
+				// Re-update 'm'
+				m = &macros[midx];
+				m->size += node_m->size;
 			}
 		}
 
@@ -1991,7 +2018,7 @@ void parse_symbols(Parser* p) {
 				break;
 			}
 			case IDENTIFIER_TOK: {
-				stmt = parse_identifier(p, true, true, NULL);
+				stmt = parse_identifier(p, true, true, NULL, NULL);
 				break;
 			}
 			case SIZE_SEC:
@@ -2013,7 +2040,7 @@ void parse_symbols(Parser* p) {
 				break;
 			}
 			case RESERVE: {
-				stmt = parse_reserve(p, true, true, NULL, true);
+				stmt = parse_reserve(p, true, true, NULL, true, NULL);
 				break;
 			}
 			case FUNC_DEF: {
@@ -2114,7 +2141,7 @@ ASTNode* parse_program(Parser* p) {
 				break;
 			}
 			case IDENTIFIER_TOK: {
-				stmt = parse_identifier(p, false, false, NULL);
+				stmt = parse_identifier(p, false, false, NULL, NULL);
 				break;
 			}
 			case ALIGN: {
@@ -2176,7 +2203,7 @@ ASTNode* parse_program(Parser* p) {
 				break;
 			}
 			case RESERVE: {
-				stmt = parse_reserve(p, false, false, NULL, true);
+				stmt = parse_reserve(p, false, false, NULL, true, NULL);
 				break;
 			}
 			case FUNC_DEF: {
