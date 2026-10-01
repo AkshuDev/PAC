@@ -6,6 +6,7 @@
 	:global $readf
 	:global $writef
 	:global $print
+	:global $seekf
 
 // int readf(int fd, void* buf, size_t n)
 .func readf
@@ -41,5 +42,15 @@
 	syscall
 
 	xor %rax, %rax
+	ret
+.endfunc
+
+// void seekf(int fd, off_t offset, int whence)
+.func seekf
+	// Argument Mapping: rdi = fd, rsi = offset, rdx = whence
+	// Arguments already match
+	mov %rax, SYSCALL_LSEEK
+	syscall
+
 	ret
 .endfunc

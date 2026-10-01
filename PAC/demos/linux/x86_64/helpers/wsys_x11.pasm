@@ -7,6 +7,7 @@
 :section .text
 	:external $readf
 	:external $writef
+	:external $seekf
 	:external $print
 
 	:external $socket
@@ -46,6 +47,22 @@
 	done: // requires bytes read in rcx
 		mov %rax, %rcx
 		ret
+.endfunc
+
+// uint64_t align_up(uint64_t v, uint64_t alignment)
+.func align_up
+	sub %rsi, 1 // align -= 1;
+
+	// uint64_t out = v + align;
+	mov %rax, %rdi
+	add %rax, %rsi
+
+	// align = ~align;
+	not %rsi
+
+	// out = out & align;
+	and %rax, %rsi
+	ret
 .endfunc
 
 // bool wsys_x11_connect(void)
@@ -172,7 +189,7 @@
     cmp %rax, @sizeof(x11_setup_prefix)
     jl $wsys_x11_setup.fail
 
-	// read_exact(x11_fd, x11_setup_prefix, %rax)
+	// read_exact(x11_fd, x11_setup_prefix, sizeof(x11_setup_prefix))
 	xor %rdi, %rdi
     mov %edi, [x11_fd]
     lea %rsi, [x11_setup_prefix]
@@ -181,6 +198,33 @@
 
     cmp %rax, @sizeof(x11_setup_prefix)
     jne $wsys_x11_setup.fail
+
+	// Read Screens
+	mov %rbx, @sizeof(x11_setup_prefix)
+	add %rbx, [x11_setup_prefix.vendor_length]
+
+	mov %rdi, %rbx
+	mov %rsi, @sizeof(uint)
+	call $align_up
+	mov %rbx, %rax
+
+	mov %rax, [x11_setup_prefix.pixmap_formats_len]
+	shl %rax, 3
+	add %rbx, %rax
+
+	mov %rdi, [x11_fd]
+	mov %rsi, %rbx
+	mov %rdx, FIO_SEEK_SET
+	call $seekf
+
+	// read_exact(x11_fd, x11_screen, sizeof(x11_screen))
+	mov %rdi, [x11_fd]
+	lea %rsi, [x11_screen]
+	mov %rdx, @sizeof(x11_screen)
+	call $read_exact
+
+	cmp %rax, @sizeof(x11_screen)
+	jl $wsys_x11_setup.fail
 
 	success:
 		mov %rax, 1
