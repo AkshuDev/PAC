@@ -39,7 +39,10 @@ typedef struct {
     LinkerFormat linkformat;
 } Args;
 
-void print_usage(const char* prog) {
+static Args args = {0};
+static char** encoded_files = NULL;
+
+static void print_usage(const char* prog) {
     printf("Usage: %s -o <output_file> [--verbose] <input_files...>\n", prog);
     printf("Options:\n");
     printf("\t-o, --output <file>       Set output file (required)\n");
@@ -64,7 +67,7 @@ void print_usage(const char* prog) {
 	printf("\t--err-info <code> Get Information on any PAC Status/Exit Code\n");
 }
 
-bool parse_args(int argc, char** argv, Args* args) {
+static bool parse_args(int argc, char** argv, Args* args) {
     // Defaults
     args->output_file = NULL;
     args->input_files = NULL;
@@ -250,7 +253,7 @@ bool parse_args(int argc, char** argv, Args* args) {
     return true;
 }
 
-char* read_file(const char* path, size_t* len) {
+static char* read_file(const char* path, size_t* len) {
     FILE* f = fopen(path, "r");
     if (!f) {
         fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
@@ -268,20 +271,7 @@ char* read_file(const char* path, size_t* len) {
     return buffer;
 }
 
-bool write_file(const char* path, void* data, size_t len) {
-    FILE* f = fopen(path, "wb");
-    if (!f) {
-        fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
-        return false;
-    }
-    fseek(f, 0, SEEK_SET);
-    fwrite(data, 1, len, f);
-    fflush(f);
-    fclose(f);
-	return true;
-}
-
-FILE* open_file(const char* path, const char* mode) {
+static FILE* open_file(const char* path, const char* mode) {
     FILE* f = fopen(path, mode);
     if (!f) {
         fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
@@ -291,7 +281,7 @@ FILE* open_file(const char* path, const char* mode) {
     return f;
 }
 
-void perform_lexout(Args* args, char** file_l, int idx, int count) {
+static void perform_lexout(Args* args, char** file_l, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Lexing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
@@ -320,7 +310,7 @@ void perform_lexout(Args* args, char** file_l, int idx, int count) {
     }
 }
 
-void perform_parseout(Args* args, char** file_l, int idx, int count) {
+static void perform_parseout(Args* args, char** file_l, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Parsing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
@@ -356,7 +346,7 @@ void perform_parseout(Args* args, char** file_l, int idx, int count) {
     }
 }
 
-void perform_asmout(char** file_l, Args* args, int idx, int count) {
+static void perform_asmout(char** file_l, Args* args, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Assembling file: %s\n" COLOR_RESET, file);
     size_t len = 0;
@@ -434,8 +424,38 @@ void perform_asmout(char** file_l, Args* args, int idx, int count) {
     }
 }
 
+static void on_exit(void) {
+	if (encoded_files) {
+		if (args.input_count > 1) {
+			for (int i = 0; i < args.input_count; i++) {
+				char* outfile = encoded_files[i];
+				if (!outfile) continue;
+				
+				if (!args.savetemps && !args.only_asm) remove(outfile);
+				if (encoded_files[i]) free(encoded_files[i]);
+			}
+		} else {
+			if (encoded_files[0]) {
+				if (args.only_asm && !args.savetemps)
+					rename(encoded_files[0], args.output_file);
+				else
+					remove(encoded_files[0]);
+
+				free(encoded_files[0]);
+			}
+		}
+		free(encoded_files);
+		encoded_files = NULL;
+	}
+    
+	if (args.inc_dirs) {
+		free(args.inc_dirs);
+		args.inc_dirs = NULL;
+	}
+}
+
 int main(int argc, char** argv) {
-    Args args;
+	atexit(on_exit);
 
     if (!parse_args(argc, argv, &args)) {
         return PAC_Error_ArgumentInvalidUsage;
@@ -491,15 +511,12 @@ int main(int argc, char** argv) {
 		return PAC_Success;
 	}
 
-    char** encoded_files = calloc(args.input_count, 128);
+    encoded_files = calloc(args.input_count, 128);
     
     for (int i = 0; i < args.input_count; i++){    
         size_t len = 0;
         char* src = read_file(args.input_files[i], &len);
-		if (!src) {
-			if (args.inc_dirs) free(args.inc_dirs);
-			exit(PAC_Error_FileReadFailed);
-		}
+		if (!src) exit(PAC_Error_FileReadFailed);
 
         Lexer lexer = init_lexer(src, len, args.input_files[i]);
         Parser parser = init_parser(&lexer);
@@ -544,11 +561,7 @@ int main(int argc, char** argv) {
 			free_ir_list(&irlist);
 			section_free(&sectab);
 
-			for (int i = 0; i < args.input_count; i++) free(encoded_files[i]);
-			free(encoded_files);
-			if (args.inc_dirs) free(args.inc_dirs);
-			
-			return PAC_Error_Unknown;
+			exit(PAC_Error_Unknown);
 		}
 
         free(src);
@@ -563,23 +576,32 @@ int main(int argc, char** argv) {
 		linking_success = pac_link(args.entry_label, args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
 	}
 
-    if (args.input_count > 1) {
-        for (int i = 0; i < args.input_count; i++) {
-            char* outfile = encoded_files[i];
-            if (!args.savetemps && !args.only_asm) remove(outfile);
-            if (encoded_files[i]) free(encoded_files[i]);
-        }
-    } else {
-        if (args.only_asm && !args.savetemps)
-            rename(encoded_files[0], args.output_file);
-        else
-            remove(encoded_files[0]);
+    if (encoded_files) {
+		if (args.input_count > 1) {
+			for (int i = 0; i < args.input_count; i++) {
+				char* outfile = encoded_files[i];
+				if (!outfile) continue;
+				
+				if (!args.savetemps && !args.only_asm) remove(outfile);
+				if (encoded_files[i]) free(encoded_files[i]);
+			}
+		} else {
+			if (encoded_files[0]) {
+				if (args.only_asm && !args.savetemps)
+					rename(encoded_files[0], args.output_file);
+				else
+					remove(encoded_files[0]);
 
-        if (encoded_files[0]) free(encoded_files[0]);
-    }
-
-    if (encoded_files) free(encoded_files);
-	if (args.inc_dirs) free(args.inc_dirs);
+				free(encoded_files[0]);
+			}
+		}
+		free(encoded_files);
+		encoded_files = NULL;
+	}
+	if (args.inc_dirs) {
+		free(args.inc_dirs);
+		args.inc_dirs = NULL;
+	}
 
     return linking_success ? PAC_Success : PAC_Error_LinkingFailed;
 }

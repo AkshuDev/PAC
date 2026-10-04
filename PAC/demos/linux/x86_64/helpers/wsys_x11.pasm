@@ -5,10 +5,11 @@
 @inc "sys.pasm"
 
 :section .text
+	:external $print
+	
 	:external $readf
 	:external $writef
 	:external $seekf
-	:external $print
 
 	:external $socket
 	:external $socket_connect
@@ -32,7 +33,16 @@
 		mov %rdx, %rbx
 		sub %rdx, %rcx
 
+		push %r8
+		push %rbx
+		push %rcx
+		push %rdx
 		call $readf
+		pop %rdx
+		pop %rcx
+		pop %rbx
+		pop %r8
+
 		cmp %rax, 0
 		jle $read_exact.done
 
@@ -188,16 +198,6 @@
 
     cmp %rax, @sizeof(x11_setup_prefix)
     jl $wsys_x11_setup.fail
-
-	// read_exact(x11_fd, x11_setup_prefix, sizeof(x11_setup_prefix))
-	xor %rdi, %rdi
-    mov %edi, [x11_fd]
-    lea %rsi, [x11_setup_prefix]
-    mov %rdx, @sizeof(x11_setup_prefix)
-	call $read_exact
-
-    cmp %rax, @sizeof(x11_setup_prefix)
-    jne $wsys_x11_setup.fail
 
 	// Read Screens
 	mov %rbx, @sizeof(x11_setup_prefix)

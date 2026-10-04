@@ -574,8 +574,8 @@ static void merge_outsections(SectionOrder* order, OutSection* outsecs, ObjectFi
     }
 }
 
-static void resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
-	if (!objfiles || objfile_count < 1) return;
+static bool resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
+	if (!objfiles || objfile_count < 1) return false;
 
 	for (size_t i = 0; i < objfile_count; i++) {
 		ObjectFile* ofile = &objfiles[i];
@@ -585,27 +585,44 @@ static void resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
 			const char* name = ofile->strtab + sym->st_name;
 
 			if (osym->vis == SYM_VIS_EXTERNAL) {
+				bool found = false;
+
 				for (size_t k = 0; k < objfile_count; k++) {
 					ObjectFile* ext_ofile = &objfiles[k];
+
+					bool found_osym = false;
 					for (size_t l = 0; l < ext_ofile->symbol_count; l++) {
 						ObjectSymbol* ext_osym = &ext_ofile->symbols[l];
 						Elf64_Sym* ext_sym = &ext_osym->sym;
 						if (ext_sym->st_name > ext_ofile->data_len) continue;
 						
 						const char* ext_name = ext_sym->st_name + ext_ofile->strtab;
-						if (strcmp(name, ext_name) == 0) {
+						if (strcmp(name, ext_name) == 0 && ext_osym->vis == SYM_VIS_GLOBAL) {
 							sym->st_value = ext_sym->st_value;
 							sym->st_size = ext_sym->st_size;
 							sym->st_info = ext_sym->st_info;
 							sym->st_other = ext_sym->st_other;
 							
 							osym->section = ext_osym->section;
+
+							found = true;
+							found_osym = true;
+							break;
 						}
 					}
+
+					if (found_osym) break;
+				}
+
+				if (!found) {
+					fprintf(stderr, COLOR_RED "Linker Error: Symbol '%s' couldn't be resolved!" COLOR_RESET, name);
+					return false;
 				}
 			}
 		}
 	}
+
+	return true;
 }
 
 static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
@@ -656,7 +673,17 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 	}
 
 	// Resolve Symbols
-	resolve_extern_symbols(objfiles, objfile_count);
+	if (!resolve_extern_symbols(objfiles, objfile_count)) {
+		for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
+	}
 
 	// Precompute PHdrs Count and Recompute Memory Alignment
 	size_t phdr_count = 1;
@@ -1271,6 +1298,19 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(outsecs);
 
 		free_objfile(objfiles, objfile_count);
+	}
+
+	// Resolve Symbols
+	if (!resolve_extern_symbols(objfiles, objfile_count)) {
+		for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
 	}
 
 	// Precompute PHdrs Count and Recompute Memory Alignment

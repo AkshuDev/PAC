@@ -367,7 +367,8 @@ static size_t parse_sizeof(Parser* p, bool jst_verify) {
 	size_t size = 0;
 
 	if (p->current.type >= T_BYTE && p->current.type <= T_PTR) {
-		size = token_type_size(p->current.type);	
+		size = token_type_size(p->current.type);
+		parser_advance(p);
 	} else {
 		if (!parser_check(p, IDENTIFIER_TOK)) {
 			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an identifier");

@@ -22,6 +22,7 @@
 - Added higher security against malformed programs
 - Added linker fail check in exit status
 - Added better memory management
+- Added better symbol resolution
 
 ### Additions
 - Added Changelog to package

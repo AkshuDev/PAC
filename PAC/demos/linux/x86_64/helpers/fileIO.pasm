@@ -32,7 +32,7 @@
 // void print(const void* buf, size_t n)
 .func print
 	// Argument Mapping: rdi = buf, rsi = n
-	
+	// Arguments already match
 	mov %rax, SYSCALL_WRITE
 	
 	mov %rdx, %rsi

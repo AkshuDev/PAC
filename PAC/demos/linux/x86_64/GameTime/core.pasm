@@ -3,11 +3,11 @@
 @inc "sys.pasm"
 
 :section .text
+	:external $print
+
 	:external $wsys_x11_connect
 	:external $wsys_x11_close
 	:external $wsys_x11_setup
-
-	:external $print
 
 	:global _start
 
