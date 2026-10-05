@@ -5,10 +5,10 @@
 #define __PAC_LEXER_VERSION__ "1.0.4lex"
 #define __PAC_PARSER_VERSION__ "1.0.5par"
 #define __PAC_ASSEMBLER_VERSION__ "1.0.5asm"
-#define __PAC_LINKER_VERSION__ "1.0.2lnk"
+#define __PAC_LINKER_VERSION__ "1.0.3lnk"
 #define __PAC_ENCODER_x86_64_VERSION__ "1.0.5enc-x86_64"
 #define __PAC_ENCODER_x86_VERSION__ "1.0.5enc-x86"
-#define __PAC_ENC_PVCPU_VERSION__ "0.1.7enc-pvcpu"
+#define __PAC_ENC_PVCPU_VERSION__ "0.1.8enc-pvcpu"
 
 #define __PAC_INFO__ "PAC-" __PAC_VERSION__ " (Pheonix Assembler Collection - Version " __PAC_VERSION__ ")\n"
 #define __PAC_LEXER_INFO__ "PAC-" __PAC_LEXER_VERSION__ " (Pheonix Assembler Collection - Lexer - Version " __PAC_LEXER_VERSION__ ")\n"

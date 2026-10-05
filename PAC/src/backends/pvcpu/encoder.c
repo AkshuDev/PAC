@@ -604,10 +604,11 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
                 case OPERAND_LIT_INT: {
 					if (operand && operand[0] == '-') imm.neg = true;
                     imm.value = (uint64_t)strtoull(imm.neg ? &operand[1] : operand, NULL, 10);
-                    is_symbol = false;
+                    
+					is_symbol = false;
                     mode = mode == MODE_REG_REG ? MODE_REG_IMM : mode;
                     if (imm.value > 0b111111) {
-                        mode = mode == MODE_REG_REG ? MODE_REG_EXTIMM : mode;
+                        mode = mode == MODE_REG_IMM ? MODE_REG_EXTIMM : mode; // We set it to MODE_REG_IMM
                     }
                     break;
 				}
@@ -668,13 +669,18 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
         if (mode == MODE_SRC_IMM && imm.value < 0b111111) mode = MODE_SRC_REG_IMM;
 
 		switch (mode) {
-			case MODE_REG_REG:
-			case MODE_REG_IMM:
 			case MODE_LOAD_REGADDR:
 			case MODE_STORE_REGADDR:
+			case MODE_REG_REG: {
+				break;
+			}
+
+			case MODE_REG_IMM:
 			case MODE_SRC_REG_IMM: {
 				if (src.valid) dest = src;
 				src.code = (uint8_t)imm.value;
+				src.valid = true;
+
 				if (flags & FLAGS_IMM) flags &= ~(FLAGS_IMM);
 				break;
 			}

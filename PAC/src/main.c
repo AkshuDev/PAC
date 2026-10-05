@@ -138,7 +138,7 @@ static bool parse_args(int argc, char** argv, Args* args) {
                 break;
             case 'h':
                 print_usage(argv[0]);
-				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
+				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs = NULL; args->inc_dirs_count = 0;}
                 exit(PAC_Success);
             case 'd':
                 args->debug_symbols = true;
@@ -146,7 +146,7 @@ static bool parse_args(int argc, char** argv, Args* args) {
             case 'a':
                 args->arch = archs_to_archenum(optarg);
                 if (args->arch == UNKNOWN_ARCH) {
-					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs = NULL; args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Unknown Architecture [%s]\n" COLOR_RESET, optarg);
                     return false;
                 }
@@ -154,7 +154,7 @@ static bool parse_args(int argc, char** argv, Args* args) {
             case 'b':
                 args->bits = atoi(optarg);
                 if (args->bits != 16 && args->bits != 32 && args->bits != 64) {
-					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs = NULL; args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Bits must be 16/32/64\n" COLOR_RESET);
                     return false;
                 }
@@ -187,13 +187,13 @@ static bool parse_args(int argc, char** argv, Args* args) {
                 args->entry_label = optarg;
                 break;
             case 1004:
-				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
+				if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs = NULL; args->inc_dirs_count = 0;}
                 printf(COLOR_GREEN __PAC_FULL_INFO__ COLOR_RESET);
                 exit(PAC_Success);
             case 'f':
                 args->linkformat = str_to_linker_format(optarg);
                 if (args->linkformat == (LinkerFormat)-1) {
-					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs_count = 0;}
+					if (args->inc_dirs_count < 1) {free(args->inc_dirs); args->inc_dirs = NULL; args->inc_dirs_count = 0;}
                     fprintf(stderr, COLOR_RED "Error: Unknown Output format: %s\n" COLOR_CYAN "Tip: Supported Output formats are: elf64/elf32/win64/win32\n" COLOR_RESET, optarg);
                     exit(PAC_Error_UnsupportedObjectFormat);
                 }
@@ -228,6 +228,9 @@ static bool parse_args(int argc, char** argv, Args* args) {
             case '?': // unknown option
             default:
 				free(args->inc_dirs);
+				args->inc_dirs = NULL; 
+				args->inc_dirs_count = 0;
+
                 print_usage(argv[0]);
                 return false;
         }
@@ -286,10 +289,8 @@ static void perform_lexout(Args* args, char** file_l, int idx, int count) {
     printf(COLOR_CYAN "Lexing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
-	if (!src) {
-		if (args->inc_dirs) free(args->inc_dirs);
-		exit(PAC_Error_FileReadFailed);
-	}
+	if (!src) exit(PAC_Error_FileReadFailed);
+	
     Lexer lx = init_lexer(src, len, file);
     Token tk;
 
@@ -315,10 +316,8 @@ static void perform_parseout(Args* args, char** file_l, int idx, int count) {
     printf(COLOR_CYAN "Parsing file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
-	if (!src) {
-		if (args->inc_dirs) free(args->inc_dirs);
-		exit(PAC_Error_FileReadFailed);
-	}
+	if (!src) exit(PAC_Error_FileReadFailed);
+
     Lexer lx = init_lexer(src, len, file);
     Parser parser = init_parser(&lx);
 	parser.inc_dirs = args->inc_dirs;
@@ -351,10 +350,7 @@ static void perform_asmout(char** file_l, Args* args, int idx, int count) {
     printf(COLOR_CYAN "Assembling file: %s\n" COLOR_RESET, file);
     size_t len = 0;
     char* src = read_file(file, &len);
-	if (!src) {
-		if (args->inc_dirs) free(args->inc_dirs);
-		exit(PAC_Error_FileReadFailed);
-	}
+	if (!src) exit(PAC_Error_FileReadFailed);
 
     Lexer lx = init_lexer(src, len, file);
     Parser parser = init_parser(&lx);
@@ -383,10 +379,8 @@ static void perform_asmout(char** file_l, Args* args, int idx, int count) {
 
     if (args->savetemps) {
         FILE* f = open_file("asave.paci", "w");
-		if (!f) {
-			if (args->inc_dirs) free(args->inc_dirs);
-			exit(PAC_Error_FileOpenFailed);
-		}
+		if (!f) exit(PAC_Error_FileOpenFailed);
+
         char buf[512];
         for (size_t i = 0; i < sectable.count; i++) {
             Section sec = sectable.sections[i];
@@ -489,19 +483,16 @@ int main(int argc, char** argv) {
 
     if (args.lexout) {
         perform_lexout(&args, args.input_files, 0, args.input_count);
-		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 
     if (args.parseout) {
         perform_parseout(&args, args.input_files, 0, args.input_count);
-		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 
     if (args.asmout) {
         perform_asmout(args.input_files, &args, 0, args.input_count);
-		if (args.inc_dirs) free(args.inc_dirs);
         return PAC_Success;
     }
 
@@ -601,6 +592,7 @@ int main(int argc, char** argv) {
 	if (args.inc_dirs) {
 		free(args.inc_dirs);
 		args.inc_dirs = NULL;
+		args.inc_dirs_count = 0;
 	}
 
     return linking_success ? PAC_Success : PAC_Error_LinkingFailed;

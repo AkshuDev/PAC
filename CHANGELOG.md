@@ -23,6 +23,7 @@
 - Added linker fail check in exit status
 - Added better memory management
 - Added better symbol resolution
+- Fixed PVCpu IMM Bug
 
 ### Additions
 - Added Changelog to package
