@@ -1,6 +1,9 @@
 #pragma once
 
 // This file has all info about PAC
+#define __PAC_MAJOR_VERSION__ 1
+#define __PAC_MINOR_VERSION__ 0
+
 #define __PAC_VERSION__ "1.0.4"
 #define __PAC_LEXER_VERSION__ "1.0.4lex"
 #define __PAC_PARSER_VERSION__ "1.0.5par"

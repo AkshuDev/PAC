@@ -754,8 +754,7 @@ bool encode_pvcpu(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unlo
 
         emit_bytes(out, (uint8_t*)&outbytes, 4);
 
-        if (flags & FLAGS_IMM)
-            emit_bytes(out, (uint8_t*)&imm.value, flags & FLAGS_64 ? 8 : 4);
+        if (flags & FLAGS_IMM) emit_bytes(out, (uint8_t*)&imm.value, flags & FLAGS_64 ? 8 : 4);
     }
 
     if (inst_written > text_sec->size) {

@@ -4,10 +4,14 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
+
 #include <elf.h>
+#include <pecoff.h>
 
 #include <sys/stat.h>
 
+#include <pac.h>
 #include <pac-linker.h>
 #include <pac-asm.h>
 #include <pac-extra.h>
@@ -451,8 +455,18 @@ static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFil
 	}
 }
 
-static bool precompute_addresses(SectionOrder* order, OutSection* outsecs, ObjectFile* objfiles, size_t objfile_count, size_t* vaddr, size_t* file_off) {
+static bool precompute_addresses(SectionOrder* order, OutSection* outsecs, ObjectFile* objfiles, size_t objfile_count, size_t* vaddr, size_t* file_off, bool const_outsec_alignment) {
 	if (!order || !outsecs || !objfiles || objfile_count < 1 || !vaddr || !file_off) return false;
+
+	size_t const_align = 0;
+	if (const_outsec_alignment) {
+		for (size_t a = 0; a < objfile_count; a++) {
+            for (size_t b = 0; b < objfiles[a].section_count; b++) {
+                InSection* s = &objfiles[a].sections[b];
+				const_align = max(const_align, s->sh.sh_addralign);
+            }
+        }
+	}
 
 	for (size_t i = 0; i < order->count; i++) {
         const char* name = order->names[i];
@@ -470,7 +484,7 @@ static bool precompute_addresses(SectionOrder* order, OutSection* outsecs, Objec
 					osec->size += s->sh.sh_size;
 					if (s->sh.sh_type == SHT_NOBITS) alloc = false;
 
-					osec->max_align = max(osec->max_align, s->sh.sh_addralign);
+					osec->max_align = const_outsec_alignment ? const_align : max(osec->max_align, s->sh.sh_addralign);
                     osec->padded_size = off;
                     osec->sh_flags = s->sh.sh_flags;
                     osec->sh_type = s->sh.sh_type;
@@ -658,7 +672,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     size_t file_off = sizeof(Elf64_Ehdr) + (total_sections * sizeof(Elf64_Shdr));
 
     // Precompute all addresses
-    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off)) {
+    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off, false)) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
@@ -1287,7 +1301,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     size_t file_off = sizeof(Elf64_Ehdr) + (total_sections * sizeof(Elf64_Shdr));
 
     // Precompute all addresses
-    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off)) {
+    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off, false)) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
@@ -1922,7 +1936,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
     size_t file_off = 0;
 
     // Precompute all addresses
-    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off)) {
+    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off, false)) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
@@ -1987,6 +2001,345 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 	return false;
 }
 
+static uint64_t calculate_pe_checksum(uint8_t* buf, size_t sz) {
+    if (sz < 64) return 0;
+
+    uint64_t total_sum = 0;
+    size_t num_words = sz / 2;
+    uint16_t* word_ptr = (uint16_t*)buf;
+
+    for (size_t i = 0; i < num_words; i++) {
+        total_sum += word_ptr[i];
+        total_sum = (total_sum & 0xFFFF) + (total_sum >> 16);
+    }
+
+    if (sz % 2 != 0) {
+        total_sum += buf[sz - 1];
+        total_sum = (total_sum & 0xFFFF) + (total_sum >> 16);
+    }
+
+    total_sum = (total_sum & 0xFFFF) + (total_sum >> 16);
+    total_sum = (total_sum & 0xFFFF) + (total_sum >> 16);
+    uint32_t final_checksum = (uint32_t)(total_sum & 0xFFFF);
+
+    final_checksum += (uint32_t)sz;
+    return final_checksum;
+}
+
+static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
+    if (!input_files || input_file_count == 0 || !outfile) {
+        fprintf(stderr, COLOR_RED "Linker Error: No input/output files provided!\n" COLOR_RESET);
+        return false;
+    }
+
+	// DOS Stub
+	const uint8_t dos_stub[64] = {
+		0x0E, 0x1F, 0xBA, 0x0E, 0x00, 0xB4, 0x09, 0xCD, 0x21, 0xB8, 0x01, 0x4C, 0xCD, 0x21, 0x54, 0x68,
+		0x69, 0x73, 0x20, 0x70, 0x72, 0x6F, 0x67, 0x72, 0x61, 0x6D, 0x20, 0x63, 0x61, 0x6E, 0x6E, 0x6F,
+		0x74, 0x20, 0x62, 0x65, 0x20, 0x72, 0x75, 0x6E, 0x20, 0x69, 0x6E, 0x20, 0x44, 0x4F, 0x53, 0x20,
+		0x6D, 0x6F, 0x64, 0x65, 0x2E, 0x0D, 0x0D, 0x0A, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+    ObjectFile* objfiles = NULL;
+    size_t objfile_count = 0;
+    SectionOrder order = {0};
+
+    size_t machine = 0;
+    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &order)) return false;
+    
+    size_t total_sections = order.count; // Sections
+
+    OutSection* outsecs = calloc(order.count, sizeof(OutSection));
+	if (!outsecs) {
+		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
+
+		for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+
+		free_objfile(objfiles, objfile_count);
+	}
+
+    size_t section_count = order.count;
+    size_t image_vaddr_start = align_up(sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64) + (total_sections * sizeof(Section_Hdr)) + PAGE_SIZE, PAGE_SIZE); // RVA
+	size_t vaddr = image_vaddr_start;
+    size_t file_off = image_vaddr_start;
+
+    // Compute all addresses (Use Precompute function, but don't recompute as no extra variable in file offset is present)
+    if (!precompute_addresses(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off, true)) {
+		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
+
+        for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
+	}
+
+	// Resolve Symbols
+	if (!resolve_extern_symbols(objfiles, objfile_count)) {
+		for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
+	}
+
+	// Resolve Relocations
+	for (size_t i = 0; i < objfile_count; i++) {
+		ObjectFile* ofile = &objfiles[i];
+		if (ofile->rela_count <= 0) continue;
+		for (size_t j = 0; j < ofile->rela_count; j++) {
+			InRelocation* irel = &ofile->relas[j];
+			resolve_relocs(irel, ofile, j);
+		}
+	}
+
+	// Merge
+	merge_outsections(&order, outsecs, objfiles, objfile_count);
+
+	uint32_t entry_vaddr = 0;
+	bool found_entry = false;
+	
+	if (entry == NULL) {
+		entry = "_start";
+		printf(COLOR_YELLOW "Linker Warning: No Entry Label Specified, Defaulting to '_start'\n" COLOR_RESET);
+	}
+
+    for (size_t i = 0; i < objfile_count; i++) {
+        ObjectFile* ofile = &objfiles[i];
+        for (size_t j = 1; j < ofile->symbol_count; j++) { // First symbol is NULL
+			ObjectSymbol* osym = &ofile->symbols[j];
+			if (osym->vis == SYM_VIS_EXTERNAL) continue; // Repeated Symbol
+            Elf64_Sym* insym = &osym->sym;
+
+			const char* name = ofile->strtab + insym->st_name;
+
+			if (insym->st_shndx < SHN_LORESERVE && strcmp(name, entry) == 0 && !found_entry) {
+				entry_vaddr = image_vaddr_start + (uint32_t)insym->st_value;
+				found_entry = true;
+			}
+        }
+    }
+
+	if (!found_entry) {
+		char* esname = NULL;
+		for (size_t i = 0; i < order.count; i++) {
+			OutSection* osec = &outsecs[i];
+			if (osec->sh_type == SHT_PROGBITS) {
+				entry_vaddr = osec->out_vaddr;
+				esname = osec->name;
+				break;
+			}
+		}
+
+		if (esname)
+			printf(COLOR_YELLOW "Linker Warning: Could not find any entry that matches '%s', using base virtual address of '%s' section\n" COLOR_RESET, entry, esname);
+		else
+			printf(COLOR_YELLOW "Linker Warning: Could not find any entry that matches '%s' or any PROGBITS section, using base virtual address of executable\n" COLOR_RESET, entry);
+	}
+
+	size_t code_size = 0;
+	size_t data_init_size = 0;
+	size_t data_uninit_size = 0;
+	size_t full_size = 0;
+
+	for (size_t i = 0; i < total_sections; i++) {
+		OutSection* osec = &outsecs[i];
+
+		if (osec->sh_type == SHT_PROGBITS) {
+			code_size += osec->size;
+		} else if (osec->sh_type == SHT_NOBITS) {
+			data_uninit_size += osec->size;
+		} else if (osec->sh_flags & SHF_ALLOC) {
+			data_init_size += osec->size;
+		}
+
+		full_size = align_up(full_size + osec->padded_size, PAGE_SIZE);
+	}
+
+	// Headers
+	DOS_Hdr dos_hdr = {0};
+	memcpy(&dos_hdr.e_magic, DOS_MAGIC, sizeof(dos_hdr.e_magic));
+	dos_hdr.e_cblp = sizeof(DOS_Hdr) + sizeof(dos_stub);
+	dos_hdr.e_cp = 1;
+	dos_hdr.e_crlc = 0; // Image file
+	dos_hdr.e_cparhdr = sizeof(DOS_Hdr) / 16; // Paragraph size is 16 bytes
+	dos_hdr.e_minalloc = 0;
+	dos_hdr.e_maxalloc = 0xFFFF;
+	dos_hdr.e_sp = 0xB8;
+	dos_hdr.e_lfarlc = sizeof(DOS_Hdr);
+	dos_hdr.e_lfanew = sizeof(DOS_Hdr) + sizeof(dos_stub);
+
+	time_t timestamp;
+	time(&timestamp);
+
+	PE_Hdr pe_hdr = {0};
+	memcpy(&pe_hdr.magic, PE_MAGIC, sizeof(pe_hdr.magic));
+	pe_hdr.machine = machine;
+	pe_hdr.no_of_sections = total_sections;
+	pe_hdr.time_date_stamp = timestamp & 0xFFFFFFFF;
+	pe_hdr.ptr_to_symtab = 0; // Image file doesn't include symbols
+	pe_hdr.no_of_symbols = 0; // Image file doesn't include symbols
+	pe_hdr.size_of_optional_header = sizeof(Optional_Hdr_64);
+	pe_hdr.characteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
+
+	Optional_Hdr_64 optional_hdr = {0};
+	optional_hdr.magic = Optional_Hdr_32p_Magic;
+	optional_hdr.major_linker_version = __PAC_MAJOR_VERSION__;
+	optional_hdr.minor_linker_version = __PAC_MINOR_VERSION__;
+	optional_hdr.size_of_code = code_size;
+	optional_hdr.size_of_init_data = data_init_size;
+	optional_hdr.size_of_uninit_data = data_uninit_size;
+	optional_hdr.addr_of_entry = entry_vaddr;
+	optional_hdr.base_of_code = 0;
+	optional_hdr.image_base = base_vaddr;
+	optional_hdr.section_alignment = PAGE_SIZE;
+	optional_hdr.file_alignment = outsecs[0].memalign; // Since all sections have constant alignment (passed param to computation function)
+	optional_hdr.major_os_version = 10;
+	optional_hdr.minor_os_version = 0;
+	optional_hdr.major_image_version = 0;
+	optional_hdr.minor_image_version = 0;
+	optional_hdr.major_subsys_version = 6;
+	optional_hdr.minor_subsys_version = 0;
+	optional_hdr.win32_version_val = 0;
+	optional_hdr.size_of_headers = align_up(sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64) + (total_sections * sizeof(Section_Hdr)), optional_hdr.file_alignment);
+	optional_hdr.size_of_image = align_up(optional_hdr.size_of_headers + full_size, optional_hdr.section_alignment);
+	optional_hdr.subsys = IMAGE_SUBSYSTEM_WINDOWS_CUI;
+	optional_hdr.size_of_stack_reserve = 0x100000; // 1MB
+	optional_hdr.size_of_stack_commit = PAGE_SIZE;
+	optional_hdr.size_of_heap_reserve = 0x100000; // 1 MB
+	optional_hdr.size_of_heap_commit = PAGE_SIZE;
+	optional_hdr.loader_flags = 0;
+	optional_hdr.no_of_rva_and_sizes = 0;
+
+    FILE* f = fopen(outfile, "wb");
+    if (!f) {
+		perror(COLOR_RED "Linker Error: Failed to open output file!\n" COLOR_RESET);
+
+        for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
+    }
+
+    fwrite(&dos_hdr, sizeof(dos_hdr), 1, f);
+	fwrite(&dos_stub, sizeof(dos_stub), 1, f);
+	fwrite(&pe_hdr, sizeof(pe_hdr), 1, f);
+	fwrite(&optional_hdr, sizeof(optional_hdr), 1, f);
+
+    Section_Hdr* shdrs = calloc(total_sections, sizeof(Section_Hdr));
+    if (!shdrs) {
+		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
+
+		fclose(f);
+
+        for (size_t i = 0; i < order.count; i++) {
+			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (order.names[i]) free(order.names[i]);
+		}
+        free(order.names);
+		free(outsecs);
+
+        free_objfile(objfiles, objfile_count);
+        return false;
+    }
+	fwrite(shdrs, sizeof(Section_Hdr), total_sections, f);
+
+    for (size_t i = 0; i < section_count; i++) {
+        fseek(f, outsecs[i].out_offset, SEEK_SET);
+        if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
+        if (outsecs[i].padded_size > outsecs[i].size) {
+            for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
+                fwrite("\0", 1, 1, f);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < section_count; i++) {
+		OutSection* osec = &outsecs[i];
+		Section_Hdr* shdr = &shdrs[i];
+
+		size_t oname_len = strlen(osec->name);
+
+		memset(shdr, 0, sizeof(Section_Hdr));
+        if (osec->name) memcpy(&shdr->name, (const uint8_t*)osec->name, min(sizeof(shdr->name), oname_len));
+		else shdr->name = 0;
+
+        shdr->ptr_to_raw_data = osec->out_offset;
+        shdr->virtual_addr = osec->out_vaddr;
+        shdr->virtual_size = osec->padded_size;
+		shdr->size_of_raw_data = osec->size;
+		
+		if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_EXECINSTR && osec->sh_type == SHT_PROGBITS) {
+			shdr->characteristics = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
+			shdr->characteristics = IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
+		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
+			shdr->characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
+		} else if (osec->sh_flags & SHF_ALLOC) {
+			shdr->characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+		} else {
+			shdr->characteristics = IMAGE_SCN_MEM_DISCARDABLE;
+		}
+    }
+
+    fseek(f, sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64), SEEK_SET);
+    fwrite(shdrs, sizeof(Section_Hdr), total_sections, f);
+
+	size_t cursz = ftell(f);
+	for (size_t i = cursz; i < optional_hdr.size_of_headers; i++) {
+		fwrite("\0", 1, 1, f);
+	}
+
+	fflush(f);
+	
+	free(shdrs);
+	for (size_t i = 0; i < order.count; i++) {
+		if (outsecs[i].name) free(outsecs[i].buffer);
+		if (order.names[i]) free(order.names[i]);
+	}
+	free(order.names);
+	free(outsecs);
+
+	free_objfile(objfiles, objfile_count);
+
+	fseek(f, 0, SEEK_END);
+	size_t sz = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	
+	uint8_t* data = (uint8_t*)malloc(sz);
+	if (!data) {
+		fclose(f);
+		return false;
+	}
+	fread(data, sz, 1, f);
+
+	optional_hdr.checksum = calculate_pe_checksum(data, sz);
+	free(data);
+
+	fseek(f, sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr), SEEK_SET);
+	fwrite(&optional_hdr, sizeof(optional_hdr), 1, f);
+
+	fclose(f);
+    return true;
+}
+
 bool pac_link(char* entry, char* outfile, char** input_files, size_t input_file_count, LinkerFormat outformat, size_t base_vaddr) {
 	if (!input_files || input_file_count == 0 || !outfile) {
         fprintf(stderr, COLOR_RED "Linker Error: No input files provided!\n" COLOR_RESET);
@@ -2003,6 +2356,9 @@ bool pac_link(char* entry, char* outfile, char** input_files, size_t input_file_
 			break;
 		case BINARY:
 			return pac_link_binary(entry, outfile, input_files, input_file_count, base_vaddr); // DO NOT MAKE BINARY EXECUTABLE
+		case WIN64:
+			out = pac_link_pe64(entry, outfile, input_files, input_file_count, base_vaddr);
+			break;
         default:
             printf(COLOR_RED "Linker Error: Unknown/Unsupported Link Format: %s\n", linker_format_to_str(outformat));
             return false;

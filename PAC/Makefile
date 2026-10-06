@@ -27,8 +27,8 @@ OPT_LEVEL ?= 3
 COBITS ?=
 EXTRA ?= -mtune=generic
 
-CFLAGS_RELEASE := -O$(OPT_LEVEL) $(EXTRA) -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
-CFLAGS_DEBUG := -O$(OPT_LEVEL) -g3 $(EXTRA) -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) $(COBITS)
+CFLAGS_RELEASE := -O$(OPT_LEVEL) $(EXTRA) -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
+CFLAGS_DEBUG := -O$(OPT_LEVEL) -g3 $(EXTRA) -Wall -Wextra -fsanitize=address,undefined -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 WCFLAGS_RELEASE := -include special/extensions.h $(EXTRA) -O$(OPT_LEVEL) -Wall -Wextra -fno-stack-protector -std=c2x -I $(INC_DIR) -I special $(COBITS) -static -static-libgcc -static-libstdc++ -Wl,-Bstatic
 WCFLAGS_DEBUG := -include special/extensions.h $(EXTRA) -O$(OPT_LEVEL) -g3 -Wall -Wextra -fstack-protector-strong -std=c2x -I $(INC_DIR) -I special $(COBITS)
 
