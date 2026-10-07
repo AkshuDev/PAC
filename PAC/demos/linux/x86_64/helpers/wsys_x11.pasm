@@ -179,7 +179,6 @@
     cmp %rax, 8
     jne $wsys_x11_setup.fail
 
-
     // Check status:
     // 1 = success
     // 0 = failed
@@ -199,32 +198,30 @@
     cmp %rax, @sizeof(x11_setup_prefix)
     jl $wsys_x11_setup.fail
 
-	// Read Screens
-	mov %rbx, @sizeof(x11_setup_prefix)
-	add %rbx, [x11_setup_prefix.vendor_length]
-
-	mov %rdi, %rbx
-	mov %rsi, @sizeof(uint)
-	call $align_up
-	mov %rbx, %rax
-
-	mov %rax, [x11_setup_prefix.pixmap_formats_len]
-	shl %rax, 3
-	add %rbx, %rax
-
-	mov %rdi, [x11_fd]
-	mov %rsi, %rbx
-	mov %rdx, FIO_SEEK_SET
-	call $seekf
-
-	// read_exact(x11_fd, x11_screen, sizeof(x11_screen))
-	mov %rdi, [x11_fd]
-	lea %rsi, [x11_screen]
-	mov %rdx, @sizeof(x11_screen)
+	// read_exact(x11_fd, x11_setup_prefix, sizeof(x11_setup_prefix))
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_setup_prefix]
+    mov %rdx, @sizeof(x11_setup_prefix)
 	call $read_exact
 
-	cmp %rax, @sizeof(x11_screen)
-	jl $wsys_x11_setup.fail
+    cmp %rax, @sizeof(x11_setup_prefix)
+    jne $wsys_x11_setup.fail
+
+	// read_exact(x11_fd, x11_vendor_data, align_up(x11_setup_prefix.vendor_length, sizeof(unsigned int)))
+	mov %rdi, [x11_setup_prefix.vendor_length]
+	mov %rsi, @sizeof(uint)
+	call $align_up
+	mov [x11_vendor_length_aligned], %rax
+
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_vendor_data]
+    mov %rdx, %rbx // Aligned value
+	call $read_exact
+
+    cmp %rax, [x11_vendor_length_aligned]
+    jne $wsys_x11_setup.fail
 
 	success:
 		mov %rax, 1
@@ -257,7 +254,8 @@
 	:res x11_root_depth!ubyte
 
 	:res x11_next_resource_id!ulong
-	
+
+	:res x11_vendor_length_aligned!ulong
 	.struct x11_setup_prefix :res
 		release_number!uint
 		resource_id_base!uint
@@ -303,3 +301,9 @@
 		root_depth!ubyte
 		allowed_depths_len!ubyte
 	.endstruct
+
+	:res x11_pixmap_formats!ubyte[8 * 256]
+	:res x11_ignored_screen!ubyte[@sizeof(x11_screen)]
+	:res x11_vendor_data!ubyte[0xFFFF]
+
+	:res pad!uint // 32-bit pad

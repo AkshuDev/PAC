@@ -34,6 +34,17 @@ bool is_sdigit(const char *str);
 
 size_t get_sym_index_via_addr(SymbolTable* symtab, size_t addr); // +1 index
 OperandType classify_operand(const char* op);
+
 void intmax_add(IntMax* imax, uint64_t v, int sign);
+#define intmax_sub(imax, v, sign) intmax_add(imax, v, -(sign))
+void intmax_mul(IntMax* imax, uint64_t v, int sign);
+void intmax_div(IntMax* imax, uint64_t v, int sign);
+void intmax_mod(IntMax* imax, uint64_t v);
+void intmax_and(IntMax* imax, uint64_t v);
+void intmax_or(IntMax* imax, uint64_t v);
+void intmax_xor(IntMax* imax, uint64_t v);
+void intmax_shl(IntMax* imax, uint64_t v);
+void intmax_shr(IntMax* imax, uint64_t v);
+void intmax_not(IntMax* imax);
 
 size_t token_type_size(PAC_TokenType t);

@@ -294,8 +294,8 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 	}
 }
 
-static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFile** objfiles, size_t* objfile_count, size_t* machine, SectionOrder* order) {
-	if (!input_files || input_file_count < 1 || !objfiles || !objfile_count || !machine || !order) return false;
+static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFile** objfiles, size_t* objfile_count, size_t* machine, size_t* class, SectionOrder* order) {
+	if (!input_files || input_file_count < 1 || !objfiles || !objfile_count || !order) return false;
 
 	// Read all files
     for (size_t i = 0; i < input_file_count; i++) {
@@ -319,7 +319,10 @@ static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFil
             return false;
         }
 
-        if (i == 0) *machine = eh->e_machine;
+        if (i == 0) {
+			if (machine) *machine = eh->e_machine;
+			if (class) *class = eh->e_ident[EI_CLASS];
+		}
         if (eh->e_shnum == 0) continue;
 
         *objfiles = realloc(*objfiles, (*objfile_count + 1) * sizeof(ObjectFile));
@@ -650,7 +653,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     SectionOrder order = {0};
 
     size_t machine;
-    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &order)) return false;
+    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, NULL, &order)) return false;
     
     size_t total_sections = order.count + 4; // Sections + NULL, SHSTRTAB, SYMTAB, STRTAB
 
@@ -659,12 +662,13 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
 
 		free_objfile(objfiles, objfile_count);
+		return false;
 	}
 
     size_t section_count = order.count;
@@ -676,7 +680,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -689,7 +693,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 	// Resolve Symbols
 	if (!resolve_extern_symbols(objfiles, objfile_count)) {
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -706,7 +710,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -822,7 +826,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -864,7 +868,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -904,7 +908,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1137,7 +1141,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1163,7 +1167,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 		free(shstrtab);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1177,7 +1181,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
     for (size_t i = 0; i < section_count; i++) {
         fseek(f, outsecs[i].out_offset, SEEK_SET);
         if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
-        if (outsecs[i].padded_size > outsecs[i].size) {
+        if (outsecs[i].sh_type != SHT_NOBITS && outsecs[i].padded_size > outsecs[i].size) {
             for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
                 fwrite("\0", 1, 1, f);
             }
@@ -1259,7 +1263,7 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 	free(shstrtab);
 
 	for (size_t i = 0; i < order.count; i++) {
-		if (outsecs[i].name) free(outsecs[i].buffer);
+		if (outsecs[i].buffer) free(outsecs[i].buffer);
 		if (order.names[i]) free(order.names[i]);
 	}
 	free(order.names);
@@ -1280,7 +1284,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     SectionOrder order = {0};
 
     size_t machine;
-    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &order)) return false;
+    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, NULL, &order)) return false;
     
     size_t total_sections = order.count + 4; // Sections + NULL, SHSTRTAB, SYMTAB, STRTAB
 
@@ -1294,6 +1298,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
         free(order.names);
 
 		free_objfile(objfiles, objfile_count);
+		return false;
 	}
 
     size_t section_count = order.count;
@@ -1305,7 +1310,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1317,7 +1322,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 	// Resolve Symbols
 	if (!resolve_extern_symbols(objfiles, objfile_count)) {
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1334,7 +1339,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1451,7 +1456,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1494,7 +1499,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1536,7 +1541,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1766,7 +1771,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(program_headers);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1792,7 +1797,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 		free(shstrtab);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1806,7 +1811,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
     for (size_t i = 0; i < section_count; i++) {
         fseek(f, outsecs[i].out_offset, SEEK_SET);
         if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
-        if (outsecs[i].padded_size > outsecs[i].size) {
+        if (outsecs[i].sh_type != SHT_NOBITS && outsecs[i].padded_size > outsecs[i].size) {
             for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
                 fwrite("\0", 1, 1, f);
             }
@@ -1887,7 +1892,7 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 	free(shstrtab);
 
 	for (size_t i = 0; i < order.count; i++) {
-		if (outsecs[i].name) free(outsecs[i].buffer);
+		if (outsecs[i].buffer) free(outsecs[i].buffer);
 		if (order.names[i]) free(order.names[i]);
 	}
 	free(order.names);
@@ -1916,19 +1921,20 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
     SectionOrder order = {0};
 
     size_t machine;
-    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &order)) return false;
+    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, NULL, &order)) return false;
 
     OutSection* outsecs = calloc(order.count, sizeof(OutSection));
 	if (!outsecs) {
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
 
 		free_objfile(objfiles, objfile_count);
+		return false;
 	}
 
     size_t section_count = order.count;
@@ -1940,7 +1946,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1968,7 +1974,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 		perror(COLOR_RED "Linker Error: Failed to open output file!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -1982,7 +1988,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 	for (size_t i = 0; i < section_count; i++) {
         fseek(f, outsecs[i].out_offset, SEEK_SET);
         if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
-        if (outsecs[i].padded_size > outsecs[i].size) {
+        if (outsecs[i].sh_type != SHT_NOBITS && outsecs[i].padded_size > outsecs[i].size) {
             for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
                 fwrite("\0", 1, 1, f);
             }
@@ -1991,7 +1997,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 
 	fclose(f);
 	for (size_t i = 0; i < order.count; i++) {
-		if (outsecs[i].name) free(outsecs[i].buffer);
+		if (outsecs[i].buffer) free(outsecs[i].buffer);
 		if (order.names[i]) free(order.names[i]);
 	}
 	free(order.names);
@@ -2026,6 +2032,40 @@ static uint64_t calculate_pe_checksum(uint8_t* buf, size_t sz) {
     return final_checksum;
 }
 
+static uint16_t elf_machine_to_pe(uint16_t machine, uint8_t elf_class) {
+    switch (machine) {
+        case EM_NONE: return IMAGE_FILE_MACHINE_UNKNOWN;
+        case EM_386: return IMAGE_FILE_MACHINE_I386;
+        case EM_X86_64: return IMAGE_FILE_MACHINE_AMD64;
+        case EM_ARM: return IMAGE_FILE_MACHINE_ARM;
+        case EM_AARCH64: return IMAGE_FILE_MACHINE_ARM64;
+        case EM_IA_64: return IMAGE_FILE_MACHINE_IA64;
+        case EM_ALPHA: return IMAGE_FILE_MACHINE_ALPHA;
+        case EM_PPC: return IMAGE_FILE_MACHINE_POWERPC;
+        case EM_PPC64: return IMAGE_FILE_MACHINE_POWERPCFP;
+        case EM_M32R: return IMAGE_FILE_MACHINE_M32R;
+        case EM_SH: return IMAGE_FILE_MACHINE_SH3;
+        case EM_MIPS: return IMAGE_FILE_MACHINE_R3000;
+
+        case EM_RISCV: {
+            switch (elf_class) {
+                case ELFCLASS32: return IMAGE_FILE_MACHINE_RISCV32;
+                case ELFCLASS64: return IMAGE_FILE_MACHINE_RISCV64;
+                default: return IMAGE_FILE_MACHINE_UNKNOWN;
+            }
+		}
+        case EM_LOONGARCH: {
+            switch (elf_class) {
+                case ELFCLASS32: return IMAGE_FILE_MACHINE_LOONGARCH32;
+                case ELFCLASS64: return IMAGE_FILE_MACHINE_LOONGARCH64;
+                default: return IMAGE_FILE_MACHINE_UNKNOWN;
+            }
+		}
+
+        default: return IMAGE_FILE_MACHINE_UNKNOWN;
+    }
+}
+
 static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t input_file_count, size_t base_vaddr) {
     if (!input_files || input_file_count == 0 || !outfile) {
         fprintf(stderr, COLOR_RED "Linker Error: No input/output files provided!\n" COLOR_RESET);
@@ -2045,7 +2085,9 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
     SectionOrder order = {0};
 
     size_t machine = 0;
-    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &order)) return false;
+	size_t class = 0;
+    if (!create_ofiles(input_files, input_file_count, &objfiles, &objfile_count, &machine, &class, &order)) return false;
+	machine = elf_machine_to_pe(machine, class);
     
     size_t total_sections = order.count; // Sections
 
@@ -2054,16 +2096,19 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
 
 		free_objfile(objfiles, objfile_count);
+		return false;
 	}
 
+	size_t size_of_headers = sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64) + (total_sections * sizeof(Section_Hdr));
+
     size_t section_count = order.count;
-    size_t image_vaddr_start = align_up(sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64) + (total_sections * sizeof(Section_Hdr)) + PAGE_SIZE, PAGE_SIZE); // RVA
+    size_t image_vaddr_start = align_up(size_of_headers, PAGE_SIZE); // RVA
 	size_t vaddr = image_vaddr_start;
     size_t file_off = image_vaddr_start;
 
@@ -2072,7 +2117,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 		perror(COLOR_RED "Linker Error: Memory Allocation Failed!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -2085,7 +2130,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 	// Resolve Symbols
 	if (!resolve_extern_symbols(objfiles, objfile_count)) {
 		for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -2094,6 +2139,14 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
         free_objfile(objfiles, objfile_count);
         return false;
 	}
+
+	// Pass-2 to fix Section Offsets and Virtual Addresses
+	size_of_headers = align_up(size_of_headers, outsecs[0].memalign);
+	image_vaddr_start = align_up(size_of_headers, PAGE_SIZE); // RVA
+
+	file_off = image_vaddr_start;
+	vaddr = image_vaddr_start;
+	fix_outsections_addresses_n_offsets(&order, outsecs, objfiles, objfile_count, &vaddr, &file_off);
 
 	// Resolve Relocations
 	for (size_t i = 0; i < objfile_count; i++) {
@@ -2149,23 +2202,25 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 			printf(COLOR_YELLOW "Linker Warning: Could not find any entry that matches '%s' or any PROGBITS section, using base virtual address of executable\n" COLOR_RESET, entry);
 	}
 
+	size_t base_of_code = 0;
 	size_t code_size = 0;
 	size_t data_init_size = 0;
 	size_t data_uninit_size = 0;
-	size_t full_size = 0;
 
 	for (size_t i = 0; i < total_sections; i++) {
 		OutSection* osec = &outsecs[i];
 
 		if (osec->sh_type == SHT_PROGBITS) {
-			code_size += osec->size;
+			if (osec->sh_flags & SHF_EXECINSTR) {
+				code_size += osec->size;
+
+				if (base_of_code < size_of_headers || (osec->out_vaddr < base_of_code && osec->out_vaddr >= size_of_headers)) {
+					base_of_code = osec->out_vaddr;
+				}
+			} else if (osec->sh_flags & SHF_ALLOC) data_init_size += osec->size;
 		} else if (osec->sh_type == SHT_NOBITS) {
 			data_uninit_size += osec->size;
-		} else if (osec->sh_flags & SHF_ALLOC) {
-			data_init_size += osec->size;
 		}
-
-		full_size = align_up(full_size + osec->padded_size, PAGE_SIZE);
 	}
 
 	// Headers
@@ -2192,7 +2247,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 	pe_hdr.ptr_to_symtab = 0; // Image file doesn't include symbols
 	pe_hdr.no_of_symbols = 0; // Image file doesn't include symbols
 	pe_hdr.size_of_optional_header = sizeof(Optional_Hdr_64);
-	pe_hdr.characteristics = IMAGE_FILE_EXECUTABLE_IMAGE;
+	pe_hdr.characteristics = IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE | IMAGE_FILE_RELOCS_STRIPPED;
 
 	Optional_Hdr_64 optional_hdr = {0};
 	optional_hdr.magic = Optional_Hdr_32p_Magic;
@@ -2202,7 +2257,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 	optional_hdr.size_of_init_data = data_init_size;
 	optional_hdr.size_of_uninit_data = data_uninit_size;
 	optional_hdr.addr_of_entry = entry_vaddr;
-	optional_hdr.base_of_code = 0;
+	optional_hdr.base_of_code = base_of_code;
 	optional_hdr.image_base = base_vaddr;
 	optional_hdr.section_alignment = PAGE_SIZE;
 	optional_hdr.file_alignment = outsecs[0].memalign; // Since all sections have constant alignment (passed param to computation function)
@@ -2213,8 +2268,8 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 	optional_hdr.major_subsys_version = 6;
 	optional_hdr.minor_subsys_version = 0;
 	optional_hdr.win32_version_val = 0;
-	optional_hdr.size_of_headers = align_up(sizeof(DOS_Hdr) + sizeof(dos_stub) + sizeof(PE_Hdr) + sizeof(Optional_Hdr_64) + (total_sections * sizeof(Section_Hdr)), optional_hdr.file_alignment);
-	optional_hdr.size_of_image = align_up(optional_hdr.size_of_headers + full_size, optional_hdr.section_alignment);
+	optional_hdr.size_of_headers = size_of_headers;
+	optional_hdr.size_of_image = align_up(size_of_headers + outsecs[total_sections-1].out_vaddr + outsecs[total_sections-1].size, optional_hdr.section_alignment);
 	optional_hdr.subsys = IMAGE_SUBSYSTEM_WINDOWS_CUI;
 	optional_hdr.size_of_stack_reserve = 0x100000; // 1MB
 	optional_hdr.size_of_stack_commit = PAGE_SIZE;
@@ -2228,7 +2283,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 		perror(COLOR_RED "Linker Error: Failed to open output file!\n" COLOR_RESET);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -2250,7 +2305,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 		fclose(f);
 
         for (size_t i = 0; i < order.count; i++) {
-			if (outsecs[i].name) free(outsecs[i].buffer);
+			if (outsecs[i].buffer) free(outsecs[i].buffer);
 			if (order.names[i]) free(order.names[i]);
 		}
         free(order.names);
@@ -2264,7 +2319,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
     for (size_t i = 0; i < section_count; i++) {
         fseek(f, outsecs[i].out_offset, SEEK_SET);
         if (outsecs[i].buffer && outsecs[i].size > 0) fwrite(outsecs[i].buffer, 1, outsecs[i].size, f);
-        if (outsecs[i].padded_size > outsecs[i].size) {
+        if (outsecs[i].sh_type != SHT_NOBITS && outsecs[i].padded_size > outsecs[i].size) {
             for (size_t j = 0; j < (outsecs[i].padded_size - outsecs[i].size); j++) {
                 fwrite("\0", 1, 1, f);
             }
@@ -2283,11 +2338,11 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 
         shdr->ptr_to_raw_data = osec->out_offset;
         shdr->virtual_addr = osec->out_vaddr;
-        shdr->virtual_size = osec->padded_size;
-		shdr->size_of_raw_data = osec->size;
+        shdr->virtual_size = osec->size;
+		shdr->size_of_raw_data = osec->padded_size;
 		
 		if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_EXECINSTR && osec->sh_type == SHT_PROGBITS) {
-			shdr->characteristics = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE;
+			shdr->characteristics = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
 		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_type == SHT_NOBITS) {
 			shdr->characteristics = IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE;
 		} else if (osec->sh_flags & SHF_ALLOC && osec->sh_flags & SHF_WRITE) {
@@ -2303,7 +2358,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
     fwrite(shdrs, sizeof(Section_Hdr), total_sections, f);
 
 	size_t cursz = ftell(f);
-	for (size_t i = cursz; i < optional_hdr.size_of_headers; i++) {
+	for (size_t i = cursz; i < size_of_headers; i++) {
 		fwrite("\0", 1, 1, f);
 	}
 
@@ -2311,7 +2366,7 @@ static bool pac_link_pe64(char* entry, char* outfile, char** input_files, size_t
 	
 	free(shdrs);
 	for (size_t i = 0; i < order.count; i++) {
-		if (outsecs[i].name) free(outsecs[i].buffer);
+		if (outsecs[i].buffer) free(outsecs[i].buffer);
 		if (order.names[i]) free(order.names[i]);
 	}
 	free(order.names);
@@ -2357,10 +2412,14 @@ bool pac_link(char* entry, char* outfile, char** input_files, size_t input_file_
 		case BINARY:
 			return pac_link_binary(entry, outfile, input_files, input_file_count, base_vaddr); // DO NOT MAKE BINARY EXECUTABLE
 		case WIN64:
+			fprintf(stderr, COLOR_YELLOW "Linker Warning: This output format is not fully working, and is under heavy development. Use wisely!\n" COLOR_RESET);
 			out = pac_link_pe64(entry, outfile, input_files, input_file_count, base_vaddr);
 			break;
+		case WIN32:
+			fprintf(stderr, COLOR_RED "Linker Error: Link Format '%s' is not yet implemented!\n" COLOR_RESET, linker_format_to_str(outformat));
+            return false;
         default:
-            printf(COLOR_RED "Linker Error: Unknown/Unsupported Link Format: %s\n", linker_format_to_str(outformat));
+            fprintf(stderr, COLOR_RED "Linker Error: Unknown/Unsupported Link Format '%s'\n" COLOR_RESET, linker_format_to_str(outformat));
             return false;
     }
 	if (!out) return false;

@@ -9,7 +9,10 @@
 #include <pac-lexer.h>
 
 typedef struct { // Literal integer value (supports upto UINT64_MAX and -UINT64_MAX)
-	uint64_t value;
+	union {
+		uint64_t value;
+		double float_value;
+	};
 	bool neg;
 } IntMax;
 

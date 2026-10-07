@@ -33,5 +33,19 @@
 - Added 'sizeof' Support
 
 ### Known Flaws
-- None
+- NOBITS Sections could be included in the file on disk via the linker
+- One of the Linker Error paths did not quit
+- Linker Bugs
 
+## Version 1.1.0
+### Upgrades
+- NOBITS Sections are no longer included in the file on disk via the linker
+- All Linker Error paths now quit
+- Fixed Linker Bugs
+
+### Additions
+- Added PE Linking output support
+- Added Assemble-Time Expression Evaluation
+
+### Known Flaws
+- None

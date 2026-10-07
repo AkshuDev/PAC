@@ -304,6 +304,71 @@ void intmax_add(IntMax* imax, uint64_t v, int sign) {
 	if (imax->value == 0) imax->neg = false;
 }
 
+void intmax_mul(IntMax* imax, uint64_t v, int sign) {
+	if (!imax) return;
+	if (sign < 0) imax->neg = !imax->neg;
+
+	imax->value *= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_div(IntMax* imax, uint64_t v, int sign) {
+	if (!imax || v == 0) return;
+	if (sign < 0) imax->neg = !imax->neg;
+
+	imax->value /= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_mod(IntMax* imax, uint64_t v) {
+	if (!imax || v == 0) return;
+
+	imax->value %= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_and(IntMax* imax, uint64_t v) {
+	if (!imax) return;
+
+	imax->value &= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_or(IntMax* imax, uint64_t v) {
+	if (!imax) return;
+
+	imax->value |= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_xor(IntMax* imax, uint64_t v) {
+	if (!imax) return;
+
+	imax->value ^= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_shl(IntMax* imax, uint64_t v) {
+	if (!imax) return;
+
+	imax->value <<= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_shr(IntMax* imax, uint64_t v) {
+	if (!imax) return;
+
+	imax->value >>= v;
+	if (imax->value == 0) imax->neg = false;
+}
+
+void intmax_not(IntMax* imax) {
+	if (!imax) return;
+
+	imax->value = ~imax->value;
+	if (imax->value == 0) imax->neg = false;
+}
+
 size_t token_type_size(PAC_TokenType t) {
     switch (t) {
         case T_BYTE:

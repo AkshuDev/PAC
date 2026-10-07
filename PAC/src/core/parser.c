@@ -52,6 +52,7 @@ static bool in_func = false;
 static char func_start[256];
 
 static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix, struct p_macro** out_m);
+static IntMax parse_expression(Parser* p, bool jst_verify);
 
 static void free_macros(void) {
     for (size_t i = 0; i < macro_count; i++) {
@@ -354,7 +355,9 @@ void free_ast(ASTNode* node) {
     free(node);
 }
 
-static size_t parse_sizeof(Parser* p, bool jst_verify) {
+static IntMax parse_sizeof(Parser* p, bool jst_verify) {
+	Token t = p->current;
+	
 	parser_advance(p); // consume '@sizeof'
 
 	if (!parser_check(p, LPAREN)) {
@@ -364,10 +367,9 @@ static size_t parse_sizeof(Parser* p, bool jst_verify) {
     }
 	parser_advance(p); // consume '(
 
-	size_t size = 0;
-
+	IntMax out = {0};
 	if (p->current.type >= T_BYTE && p->current.type <= T_PTR) {
-		size = token_type_size(p->current.type);
+		out.value = token_type_size(p->current.type);
 		parser_advance(p);
 	} else {
 		if (!parser_check(p, IDENTIFIER_TOK)) {
@@ -386,7 +388,7 @@ static size_t parse_sizeof(Parser* p, bool jst_verify) {
 				exit(PAC_Error_UnexpectedToken);
 			}
 
-			size = m->size;
+			out.value = m->size;
 			parser_advance(p);
 		} else {
 			parser_advance(p);
@@ -398,8 +400,265 @@ static size_t parse_sizeof(Parser* p, bool jst_verify) {
         free_ast(p->root);
         exit(PAC_Error_UnexpectedToken);
     }
+	parser_advance(p);
 
-	return size;
+	switch (p->current.type) {
+		case OP_ADD: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+			int sign = s.neg ? -1 : 1;
+
+			intmax_add(&out, s.value, sign);
+			return out;
+		}
+		case OP_SUB: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+			int sign = s.neg ? -1 : 1;
+
+			intmax_sub(&out, s.value, sign);
+			return out;
+		}
+		case OP_MUL: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+			int sign = s.neg ? -1 : 1;
+
+			intmax_mul(&out, s.value, sign);
+			return out;
+		}
+		case OP_DIV: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+			int sign = s.neg ? -1 : 1;
+
+			if (s.value == 0 && !jst_verify) {
+				PAC_ERRORF(p->lexer->file, t.line, t.column, p->lexer->src, p->lexer->len, NULL, 0, "Attempted Division by 0");
+				free_ast(p->root);
+				exit(PAC_Error_ExpressionDivisionByZero);
+			}
+			intmax_div(&out, s.value, sign); // Has Defence for this
+			return out;
+		}
+		case OP_MOD: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			if (s.value == 0 && !jst_verify) {
+				PAC_ERRORF(p->lexer->file, t.line, t.column, p->lexer->src, p->lexer->len, NULL, 0, "Attempted Modulus by 0");
+				free_ast(p->root);
+				exit(PAC_Error_ExpressionDivisionByZero);
+			}
+			intmax_mod(&out, s.value); // Has Defence for this
+			return out;
+		}
+		case OP_AND: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			intmax_and(&out, s.value);
+			return out;
+		}
+		case OP_OR: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			intmax_or(&out, s.value);
+			return out;
+		}
+		case OP_XOR: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			intmax_xor(&out, s.value);
+			return out;
+		}
+		case OP_SHL: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			intmax_shl(&out, s.value);
+			return out;
+		}
+		case OP_SHR: {
+			parser_advance(p);
+			IntMax s = parse_expression(p, jst_verify);
+
+			intmax_shr(&out, s.value);
+			return out;
+		}
+
+		default: return out;
+	}
+}
+
+static IntMax parse_expression(Parser* p, bool jst_verify) {
+	IntMax out = {0};
+	bool not = false;
+
+	switch (p->current.type) {
+		case OP_NOT: not = true; parser_advance(p); break;
+		case OP_ADD: parser_advance(p); break;
+		case OP_SUB: out.neg = true; parser_advance(p); break;
+		default: break;
+	}
+
+	switch (p->current.type) {
+		case PP_SIZEOF: {
+			IntMax v = parse_sizeof(p, jst_verify); // Already operates
+			out.value = v.value;
+			out.neg = v.neg ? !out.neg : out.neg;
+			return out;
+		}
+
+		case IDENTIFIER_TOK: {
+			if (!jst_verify) {
+				int ret = 0;
+				struct p_macro* m = find_macro(p->current.lexeme, &ret, MACRO_TYPE_USER_MACRO, false);
+
+				if (!m || (ret != 0 && ret != -2)) {
+					idenError: {
+						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "A valid Numeric Macro is required!");
+						free_ast(p->root);
+						exit(PAC_Error_UnexpectedToken);
+					}
+				}
+				if (!((m->value[0] == '-' && is_sdigit(m->value + 1)) || is_sdigit(m->value))) goto idenError;
+
+				int sign = out.neg ? -1 : 1;
+				sign *= m->value[0] == '-' ? -1 : 1;
+				out.neg = sign > 0 ? false : true;
+
+				out.value = strtoull(m->value[0] == '-' ? m->value + 1 : m->value, NULL, 10);
+			}
+
+			goto operate;
+			break;
+		}
+
+		default: break;
+	}
+	
+	switch (p->current.type) {
+		case OP_NOT: not = true; parser_advance(p); break;
+		case OP_ADD: parser_advance(p); break;
+		case OP_SUB: out.neg = true; parser_advance(p); break;
+		default: break;
+	}
+
+	if (p->current.type == OP_NOT) {
+		not = !not;
+		parser_advance(p);
+	}
+
+	if (p->current.type < LIT_INT || p->current.type > LIT_CHAR || p->current.type == LIT_STRING) {
+		PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an expression or an numeric/char literal");
+        free_ast(p->root);
+        exit(PAC_Error_UnexpectedToken);
+	}
+
+	int base = 10;
+	bool is_float = false;
+	bool is_char = false;
+
+	switch (p->current.type) {
+		case LIT_INT: base = 10; break;
+		case LIT_HEX: base = 16; break;
+		case LIT_OCTAL: base = 8; break;
+		case LIT_BIN: base = 2; break;
+		case LIT_FLOAT: is_float = true; break;
+		case LIT_CHAR: is_char = true; break;
+		default: return out;
+	}
+
+	if (is_char) {
+		out.value = (uint64_t)p->current.lexeme[0];
+	} else if (is_float) {
+		out.float_value = (double)strtof((const char*)p->current.lexeme, NULL);
+	} else {
+		out.value = (uint64_t)strtoull((const char*)p->current.lexeme, NULL, base);
+	}
+
+	if (not) intmax_not(&out);
+
+	operate: {}
+	Token t = p->current;
+	parser_advance(p);
+
+	if (p->current.type < OP_ADD || p->current.type > OP_SHR) return out;
+	
+	PAC_TokenType type = p->current.type;
+	parser_advance(p);
+
+	switch (type) {
+		case OP_INC: {
+			intmax_add(&out, 1, 1);
+			return out;
+		}
+		case OP_DEC: {
+			intmax_sub(&out, 1, 1);
+			return out;
+		}
+		default: break;
+	}
+
+	IntMax s = parse_expression(p, jst_verify);
+	int sign = s.neg ? -1 : 1;
+
+	switch (type) {
+		case OP_ADD: {
+			intmax_add(&out, s.value, sign);
+			return out;
+		}
+		case OP_SUB: {
+			intmax_sub(&out, s.value, sign);
+			return out;
+		}
+		case OP_MUL: {
+			intmax_mul(&out, s.value, sign);
+			return out;
+		}
+		case OP_DIV: {
+			if (s.value == 0) {
+				PAC_ERRORF(p->lexer->file, t.line, t.column, p->lexer->src, p->lexer->len, NULL, 0, "Attempted Division by 0");
+				free_ast(p->root);
+				exit(PAC_Error_ExpressionDivisionByZero);
+			}
+			intmax_div(&out, s.value, sign);
+			return out;
+		}
+		case OP_MOD: {
+			if (s.value == 0) {
+				PAC_ERRORF(p->lexer->file, t.line, t.column, p->lexer->src, p->lexer->len, NULL, 0, "Attempted Modulus by 0");
+				free_ast(p->root);
+				exit(PAC_Error_ExpressionDivisionByZero);
+			}
+			intmax_mod(&out, s.value);
+			return out;
+		}
+		case OP_AND: {
+			intmax_and(&out, s.value);
+			return out;
+		}
+		case OP_OR: {
+			intmax_or(&out, s.value);
+			return out;
+		}
+		case OP_XOR: {
+			intmax_xor(&out, s.value);
+			return out;
+		}
+		case OP_SHL: {
+			intmax_shl(&out, s.value);
+			return out;
+		}
+		case OP_SHR: {
+			intmax_shr(&out, s.value);
+			return out;
+		}
+
+		default: return out; // Cannot happen, but why not
+	}
 }
 
 static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
@@ -422,135 +681,30 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				parser_advance(p);
 				break;
 			} 
-			case LIT_INT: {
-				op->type = OPERAND_LIT_INT;
-				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
-				op->int_val.neg = false;
-				parser_advance(p);
-				break;
-			} 
-			case LIT_BIN: {
-				op->type = OPERAND_LIT_INT;
-				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
-				op->int_val.neg = false;
-				parser_advance(p);
-				break;
-			}
-			case LIT_HEX: {
-				op->type = OPERAND_LIT_INT;
-				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
-				op->int_val.neg = false;
-				parser_advance(p);
-				break;
-			}
+			case LIT_INT:
+			case LIT_BIN:
+			case LIT_HEX:
 			case LIT_OCTAL: {
 				op->type = OPERAND_LIT_INT;
-				op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
-				op->int_val.neg = false;
-				parser_advance(p);
+				op->int_val = parse_expression(p, false);
 				break;
 			}
 			case LIT_FLOAT: {
 				op->type = OPERAND_LIT_FLOAT;
-				op->float_val = strtod(p->current.lexeme, NULL);
-				parser_advance(p);
+
+				IntMax v = parse_expression(p, false);
+				op->float_val = v.float_value * (v.neg ? -1 : 1);
 				break;
 			}
 			case LIT_CHAR: {
 				op->type = OPERAND_LIT_CHAR;
-				op->int_val.value = (uint64_t)p->current.lexeme[0];
-				op->int_val.neg = false;
-				parser_advance(p);
+				op->int_val = parse_expression(p, false);
 				break;
 			}
-			case OP_ADD: {
-				op->type = OPERAND_DISPLACEMENT;
-				parser_advance(p);
-
-				switch (p->current.type) {
-					case LIT_INT: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
-						op->int_val.neg = false;
-						parser_advance(p);
-						break;
-					}
-					case LIT_BIN: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
-						op->int_val.neg = false;
-						parser_advance(p);
-						break;
-					}
-					case LIT_HEX: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
-						op->int_val.neg = false;
-						parser_advance(p);
-						break;
-					}
-					case LIT_OCTAL: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
-						op->int_val.neg = false;
-						parser_advance(p);
-						break;
-					}
-					case LIT_CHAR: {
-						op->int_val.value = (uint64_t)p->current.lexeme[0];
-						op->int_val.neg = false;
-						parser_advance(p);
-						break;
-					}
-					default: {
-						free(op);
-						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal");
-						free_ast(p->root);
-						exit(PAC_Error_UnexpectedToken);
-						break;
-					}
-				}
-				break;
-			}
+			case OP_ADD:
 			case OP_SUB: {
 				op->type = OPERAND_DISPLACEMENT;
-				parser_advance(p);
-
-				switch (p->current.type) {
-					case LIT_INT: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
-						op->int_val.neg = true;
-						parser_advance(p);
-						break;
-					}
-					case LIT_BIN: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
-						op->int_val.neg = true;
-						parser_advance(p);
-						break;
-					}
-					case LIT_HEX: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
-						op->int_val.neg = true;
-						parser_advance(p);
-						break;
-					}
-					case LIT_OCTAL: {
-						op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
-						op->int_val.neg = true;
-						parser_advance(p);
-						break;
-					}
-					case LIT_CHAR: {
-						op->int_val.value = (uint64_t)p->current.lexeme[0];
-						op->int_val.neg = true;
-						parser_advance(p);
-						break;
-					}
-					default: {
-						free(op);
-						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal");
-						free_ast(p->root);
-						exit(PAC_Error_UnexpectedToken);
-						break;
-					}
-				}
+				op->int_val = parse_expression(p, false);
 				break;
 			}
 			case FUNC_USE: {
@@ -584,12 +738,8 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 				break;
 			}
 			case PP_SIZEOF: {
-				size_t sz_value = parse_sizeof(p, false);
-
 				op->type = OPERAND_LIT_INT;
-				op->int_val.value = sz_value;
-				op->int_val.neg = false;
-				parser_advance(p);
+				op->int_val = parse_sizeof(p, false);
 				break;
 			}
 			case LBRACKET: {
@@ -609,7 +759,7 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 			}
 			default:  {
 				char msgbuf[128];
-				snprintf(msgbuf, sizeof(msgbuf), "Unexpected token in operand: [%s]", token_type_to_ogstr(p->current.type));
+				snprintf(msgbuf, sizeof(msgbuf), ": [%s]", token_type_to_ogstr(p->current.type));
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), msgbuf);
 				free_ast(p->root);
 				free(op);
@@ -618,36 +768,23 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 		}
 	} else {
 		switch (p->current.type) {
-			case REGISTER:
+			case REGISTER: {
+				parser_advance(p);
+				break;
+			}
+
 			case LIT_INT:
 			case LIT_BIN:
 			case LIT_HEX:
 			case LIT_OCTAL:
 			case LIT_FLOAT:
 			case LIT_CHAR: {
-				parser_advance(p);
+				(void)parse_expression(p, true);
 				break;
 			}
 			case OP_ADD:
 			case OP_SUB: {
-				parser_advance(p);
-
-				switch (p->current.type) {
-					case LIT_INT:
-					case LIT_BIN:
-					case LIT_HEX:
-					case LIT_OCTAL:
-					case LIT_CHAR: {
-						parser_advance(p);
-						break;
-					}
-					default: {
-						PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an integer literal");
-						free_ast(p->root);
-						exit(PAC_Error_UnexpectedToken);
-						break;
-					}
-				}
+				(void)parse_expression(p, true);
 				break;
 			}
 			case FUNC_USE: {
@@ -676,7 +813,6 @@ static ASTOperand* parse_operand(Parser* p, bool jst_verify) {
 			}
 			case PP_SIZEOF: {
 				(void)parse_sizeof(p, true);
-				parser_advance(p);
 				break;
 			}
 			case LBRACKET: {
@@ -962,47 +1098,47 @@ static ASTNode* parse_directive(Parser* p, bool only_lit, bool make_macro) {
 static ASTNode* parse_literal(Parser* p) {
     ASTNode* node = create_node(AST_LITERAL, p);
     ASTLiteral* op = &node->literal;
-    if (parser_check(p, LIT_INT)) {
-        node->literal.type = LIT_INT;
-        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 10);
-		op->int_val.neg = false;
-        parser_advance(p);
-    } else if (parser_check(p, LIT_BIN)) {
-        node->literal.type = LIT_BIN;
-        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 2);
-		op->int_val.neg = false;
-        parser_advance(p);
-    } else if (parser_check(p, LIT_HEX)) {
-        node->literal.type = LIT_HEX;
-        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 16);
-		op->int_val.neg = false;
-        parser_advance(p);
-    } else if (parser_check(p, LIT_OCTAL)) {
-        node->literal.type = LIT_OCTAL;
-        op->int_val.value = (uint64_t)strtoull(p->current.lexeme, NULL, 8);
-		op->int_val.neg = false;
-        parser_advance(p);
-    } else if (parser_check(p, LIT_FLOAT)) {
-        node->literal.type = LIT_FLOAT;
-        op->float_val = strtod(p->current.lexeme, NULL);
-        parser_advance(p);
-    } else if (parser_check(p, LIT_CHAR)) {
-        node->literal.type = LIT_CHAR;
-        op->int_val.value = (uint64_t)p->current.lexeme[0];
-        parser_advance(p);
-    } else if (parser_check(p, LIT_STRING)) {
-        node->literal.type = LIT_STRING;
-        op->str_val = (char*)malloc(strlen(p->current.lexeme) + 1);
-		if (!op->str_val) {
-			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed");
-			free_ast(p->root);
-			exit(PAC_Error_MemoryAllocationFailed);
+
+	switch (p->current.type) {
+		case LIT_INT:
+		case LIT_BIN:
+		case LIT_HEX:
+		case LIT_OCTAL:
+		case OP_ADD:
+		case OP_SUB:
+		case LIT_CHAR: {
+			node->literal.type = p->current.type;
+        	op->int_val = parse_expression(p, false);
+			return node;
 		}
-        op->str_val[strlen(p->current.lexeme)] = '\0';
-        pac_strdup(p->current.lexeme, op->str_val);
-        parser_advance(p);
-    }
-    return node;
+
+		case LIT_FLOAT: {
+			node->literal.type = LIT_FLOAT;
+			IntMax v = parse_expression(p, false);
+			op->float_val = v.float_value * (v.neg ? -1 : 0);
+			return node;
+		}
+
+		case LIT_STRING: {
+			node->literal.type = LIT_STRING;
+			op->str_val = (char*)malloc(strlen(p->current.lexeme) + 1);
+			if (!op->str_val) {
+				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Allocation Failed");
+				free_ast(p->root);
+				exit(PAC_Error_MemoryAllocationFailed);
+			}
+			op->str_val[strlen(p->current.lexeme)] = '\0';
+			pac_strdup(p->current.lexeme, op->str_val);
+			parser_advance(p);
+			return node;
+		}
+
+		default: {
+			PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Expected an Expression or a literal value");
+			free_ast(p->root);
+			exit(PAC_Error_UnexpectedToken);
+		}
+	}
 }
 
 static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, char* prefix, struct p_macro** out_m) {
@@ -1108,7 +1244,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
             is_array = true;
             array_len = -1; // Auto
             parser_advance(p);
-            if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN) {
+            if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN || p->current.type == OP_ADD) {
                 ASTNode* arrsize_node = parse_literal(p);
                 array_len = arrsize_node->literal.int_val.value;
                 free_ast(arrsize_node);
@@ -1231,17 +1367,13 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 
 					final_array_len++;
 				} else if (p->current.type == PP_SIZEOF) {
-					size_t sz_value = parse_sizeof(p, false);
 					ASTNode* node = create_node(AST_LITERAL, p);
 					node->literal.type = LIT_INT;
-					node->literal.int_val.value = sz_value;
-					node->literal.int_val.neg = false;
-					parser_advance(p);
+					node->literal.int_val = parse_sizeof(p, false);
 
 					final_array_len++;
-				} else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
+				} else if ((p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) || p->current.type == OP_ADD) {
 					child = parse_literal(p);
-					
 					if (child->type == AST_LITERAL) final_array_len += child->literal.type == LIT_STRING ? strlen(child->literal.str_val) : 1;
 				} else {
 					free_ast(p->root);
@@ -1276,7 +1408,7 @@ static ASTNode* parse_identifier(Parser* p, bool only_macros, bool add_macros, c
 						continue_loop = false;
 					}
 					if (p->current.type == IDENTIFIER_TOK) {
-					} else if (p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) {
+					} else if ((p->current.type >= LIT_INT && p->current.type <= LIT_CHAR) || p->current.type == OP_ADD || p->current.type == OP_SUB) {
 						ASTNode* lit = parse_literal(p);
 						if (lit->type == AST_LITERAL) {
 							final_array_len += lit->literal.type == LIT_STRING ? strlen(lit->literal.str_val) : 1;
@@ -1493,7 +1625,7 @@ ASTNode* parse_reserve(Parser* p, bool only_macros, bool add_macros, char* prefi
 		is_array = true;
 		array_len = 1;
 		parser_advance(p);
-		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN) {
+		if (p->current.type == LIT_INT || p->current.type == LIT_HEX || p->current.type == LIT_OCTAL || p->current.type == LIT_BIN || p->current.type == OP_ADD) {
 			ASTNode* arrsize_node = parse_literal(p);
 			array_len = arrsize_node->literal.int_val.value;
 			free_ast(arrsize_node);
@@ -1568,72 +1700,63 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 			size_t size = 0;
 
 			parser_advance(p);
-			if ((p->current.type < LIT_INT || p->current.type > LIT_CHAR) && p->current.type != SP_EOL) {
-				free_ast(p->root);
+
+			if ((p->current.type < LIT_INT || p->current.type > LIT_CHAR) && p->current.type != SP_EOL && p->current.type != SP_EOF && p->current.type != OP_SUB && p->current.type != OP_ADD) {
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only define Macros with literal values or no value");
+				free_ast(p->root);
 				exit(PAC_Error_InvalidIdentifier);
 			}
+			
+			PAC_TokenType vtype = p->current.type;
+			IntMax exp_value = {0};
+			if (p->current.type != LIT_STRING) exp_value = parse_expression(p, false);
+
 			char value[256];
-			if (parser_check(p, LIT_CHAR)) {
-				size = 1;
-				snprintf(value, sizeof(value), "%c", *p->current.lexeme);
-				parser_advance(p);
-			} else if (parser_check(p, LIT_INT)) {
-				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 10);
+			switch (vtype) {
+				case LIT_INT:
+				case LIT_BIN:
+				case LIT_HEX:
+				case LIT_OCTAL:
+				case OP_ADD:
+				case OP_SUB:
+				case LIT_CHAR: {
+					size = exp_value.value > 0xFFFFFFFF ? 8 : 4;
 
-				size = out > 0xFFFFFFFF ? 8 : 4;
+					if (exp_value.neg) snprintf(value, sizeof(value), "-%llu", (unsigned long long)exp_value.value);
+					else snprintf(value, sizeof(value), "%llu", (unsigned long long)exp_value.value);
+					break;
+				}
 
-				if (neg) snprintf(value, sizeof(value), "-%llu", out);
-				else snprintf(value, sizeof(value), "%llu", out);
+				case LIT_FLOAT: {
+					size = 4;
 
-				parser_advance(p);
-			} else if (parser_check(p, LIT_BIN)) {
-				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 2);
+					if (exp_value.neg) snprintf(value, sizeof(value), "%f", exp_value.float_value);
+					else snprintf(value, sizeof(value), "-%f", exp_value.float_value);
+					break;
+				}
 
-				size = out > 0xFFFFFFFF ? 8 : 4;
+				case LIT_STRING: {
+					size = strlen(p->current.lexeme);
 
-				if (neg) snprintf(value, sizeof(value), "-%llu", out);
-				else snprintf(value, sizeof(value), "%llu", out);
-				
-				parser_advance(p);
-			} else if (parser_check(p, LIT_HEX)) {
-				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 16);
+					snprintf(value, sizeof(value), "%s", p->current.lexeme);
+					parser_advance(p);
+					break;
+				}
+			
+				case SP_EOF:
+				case SP_EOL: {
+					size = 1;
 
-				size = out > 0xFFFFFFFF ? 8 : 4;
+					value[0] = '1';
+					value[1] = '\0';
+					break;
+				}
 
-				if (neg) snprintf(value, sizeof(value), "-%llu", out);
-				else snprintf(value, sizeof(value), "%llu", out);
-				
-				parser_advance(p);
-			} else if (parser_check(p, LIT_OCTAL)) {
-				bool neg = p->current.lexeme && p->current.lexeme[0] == '-';
-				unsigned long long out = strtoull(neg ? p->current.lexeme + 1 : p->current.lexeme, NULL, 8);
-
-				size = out > 0xFFFFFFFF ? 8 : 4;
-
-				if (neg) snprintf(value, sizeof(value), "-%llu", out);
-				else snprintf(value, sizeof(value), "%llu", out);
-				
-				parser_advance(p);
-			} else if (parser_check(p, LIT_STRING)) {
-				size = strlen(p->current.lexeme);
-
-				snprintf(value, sizeof(value), "%s", p->current.lexeme);
-				parser_advance(p);
-			} else if (parser_check(p, LIT_FLOAT)) {
-				size = 4;
-
-				float out = strtof(p->current.lexeme, NULL);
-				snprintf(value, sizeof(value), "%f", out);
-				parser_advance(p);
-			} else if (parser_check(p, SP_EOL)) {
-				size = 1;
-
-				value[0] = '1';
-				value[1] = '\0';
+				default: {
+					PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), "Can only define Macros with literal values or no value");
+					free_ast(p->root);
+					exit(PAC_Error_InvalidIdentifier);
+				}
 			}
 
 			if (!do_task) {
@@ -1644,8 +1767,8 @@ static void parse_preprocessors(Parser* p, bool do_task, bool do_task_inc) {
 			const char* err = new_macro(name, value, false, size, MACRO_TYPE_USER_MACRO, sline, scol, p->lexer->file, NULL);
 			free(name);
 			if (err) {
-				free_ast(p->root);
 				PAC_ERRORF(p->lexer->file, p->current.line, p->current.column, p->lexer->src, p->lexer->len, p->current.lexeme, strlen(p->current.lexeme), err);
+				free_ast(p->root);
 				exit(PAC_Error_Unknown);
 			}
 			break;
@@ -2014,6 +2137,8 @@ void parse_symbols(Parser* p) {
 			case LIT_INT:
 			case LIT_FLOAT:
 			case LIT_CHAR:
+			case OP_SUB:
+			case OP_ADD:
 			case LIT_STRING: {
 				stmt = parse_literal(p);
 				break;
@@ -2137,6 +2262,8 @@ ASTNode* parse_program(Parser* p) {
 			case LIT_INT:
 			case LIT_FLOAT:
 			case LIT_CHAR:
+			case OP_SUB:
+			case OP_ADD:
 			case LIT_STRING: {
 				stmt = parse_literal(p);
 				break;
