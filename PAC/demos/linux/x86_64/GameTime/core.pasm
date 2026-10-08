@@ -8,6 +8,9 @@
 	:external $wsys_x11_connect
 	:external $wsys_x11_close
 	:external $wsys_x11_setup
+	:external $wsys_x11_create_window
+
+	:external $time_ssleep
 
 	:global _start
 
@@ -42,6 +45,24 @@ _start:
 	mov %rsi, @sizeof(msg_setup_ok)
 	call $print
 
+	// wsys_x11_create_window(window_title, 800, 400)
+	lea %rdi, [window_title]
+	mov %rsi, 800
+	mov %rdx, 400
+	call $wsys_x11_create_window
+
+	cmp %rax, 1
+	jne $core.window_creation_failed
+
+	// print(msg_window_created, strlen(msg_window_created))
+	lea %rdi, [msg_window_created]
+	mov %rsi, @sizeof(msg_window_created)
+	call $print
+
+	// time_ssleep(5)
+	mov %rdi, 5
+	call $time_ssleep
+
 	// wsys_x11_close()
 	call $wsys_x11_close
 
@@ -67,16 +88,37 @@ _start:
 		mov %rsi, @sizeof(msg_setup_failed)
 		call $print
 
+		// wsys_x11_close()
+		call $wsys_x11_close
+
 		// exit(2)
 		mov %rax, SYSCALL_EXIT
 		mov %rdi, 2
 		syscall
+
+	window_creation_failed:
+		// print(msg_window_creation_failed, strlen(msg_window_creation_failed))
+		lea %rdi, [msg_window_creation_failed]
+		mov %rsi, @sizeof(msg_window_creation_failed)
+		call $print
+
+		// wsys_x11_close()
+		call $wsys_x11_close
+
+		// exit(3)
+		mov %rax, SYSCALL_EXIT
+		mov %rdi, 3
+		syscall
 .endfunc
 
 :section .rodata
-	msg_start!ubyte[] = "Connecting to X11...", 0xa, 0
-	msg_connected!ubyte[] = "X11 socket connected", 0xa, 0
-	msg_setup_ok!ubyte[] = "X11 setup succeeded!", 0xa, 0
+	window_title!ubyte[] = "Game Time", 0
 
-	msg_connect_failed!ubyte[] = "X11 connection failed", 0xa, 0
-	msg_setup_failed!ubyte[] = "X11 setup failed", 0xa, 0
+	msg_start!ubyte[] = "Connecting to X11...", 0xa, 0
+	msg_connected!ubyte[] = "X11 socket connected!", 0xa, 0
+	msg_setup_ok!ubyte[] = "X11 setup succeeded!", 0xa, 0
+	msg_window_created!ubyte[] = "X11 Window created!", 0xa, 0
+
+	msg_connect_failed!ubyte[] = "X11 connection failed!", 0xa, 0
+	msg_setup_failed!ubyte[] = "X11 setup failed!", 0xa, 0
+	msg_window_creation_failed!ubyte[] = "X11 Window creation failed!", 0xa, 0

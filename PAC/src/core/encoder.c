@@ -303,6 +303,18 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 
         offset += sec->size;
     }
+
+	if (!text_sec) {
+		fprintf(stderr, COLOR_RED "Error: No '.text' section found! (Required Section)\n" COLOR_RESET);
+        fclose(out);
+        if (remove(output_file) != 0) {
+            fprintf(stderr, COLOR_RED "Error: Unable to remove output file!\n" COLOR_RESET);
+        }
+        free(shstrtab);
+        free(strtab);
+        free(shdrs);
+        return false;
+	}
  
     bool ret = false;
     size_t symbol_list_size = 0;

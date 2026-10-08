@@ -36,12 +36,19 @@
 - NOBITS Sections could be included in the file on disk via the linker
 - One of the Linker Error paths did not quit
 - Linker Bugs
+- Extremely big linker bug which merged non-contiguous sections with bss on paermission match causing all kinds of issues
 
 ## Version 1.1.0
 ### Upgrades
 - NOBITS Sections are no longer included in the file on disk via the linker
 - All Linker Error paths now quit
 - Fixed Linker Bugs
+- Removed the support for creating PACI (PAC IR) files which were broken in many cases
+- Fixed the `--savetemp` command
+- Better parsing, higher enforcing
+- Better linker enforcement
+- Fixed parser bugs
+- Fixed the extremely big linker bug which merged non-contiguous sections with bss on paermission match, which was also causing all kinds of issues
 
 ### Additions
 - Added PE Linking output support

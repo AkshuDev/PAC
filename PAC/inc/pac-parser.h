@@ -145,6 +145,9 @@ typedef struct {
 
 	char** inc_dirs;
 	size_t inc_dir_count;
+
+	char** included_files;
+	size_t included_files_count;
 } Parser;
 
 ASTNode* create_node(ASTNodeType type, Parser* p);

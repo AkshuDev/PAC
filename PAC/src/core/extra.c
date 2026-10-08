@@ -349,14 +349,14 @@ void intmax_xor(IntMax* imax, uint64_t v) {
 }
 
 void intmax_shl(IntMax* imax, uint64_t v) {
-	if (!imax) return;
+	if (!imax || v >= 64) return;
 
 	imax->value <<= v;
 	if (imax->value == 0) imax->neg = false;
 }
 
 void intmax_shr(IntMax* imax, uint64_t v) {
-	if (!imax) return;
+	if (!imax || v >= 64) return;
 
 	imax->value >>= v;
 	if (imax->value == 0) imax->neg = false;

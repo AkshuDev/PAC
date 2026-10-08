@@ -17,6 +17,7 @@
 	:global $wsys_x11_connect
 	:global $wsys_x11_close
 	:global $wsys_x11_setup
+	:global $wsys_x11_create_window
 
 // int read_exact(int fd, void* buf, size_t n)
 .func read_exact
@@ -72,6 +73,23 @@
 
 	// out = out & align;
 	and %rax, %rsi
+	ret
+.endfunc
+
+// uint64_t alloc_x11_res(void)
+.func alloc_x11_res
+	xor %rdi, %rdi
+	xor %rsi, %rsi
+	xor %rax, %rax
+
+	mov %edi, [x11_next_resource_id]
+	mov %esi, [x11_setup_prefix.resource_id_mask]
+	and %edi, %esi
+
+	mov %eax, [x11_setup_prefix.resource_id_base]
+	or %eax, %edi
+
+	inc [x11_next_resource_id]
 	ret
 .endfunc
 
@@ -207,9 +225,11 @@
 
     cmp %rax, @sizeof(x11_setup_prefix)
     jne $wsys_x11_setup.fail
+	add [x11_setup_consumed], %rax
 
 	// read_exact(x11_fd, x11_vendor_data, align_up(x11_setup_prefix.vendor_length, sizeof(unsigned int)))
-	mov %rdi, [x11_setup_prefix.vendor_length]
+	xor %rdi, %rdi
+	mov %di, [x11_setup_prefix.vendor_length]
 	mov %rsi, @sizeof(uint)
 	call $align_up
 	mov [x11_vendor_length_aligned], %rax
@@ -217,11 +237,184 @@
 	xor %rdi, %rdi
     mov %edi, [x11_fd]
     lea %rsi, [x11_vendor_data]
-    mov %rdx, %rbx // Aligned value
+    mov %rdx, %rax // Aligned value
 	call $read_exact
 
     cmp %rax, [x11_vendor_length_aligned]
     jne $wsys_x11_setup.fail
+	add [x11_setup_consumed], %rax
+
+	// read_exact(x11_fd, x11_pixmap_formats, x11_setup_prefix.pixmap_formats_len*8)
+	xor %rdx, %rdx
+	mov %dl, [x11_setup_prefix.pixmap_formats_len]
+	shl %rdx, 3
+
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_pixmap_formats]
+	call $read_exact
+
+	xor %rdx, %rdx
+	mov %dl, [x11_setup_prefix.pixmap_formats_len]
+	shl %rdx, 3
+
+    cmp %rax, %rdx
+    jne $wsys_x11_setup.fail
+	add [x11_setup_consumed], %rax
+
+	// read_exact(x11_fd, x11_screen, sizeof(x11_screen))
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_screen]
+    mov %rdx, @sizeof(x11_screen)
+	call $read_exact
+
+    cmp %rax, @sizeof(x11_screen)
+    jne $wsys_x11_setup.fail
+	add [x11_setup_consumed], %rax
+
+	// read_exact(x11_fd, x11_setup_remaining_buffer, x11_setup_size - x11_setup_consumed)
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_setup_remaining_buffer]
+    
+	mov %rdx, [x11_setup_size]
+	sub %rdx, [x11_setup_consumed]
+
+	call $read_exact
+
+	mov %rdx, [x11_setup_size]
+	sub %rdx, [x11_setup_consumed]
+
+    cmp %rax, %rdx
+    jne $wsys_x11_setup.fail
+	add [x11_setup_consumed], %rax
+
+	// x11_root_window = x11_screen.root
+    xor %rax, %rax
+    mov %eax, [x11_screen.root]
+    mov [x11_root_window], %eax
+
+    // x11_root_visual = x11_screen.root_visual
+    xor %rax, %rax
+    mov %eax, [x11_screen.root_visual]
+    mov [x11_root_visual], %eax
+
+    // x11_root_depth = x11_screen.root_depth
+    xor %rax, %rax
+    mov %al, [x11_screen.root_depth]
+    mov [x11_root_depth], %al
+
+    // First resource ID starts at 1
+    mov %eax, 1
+    mov [x11_next_resource_id], %eax
+
+	success:
+		mov %rax, 1
+		ret
+
+	fail:
+		mov %rax, 0
+		ret
+.endfunc
+
+// Opcodes
+@def X11_OP_CREATE_WINDOW 1
+@def X11_OP_MAP_WINDOW 8
+
+@def X11_WINDOW_CLASS_INPUT_OUTPUT 1
+@def X11_COPY_FROM_PARENT 0
+
+// bool wsys_x11_create_window(char* title, uint64_t width, uint64_t height)
+.func wsys_x11_create_window
+	// 16-byte alignment
+	push %rdi
+	push %rsi
+	push %rdx
+	sub %rsp, 8
+	call $alloc_x11_res
+	add %rsp, 8
+	pop %rdx
+	pop %rsi
+	pop %rdi
+
+	mov [x11_window_id], %eax
+
+	// Send - Create Window Request
+	// Opcode
+    mov %al, X11_OP_CREATE_WINDOW
+    mov [x11_create_window_request+0], %al
+
+    // Depth
+    mov %al, [x11_root_depth]
+    mov [x11_create_window_request+1], %al
+
+    // Length = 32 bytes / 4
+    mov %ax, @sizeof(x11_create_window_request) / 4
+    mov [x11_create_window_request+2], %ax
+
+	// Window ID
+    mov %eax, [x11_window_id]
+    mov [x11_create_window_request+4], %eax
+
+	// Parent
+	mov %eax, [x11_root_window]
+	mov [x11_create_window_request+8], %eax
+
+	// X, Y
+	xor %rax, %rax
+	mov [x11_create_window_request+12], %ax
+	mov [x11_create_window_request+14], %ax
+
+	// W, H
+	mov [x11_create_window_request+16], %si
+	mov [x11_create_window_request+18], %dx
+
+	// Border Width
+	mov [x11_create_window_request+20], %ax
+
+	// Class
+	mov %ax, X11_WINDOW_CLASS_INPUT_OUTPUT
+	mov [x11_create_window_request+22], %ax
+	
+	// Visual
+	mov %eax, [x11_root_visual]
+	mov [x11_create_window_request+24], %eax
+
+	// Value Mask
+	xor %rax, %rax
+	mov [x11_create_window_request+28], %eax
+
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_create_window_request]
+    mov %rdx, @sizeof(x11_create_window_request)
+    call $writef
+
+	cmp %rax, @sizeof(x11_create_window_request)
+    jne $wsys_x11_create_window.fail
+
+	// Send - Map Window Request
+	mov %al, X11_OP_MAP_WINDOW
+    mov [x11_map_window_request+0], %al
+
+    mov %al, 0
+    mov [x11_map_window_request+1], %al
+
+    mov %ax, @sizeof(x11_map_window_request) / 4
+    mov [x11_map_window_request+2], %ax
+
+    mov %eax, [x11_window_id]
+    mov [x11_map_window_request+4], %eax
+
+	xor %rdi, %rdi
+    mov %edi, [x11_fd]
+    lea %rsi, [x11_map_window_request]
+    mov %rdx, @sizeof(x11_map_window_request)
+    call $writef
+
+	cmp %rax, @sizeof(x11_map_window_request)
+    jne $wsys_x11_create_window.fail
 
 	success:
 		mov %rax, 1
@@ -246,14 +439,14 @@
 
     x11_setup_size!ulong = 0
 
-:section .bss
+:section .bss // Most are ulong for easy register load/store
 	:res x11_fd!int
 
-	:res x11_root_window!ulong
-	:res x11_root_visual!ulong
+	:res x11_root_window!uint
+	:res x11_root_visual!uint
 	:res x11_root_depth!ubyte
 
-	:res x11_next_resource_id!ulong
+	:res x11_next_resource_id!uint
 
 	:res x11_vendor_length_aligned!ulong
 	.struct x11_setup_prefix :res
@@ -303,7 +496,11 @@
 	.endstruct
 
 	:res x11_pixmap_formats!ubyte[8 * 256]
-	:res x11_ignored_screen!ubyte[@sizeof(x11_screen)]
 	:res x11_vendor_data!ubyte[0xFFFF]
+	
+	:res x11_setup_consumed!ulong
+	:res x11_setup_remaining_buffer!ubyte[0x100000]
 
-	:res pad!uint // 32-bit pad
+	:res x11_window_id!uint
+	:res x11_create_window_request!ubyte[32]
+	:res x11_map_window_request!ubyte[8]

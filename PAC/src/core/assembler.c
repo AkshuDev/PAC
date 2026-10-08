@@ -736,6 +736,14 @@ IRList assemble(Assembler* ctx) {
 				ir.col = node->col;
 
 				for (size_t j = 0; j < inst->operand_count; j++){
+					if (j >= sizeof(ir.operands)/sizeof(char*)) {
+						PAC_ERRORF(ctx->cur_file, node->line, node->col, ctx->cur_file_src, ctx->cur_file_len, NULL, 1, "Too many operands present");
+						symtab_free(symtab);
+						section_free(sectab);
+						free_ast(ctx->parser->root);
+						exit(PAC_Error_SyntaxTooManyOperands);
+					}
+					
 					ASTOperand* op = inst->operands[j];
 					switch(op->type) {
 						case OPERAND_IDENTIFIER:
@@ -968,6 +976,7 @@ void free_ir_list(IRList* list) {
 	if (list->instructions) {
 		for (size_t i = 0; i < list->count; i++) {
 			for (size_t j = 0; j < list->instructions[i].operand_count; j++) {
+				if (j >= sizeof(list->instructions[i].operands)/sizeof(char*)) break;
 				if (list->instructions[i].operands[j]) free(list->instructions[i].operands[j]);
 			}
 		}
@@ -983,6 +992,8 @@ void print_ir(const IRInstruction* ir) {
 
     if (ir->operand_count > 0) {
         for (size_t i = 0; i < ir->operand_count; i++) {
+			if (i >= sizeof(ir->operands)/sizeof(char*)) break;
+
             printf("%s", ir->operands[i] ? ir->operands[i] : "(null)");
             if (i + 1 < ir->operand_count)
                 printf(", ");

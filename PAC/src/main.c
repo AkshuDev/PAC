@@ -274,16 +274,6 @@ static char* read_file(const char* path, size_t* len) {
     return buffer;
 }
 
-static FILE* open_file(const char* path, const char* mode) {
-    FILE* f = fopen(path, mode);
-    if (!f) {
-        fprintf(stderr, COLOR_RED "Error: Cannot open file '%s'\n" COLOR_RESET, path);
-        return NULL;
-    }
-    fseek(f, 0, SEEK_SET);
-    return f;
-}
-
 static void perform_lexout(Args* args, char** file_l, int idx, int count) {
     char* file = file_l[idx];
     printf(COLOR_CYAN "Lexing file: %s\n" COLOR_RESET, file);
@@ -377,31 +367,6 @@ static void perform_asmout(char** file_l, Args* args, int idx, int count) {
 
     IRList irlist = assemble(&asmctx);
 
-    if (args->savetemps) {
-        FILE* f = open_file("asave.paci", "w");
-		if (!f) exit(PAC_Error_FileOpenFailed);
-
-        char buf[512];
-        for (size_t i = 0; i < sectable.count; i++) {
-            Section sec = sectable.sections[i];
-            snprintf(buf, sizeof(buf), ":align %llu\n:start 0x%llx\n:size: 0x%llx\n\t:section %s\n\n", (unsigned long long)sec.alignment, (unsigned long long)sec.base, (unsigned long long)sec.size, sec.name);
-            fwrite(buf, 1, strlen(buf), f);
-            for (size_t j = 0; j < symtable.count; j++) {
-                Symbol sym = symtable.symbols[j];
-
-                if (sym.section_index != i) continue;
-
-                if (sym.type == SYM_IDENTIFIER) snprintf(buf, sizeof(buf), ":start 0x%llx\n\t%s = %s\n", (unsigned long long)sym.addr, sym.name, sym.value);
-                if (sym.type == SYM_LABEL) snprintf(buf, sizeof(buf), ":start 0x%llx\n\t%s:\n", (unsigned long long)sym.addr, sym.name);
-                
-                fwrite(buf, 1, strlen(buf), f);
-            }
-            fwrite("\n", 1, 1, f);
-        }
-        fflush(f);
-        fclose(f);
-    }
-    
     print_ir_list(&irlist);
     print_symtab(&symtable, &sectable);
     print_sectab(&sectable);
@@ -432,7 +397,7 @@ static void on_exit(void) {
 			if (encoded_files[0]) {
 				if (args.only_asm && !args.savetemps)
 					rename(encoded_files[0], args.output_file);
-				else
+				else if (!args.savetemps)
 					remove(encoded_files[0]);
 
 				free(encoded_files[0]);
@@ -562,7 +527,7 @@ int main(int argc, char** argv) {
         section_free(&sectab);
     }
 
-	bool linking_success = false;
+	bool linking_success = true;
     if (!args.only_asm) {
 		linking_success = pac_link(args.entry_label, args.output_file, encoded_files, args.input_count, args.linkformat, args.base);
 	}
@@ -580,7 +545,7 @@ int main(int argc, char** argv) {
 			if (encoded_files[0]) {
 				if (args.only_asm && !args.savetemps)
 					rename(encoded_files[0], args.output_file);
-				else
+				else if (!args.savetemps)
 					remove(encoded_files[0]);
 
 				free(encoded_files[0]);

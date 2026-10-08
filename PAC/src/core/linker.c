@@ -632,7 +632,7 @@ static bool resolve_extern_symbols(ObjectFile* objfiles, size_t objfile_count) {
 				}
 
 				if (!found) {
-					fprintf(stderr, COLOR_RED "Linker Error: Symbol '%s' couldn't be resolved!" COLOR_RESET, name);
+					fprintf(stderr, COLOR_RED "Linker Error: Symbol '%s' couldn't be resolved!\n" COLOR_RESET, name);
 					return false;
 				}
 			}
@@ -781,10 +781,12 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			Elf64_Phdr* p = &program_headers[j];
 			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
 				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
-					// .bss merged
-					p->p_memsz += ophdr->p_memsz;
-					p->p_align = max(p->p_align, ophdr->p_align);
-					merged = true;
+					// .bss merged if contiguous
+					if (p->p_vaddr + p->p_memsz == ophdr->p_vaddr) {
+						p->p_memsz += ophdr->p_memsz;
+						p->p_align = max(p->p_align, ophdr->p_align);
+						merged = true;
+					}
 				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
 					p->p_align = max(p->p_align, ophdr->p_align);
 					p->p_memsz += ophdr->p_memsz;
@@ -1093,10 +1095,12 @@ static bool pac_link_elf64(char* entry, char* outfile, char** input_files, size_
 			Elf64_Phdr* p = &program_headers[j];
 			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
 				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
-					// .bss merged
-					p->p_memsz += ophdr->p_memsz;
-					p->p_align = max(p->p_align, ophdr->p_align);
-					merged = true;
+					// .bss merged if contiguous
+					if (p->p_vaddr + p->p_memsz == ophdr->p_vaddr) {
+						p->p_memsz += ophdr->p_memsz;
+						p->p_align = max(p->p_align, ophdr->p_align);
+						merged = true;
+					}
 				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
 					p->p_align = max(p->p_align, ophdr->p_align);
 					p->p_memsz += ophdr->p_memsz;
@@ -1409,10 +1413,12 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 			Elf32_Phdr* p = &program_headers[j];
 			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
 				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
-					// .bss merged
-					p->p_memsz += ophdr->p_memsz;
-					p->p_align = max(p->p_align, ophdr->p_align);
-					merged = true;
+					// .bss merged if contiguous
+					if (p->p_vaddr + p->p_memsz == ophdr->p_vaddr) {
+						p->p_memsz += ophdr->p_memsz;
+						p->p_align = max(p->p_align, ophdr->p_align);
+						merged = true;
+					}
 				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
 					p->p_align = max(p->p_align, ophdr->p_align);
 					p->p_memsz += ophdr->p_memsz;
@@ -1723,10 +1729,12 @@ static bool pac_link_elf32(char* entry, char* outfile, char** input_files, size_
 			Elf32_Phdr* p = &program_headers[j];
 			if (p->p_vaddr + p->p_memsz <= ophdr->p_vaddr && p->p_flags == ophdr->p_flags && p->p_type == ophdr->p_type) {
 				if (p->p_filesz == 0 || ophdr->p_filesz == 0) {
-					// .bss merged
-					p->p_memsz += ophdr->p_memsz;
-					p->p_align = max(p->p_align, ophdr->p_align);
-					merged = true;
+					// .bss merged if contiguous
+					if (p->p_vaddr + p->p_memsz == ophdr->p_vaddr) {
+						p->p_memsz += ophdr->p_memsz;
+						p->p_align = max(p->p_align, ophdr->p_align);
+						merged = true;
+					}
 				} else if (p->p_filesz + p->p_offset == ophdr->p_offset) {
 					p->p_align = max(p->p_align, ophdr->p_align);
 					p->p_memsz += ophdr->p_memsz;
@@ -2004,7 +2012,7 @@ static bool pac_link_binary(char* entry, char* outfile, char** input_files, size
 	free(outsecs);
 
 	free_objfile(objfiles, objfile_count);
-	return false;
+	return true;
 }
 
 static uint64_t calculate_pe_checksum(uint8_t* buf, size_t sz) {

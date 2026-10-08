@@ -436,7 +436,7 @@ Token next_token(Lexer* lx) {
         return tk;
     }
 
-    if (c == '%') {
+    if (c == '%' && isalnum(peek(lx))) {
         advance(lx); // consume '%'
         size_t start = lx->pos - 1;
         while (isalnum(peek(lx))) advance(lx);

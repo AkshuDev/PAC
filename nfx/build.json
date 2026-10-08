@@ -9,7 +9,7 @@
   "Id": "pheonix_studios.pac",
   "Status": "stable",
   "Build": {
-    "Date": "2026-10-05 22:58",
+    "Date": "2026-10-08 22:35",
     "AllowedSigners": "keys/allowed_signers",
     "SignatureIdentity": "pheonix-package-index"
   },
@@ -23,8 +23,8 @@
         "x86_64"
       ],
       "Path": "PAC/bin/linux/x86_64/pac",
-      "Size": 228896,
-      "Sha256": "810f01b84cc5eadfe13ad4d19e7512ed6feccc852d18f6eeb774c221861ec47b",
+      "Size": 237368,
+      "Sha256": "b7f4c71854e45308a36a249d13f86d072e575585836245023f85e8a7b6ba5817",
       "Executable": true
     },
     {
@@ -36,8 +36,8 @@
         "x86_64"
       ],
       "Path": "PAC/bin/windows/x86_64/pac.exe",
-      "Size": 377112,
-      "Sha256": "74872949e30d50be6d004fe2781e8af5eb119ba965b2d501e098da35826c9ca8",
+      "Size": 386583,
+      "Sha256": "ef08738f86b22e5113b4239378b6a76248efa2bd34bf949939026c4df833b409",
       "Executable": true
     }
   ],

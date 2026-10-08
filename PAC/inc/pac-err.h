@@ -136,6 +136,7 @@ typedef enum PAC_Errors
     PAC_Error_SyntaxInvalidSymbolName,       // Invalid symbol name syntax
     PAC_Error_SyntaxMisalignedOperands,      // Operands improperly aligned or formatted
     PAC_Error_SyntaxUnexpectedDirectiveEnd,  // Unexpected end directive encountered
+	PAC_Error_SyntaxNegativeArraySize,       // Array size is negative
 
     PAC_SyntaxError_End = 0x02FF,            // Marker: End of Syntax Errors
 
@@ -185,6 +186,7 @@ typedef enum PAC_Errors
     PAC_Error_SemanticConstantExpected,      // Expected constant expression but got variable
     PAC_Error_SemanticInvalidInitializer,    // Invalid initializer for symbol
     PAC_Error_DeferredResolutionFailed,      // Post-parse symbol resolution failed
+	PAC_Error_ExpressionInvalidShift,        // Invalid shift operation
 
     PAC_SemanticError_End = 0x03FF,          // Marker: End of Semantic Errors
 
