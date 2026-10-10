@@ -77,10 +77,16 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 					if (st_gcount + 1 >= st_gcap) {
 						Symbol* n = (Symbol*)realloc(st_global, (st_gcap + 16) * sizeof(Symbol));
 						if (!n) {
-							free(st_local);
-							free(st_global);
-							free(st_external);
-							break;
+							free_st_lge_list_and_break: {
+								free(st_local);
+								free(st_global);
+								free(st_external);
+
+								st_local = NULL;
+								st_global = NULL;
+								st_external = NULL;
+								break;
+							}
 						}
 						st_global = n;
 						st_gcap += 16;
@@ -90,12 +96,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 				} else if (sym->sym_vis == SYM_VIS_EXTERNAL) {
 					if (st_ecount + 1 >= st_ecap) {
 						Symbol* n = (Symbol*)realloc(st_external, (st_ecap + 16) * sizeof(Symbol));
-						if (!n) {
-							free(st_local);
-							free(st_global);
-							free(st_external);
-							break;
-						}
+						if (!n) goto free_st_lge_list_and_break;
 						st_external = n;
 						st_ecap += 16;
 					}
@@ -104,12 +105,7 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 				} else {
 					if (st_lcount + 1 >= st_lcap) {
 						Symbol* n = (Symbol*)realloc(st_local, (st_lcap + 16) * sizeof(Symbol));
-						if (!n) {
-							free(st_local);
-							free(st_global);
-							free(st_external);
-							break;
-						}
+						if (!n) goto free_st_lge_list_and_break;
 						st_local = n;
 						st_lcap += 16;
 					}
@@ -133,9 +129,9 @@ bool encode(Assembler* ctx, const char* output_file, IRList* irlist, int bits, b
 				}
 			}
 
-			free(st_local);
-			free(st_global);
-			free(st_external);
+			if (st_local) free(st_local);
+			if (st_global) free(st_global);
+			if (st_external) free(st_external);
 
 			st_local = NULL;
 			st_global = NULL;

@@ -48,11 +48,22 @@
 - Better parsing, higher enforcing
 - Better linker enforcement
 - Fixed parser bugs
-- Fixed the extremely big linker bug which merged non-contiguous sections with bss on paermission match, which was also causing all kinds of issues
+- Fixed the extremely big linker bug which merged non-contiguous sections with bss on permission match, which was also causing all kinds of issues
 
 ### Additions
 - Added PE Linking output support
 - Added Assemble-Time Expression Evaluation
+
+### Known Flaws
+- Potential double free incase of reallocation fail, at symbol list sorting block in encoder
+
+## Version 1.1.1
+### Upgrades
+- Fixed typos in documents
+- Fixed potential double free, at symbol list sorting block in encoder
+
+### Additions
+- None
 
 ### Known Flaws
 - None
