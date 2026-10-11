@@ -31,7 +31,7 @@ The PAC Linker in-fact supports multiple formats, but only takes ***ELF64 Object
 1. Elf64
 2. Elf32
 3. PE 32 (Under implementation)
-4. PE 32+ (Under implementation)
+4. PE 32+ (Not yet completed, use on your own risk)
 
 # Comparison between PAC and Traditional Assemblers
 
