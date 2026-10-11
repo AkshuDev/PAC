@@ -294,6 +294,148 @@ static void resolve_relocs(InRelocation* irel, ObjectFile* ofile, size_t j) {
 	}
 }
 
+static bool verify_raw_ofile(const char* name, char* data, size_t size, bool print_error) {
+	if (!data) return false;
+	if (size < sizeof(Elf64_Ehdr)) return false;
+
+	Elf64_Ehdr* ehdr = (Elf64_Ehdr*)data;
+	if (memcmp(ehdr->e_ident, ELFMAG, SELFMAG) != 0) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: File '%s' doesn't contain valid ELF Magic!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF File '%s' is not a ELF64 file!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 File '%s' doesn't use Little-Endian!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_ident[EI_VERSION] != EV_CURRENT) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 File '%s' doesn't use supported ELF version!\n" COLOR_RESET, name);
+		return false;
+	}
+
+	if (ehdr->e_type != ET_REL) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 File '%s' isnt a object file!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_machine == EM_NONE) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' specifies an unknown machine!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_version != EV_CURRENT) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' doesn't use supported ELF version!\n" COLOR_RESET, name);
+		return false;
+	}
+
+	if (ehdr->e_phnum != 0) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains program headers!\n" COLOR_RESET, name);
+		return false;
+	}
+
+	if (ehdr->e_shnum == 0) {
+		if (print_error) fprintf(stderr, COLOR_YELLOW "Linker Warning: ELF64 Object File '%s' contains no sections!\n" COLOR_RESET, name);
+		goto skip_section_verification;
+	}
+
+	if (ehdr->e_shentsize != sizeof(Elf64_Shdr)) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' specifies invalid Section Header size!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_shoff >= size) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid Section Header offset!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_shnum > (UINT64_MAX - ehdr->e_shoff) / sizeof(Elf64_Shdr)) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid section count!\n" COLOR_RESET, name);
+		return false;
+	}
+	if (ehdr->e_shoff + ehdr->e_shnum * sizeof(Elf64_Shdr) > size) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid section offset!\n" COLOR_RESET, name);
+		return false;
+	}
+
+	if (ehdr->e_shstrndx != SHN_UNDEF && ehdr->e_shstrndx >= ehdr->e_shnum) {
+		if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid shstr section index!\n" COLOR_RESET, name);
+		return false;
+	}
+
+	size_t sh_start = ehdr->e_shoff;
+	size_t sh_end = sh_start + (ehdr->e_shnum*sizeof(Elf64_Shdr));
+
+	Elf64_Shdr* shdrs = (Elf64_Shdr*)(data + ehdr->e_shoff);
+	for (Elf64_Half i = 0; i < ehdr->e_shnum; i++) {
+		Elf64_Shdr* sh = &shdrs[i];
+
+		if (sh->sh_type != SHT_NOBITS && sh->sh_type != SHT_NULL) {
+			if (sh->sh_offset > size || sh->sh_offset < sizeof(Elf64_Ehdr) || (sh->sh_offset > sh_start && sh->sh_offset < sh_end)) {
+				if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid data offset! (in section %d)\n" COLOR_RESET, name, i);
+				return false;
+			}
+
+			if (sh->sh_size > UINT64_MAX - sh->sh_offset) {
+				if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid data size! (in section %d)\n" COLOR_RESET, name, i);
+				return false;
+			}
+			if (sh->sh_size + sh->sh_offset > size) {
+				if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid data offset or size! (in section %d)\n" COLOR_RESET, name, i);
+				return false;
+			}
+
+			if (sh->sh_link >= ehdr->e_shnum) {
+				if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid section link! (in section %d)\n" COLOR_RESET, name, i);
+				return false;
+			}
+
+			if (sh->sh_addralign > 1 && (sh->sh_addralign & (sh->sh_addralign - 1)) != 0) {
+				if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid alignment! (in section %d)\n" COLOR_RESET, name, i);
+				return false;
+			}
+
+			switch (sh->sh_type) {
+				case SHT_SYMTAB: {
+					if (sh->sh_entsize != sizeof(Elf64_Sym)) {
+						if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid entry size! (in section %d)\n" COLOR_RESET, name, i);
+						return false;
+					}
+
+					break;
+				}
+				case SHT_REL: {
+					if (sh->sh_entsize != sizeof(Elf64_Rel)) {
+						if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid entry size! (in section %d)\n" COLOR_RESET, name, i);
+						return false;
+					}
+
+					break;
+				}
+				case SHT_RELA: {
+					if (sh->sh_entsize != sizeof(Elf64_Rela)) {
+						if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid entry size! (in section %d)\n" COLOR_RESET, name, i);
+						return false;
+					}
+
+					break;
+				}
+				case SHT_RELR: {
+					if (sh->sh_entsize != sizeof(Elf64_Relr)) {
+						if (print_error) fprintf(stderr, COLOR_RED "Linker Error: ELF64 Object File '%s' contains invalid entry size! (in section %d)\n" COLOR_RESET, name, i);
+						return false;
+					}
+
+					break;
+				}
+
+				default: break;
+			}
+		}
+	}
+
+	skip_section_verification: {}
+	return true;
+}
+
 static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFile** objfiles, size_t* objfile_count, size_t* machine, size_t* class, SectionOrder* order) {
 	if (!input_files || input_file_count < 1 || !objfiles || !objfile_count || !order) return false;
 
@@ -308,16 +450,14 @@ static bool create_ofiles(char** input_files, size_t input_file_count, ObjectFil
             return false;
         }
 
+		if (!verify_raw_ofile((const char*)input_files[i], fdata, flen, true)) {
+			free(fdata);
+			goto cleanup_n_fail;
+			return false;
+		}
+
         // Read and fill ObjectFile structure
         Elf64_Ehdr* eh = (Elf64_Ehdr*)(fdata);
-
-        if (memcmp(eh->e_ident, ELFMAG, SELFMAG) != 0) {
-			free(fdata);
-            fprintf(stderr, COLOR_RED "Linker Error: %s file has the wrong ELF Magic! This is not a valid Elf file!\n" COLOR_RESET, input_files[i]);
-
-			goto cleanup_n_fail;
-            return false;
-        }
 
         if (i == 0) {
 			if (machine) *machine = eh->e_machine;

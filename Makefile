@@ -11,7 +11,7 @@ BUILD_DIR := nfx_zip
 KEY_DIR := keys
 NFX_DIR := nfx
 
-VERSION := 1.1.0
+VERSION := 1.1.1
 WORK_JSON := $(NFX_DIR)/build.json
 BUILD_DATE := $(shell date +%Y-%m-%d\ %H:%M)
 
@@ -26,22 +26,24 @@ RED := \033[0;31m
 CYAN := \033[0;36m
 RESET := \033[0m
 
+BUILD_FLAGS ?= 
+
 .PHONY: all clean
 
 dirs:
 	@mkdir -p $(BUILD_DIR) $(KEY_DIR) $(NFX_DIR)
 
 pre-build:
-	@make --no-print-directory -C PAC BUILD=release clean
+	@make --no-print-directory -C PAC $(BUILD_FLAGS) BUILD=release clean
 
 build-linux:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(PAC_LINUX)
-	@make --no-print-directory -C PAC BUILD=release
+	@make --no-print-directory -C PAC $(BUILD_FLAGS) BUILD=release
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(PAC_LINUX)
 
 build-windows:
 	@printf "$(YELLOW)==> Building %s \n$(RESET)" $(PAC_WINDOWS)
-	@make --no-print-directory -C PAC BUILD=release build_win
+	@make --no-print-directory -C PAC $(BUILD_FLAGS) BUILD=release build_win
 	@printf "$(GREEN)==> Done building %s \n$(RESET)" $(PAC_WINDOWS)
 
 prepare-json:

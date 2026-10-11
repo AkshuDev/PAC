@@ -85,7 +85,9 @@ typedef enum {
     ASM_XCHG,
     ASM_RREG,
     ASM_ADD,
+	ASM_ADC,
     ASM_SUB,
+	ASM_SBB,
     ASM_MUL,
     ASM_DIV,
 	ASM_IMUL,
@@ -149,6 +151,12 @@ typedef enum {
     ASM_MCPY,
     ASM_MCMP,
     ASM_EXCEPTION,
+	ASM_INSB,
+	ASM_INSW,
+	ASM_INSD,
+	ASM_OUTSB,
+	ASM_OUTSW,
+	ASM_OUTSD,
     ASM_B, // Unconditional branch
     ASM_BL, // Branch with link
     ASM_BR, // Branch to register

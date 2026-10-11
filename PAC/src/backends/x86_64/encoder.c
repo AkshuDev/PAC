@@ -336,7 +336,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 						*prefix_count = 1;
 						return 0x0F11;
 					}
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -358,7 +357,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 						*prefix_count = 1;
 						return 0x0F11;
 					}
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -379,7 +377,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 						*prefix_count = 1;
 						return 0x0F13;
 					}
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -400,7 +397,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 						*prefix_count = 1;
 						return 0x0F17;
 					}
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -414,7 +410,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 			}
 			case ASM_UNPCKLPD: {
 				switch (modrm) {
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -428,7 +423,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 			}
 			case ASM_UNPCKHPD: {
 				switch (modrm) {
-					case OPERAND_MEM_DISP32:
 					case OPERAND_MEM_TO_REG:
 					case OPERAND_MEM_DISP32_TO_REG:
 					case OPERAND_MEM_DISP8_TO_REG: {
@@ -459,7 +453,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0x00;
                     return 0x01; // reg + reg
                 }
-				case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
@@ -490,12 +483,71 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0x08;
                     return 0x09; // reg + reg
                 }
-				case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
                     if (_8bit) return 0x0A;
                     return 0x0B;
+                }
+                case OPERAND_IMM8_TO_REG: {
+                    if (_8bit) return 0x80;
+                    return 0x83;
+                }
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
+                    if (_8bit) return 0x80;
+                    return 0x81;
+                }
+                default: break;
+            }
+			break;
+		}
+		case ASM_ADC: { // Works
+            switch (modrm) {
+				case OPERAND_REG_TO_MEM:
+                case OPERAND_REG_TO_MEM_DISP32:
+                case OPERAND_REG_TO_MEM_DISP8:
+                case OPERAND_REG_TO_REG: {
+                    if (_8bit) return 0x10;
+                    return 0x11; // reg + reg
+                }
+				case OPERAND_MEM_TO_REG:
+                case OPERAND_MEM_DISP32_TO_REG:
+                case OPERAND_MEM_DISP8_TO_REG: {
+                    if (_8bit) return 0x12;
+                    return 0x13;
+                }
+                case OPERAND_IMM8_TO_REG: {
+                    if (_8bit) return 0x80;
+                    return 0x83;
+                }
+                case OPERAND_IMM_TO_MEM:
+				case OPERAND_IMM_TO_MEM_DISP8:
+				case OPERAND_IMM_TO_MEM_DISP32:
+				case OPERAND_IMM_TO_REG: {
+                    if (_8bit) return 0x80;
+                    return 0x81;
+                }
+                default: break;
+            }
+			break;
+		}
+		case ASM_SBB: { // Works
+            switch (modrm) {
+				case OPERAND_REG_TO_MEM:
+                case OPERAND_REG_TO_MEM_DISP32:
+                case OPERAND_REG_TO_MEM_DISP8:
+                case OPERAND_REG_TO_REG: {
+                    if (_8bit) return 0x18;
+                    return 0x19; // reg + reg
+                }
+				case OPERAND_MEM_TO_REG:
+                case OPERAND_MEM_DISP32_TO_REG:
+                case OPERAND_MEM_DISP8_TO_REG: {
+                    if (_8bit) return 0x1A;
+                    return 0x1B;
                 }
                 case OPERAND_IMM8_TO_REG: {
                     if (_8bit) return 0x80;
@@ -552,7 +604,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0x28;
                     return 0x29; // reg + reg
                 }
-				case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
@@ -583,7 +634,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0x30;
                     return 0x31; // reg + reg
                 }
-				case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
@@ -614,7 +664,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0x38;
                     return 0x39; // reg + reg
                 }
-				case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
@@ -656,6 +705,23 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 				case OPERAND_IMM_TO_REG: {
                     if (_8bit) return 0xF6;
                     return 0xF7;
+                }
+                default: break;
+            }
+			break;
+		}
+		case ASM_XCHG: { // Works
+			switch (modrm) {
+				case OPERAND_REG_TO_MEM:
+                case OPERAND_REG_TO_MEM_DISP32:
+                case OPERAND_REG_TO_MEM_DISP8:
+				case OPERAND_MEM_DISP32:
+				case OPERAND_MEM_TO_REG:
+                case OPERAND_MEM_DISP32_TO_REG:
+                case OPERAND_MEM_DISP8_TO_REG:
+                case OPERAND_REG_TO_REG: {
+                    if (_8bit) return 0x86;
+                    return 0x87; // reg + reg
                 }
                 default: break;
             }
@@ -745,7 +811,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
                     if (_8bit) return 0xB0 + (reg.valid ? reg.code : 0); // al
                     return 0xB8 + (reg.valid ? reg.code : 0); // ax/eax/rax
                 }
-                case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG:
                 case OPERAND_MEM_DISP8_TO_REG: {
@@ -767,7 +832,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
         case ASM_LEA: { // Works
             switch (modrm) {
                 case OPERAND_MEM_TO_REG:
-                case OPERAND_MEM_DISP32:
 				case OPERAND_MEM_DISP8_TO_REG:
                 case OPERAND_MEM_DISP32_TO_REG: {
                     *no_bytes = 1;
@@ -778,7 +842,36 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
             break;
 		}
 
-		case ASM_JZ:
+		case ASM_INSB: { // Works
+			*operand_mod = OPERAND_ONLY_OPCODE;
+            return 0x6C;
+		}
+		case ASM_INSW: { // Works
+			*operand_mod = OPERAND_ONLY_OPCODE;
+			return 0x6D;
+		}
+		case ASM_INSD: { // Works
+			*prefix_o = 0x66;
+			*prefix_count = 1;
+			*operand_mod = OPERAND_ONLY_OPCODE;
+			return 0x6D;
+		}
+		case ASM_OUTSB: { // Works
+			*operand_mod = OPERAND_ONLY_OPCODE;
+            return 0x6E;
+		}
+		case ASM_OUTSW: { // Works
+			*operand_mod = OPERAND_ONLY_OPCODE;
+			return 0x6F;
+		}
+		case ASM_OUTSD: { // Works
+			*prefix_o = 0x66;
+			*prefix_count = 1;
+			*operand_mod = OPERAND_ONLY_OPCODE;
+			return 0x6F;
+		}
+
+		case ASM_JZ: // Works
 		case ASM_JE: { // Works
             switch (modrm) {
                 case OPERAND_MEM_DISP32: {
@@ -790,7 +883,7 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
             }
 			break;
 		}
-        case ASM_JNZ:
+        case ASM_JNZ: // Works
 		case ASM_JNE: { // Works
            switch (modrm) {
                 case OPERAND_MEM_DISP32: {
@@ -898,7 +991,6 @@ static uint64_t get_opcode(bool* privileged, int bits, PAC_TokenType opcode, int
 		case ASM_IDIV: // Works
 		case ASM_MUL: { // Works
             switch (modrm) {
-				case OPERAND_MEM_DISP32:
 				case OPERAND_REG_TO_MEM:
                 case OPERAND_REG_TO_MEM_DISP32:
                 case OPERAND_REG_TO_MEM_DISP8:
@@ -1726,6 +1818,14 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         modrm = make_modrm((RegInfo){.code=1,.valid=true},dest,MODRM_MOD_REG_TO_REG);
                         emit_bytes(out, &modrm, 1);
                         break;
+					case ASM_ADC:
+                        modrm = make_modrm((RegInfo){.code=2,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
+					case ASM_SBB:
+                        modrm = make_modrm((RegInfo){.code=3,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
 					case ASM_AND:
                         modrm = make_modrm((RegInfo){.code=4,.valid=true},dest,MODRM_MOD_REG_TO_REG);
                         emit_bytes(out, &modrm, 1);
@@ -1774,6 +1874,14 @@ bool encode_x86_64(Assembler* ctx, FILE* out, IRList* irlist, int bits, bool unl
                         break;
 					case ASM_OR:
                         modrm = make_modrm((RegInfo){.code=1,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
+					case ASM_ADC:
+                        modrm = make_modrm((RegInfo){.code=2,.valid=true},dest,MODRM_MOD_REG_TO_REG);
+                        emit_bytes(out, &modrm, 1);
+                        break;
+					case ASM_SBB:
+                        modrm = make_modrm((RegInfo){.code=3,.valid=true},dest,MODRM_MOD_REG_TO_REG);
                         emit_bytes(out, &modrm, 1);
                         break;
 					case ASM_AND:

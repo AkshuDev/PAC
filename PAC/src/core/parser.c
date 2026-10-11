@@ -1049,7 +1049,9 @@ static ASTNode* parse_directive(Parser* p, bool only_lit, bool make_macro) {
 	} else if (p->current.type == IDENTIFIER_TOK || p->current.type == LIT_STRING) {
         label = p->current.lexeme;
 		if (!label) goto no_label;
-    }
+    } else {
+		goto no_label;
+	}
 
 	if (label && node->directive.type == EXTERNAL && make_macro) {
 		int ret = 0;

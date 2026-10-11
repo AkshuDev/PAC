@@ -119,7 +119,9 @@ static PAC_TokenType check_keyword(const char* str) {
 	if (strcmp(str, "unpcklpd") == 0) return ASM_UNPCKLPD;
 	if (strcmp(str, "unpckhpd") == 0) return ASM_UNPCKHPD;
     if (strcmp(str, "add") == 0) return ASM_ADD;
+	if (strcmp(str, "adc") == 0) return ASM_ADC;
     if (strcmp(str, "sub") == 0) return ASM_SUB;
+	if (strcmp(str, "sbb") == 0) return ASM_SBB;
     if (strcmp(str, "mul") == 0) return ASM_MUL;
     if (strcmp(str, "div") == 0) return ASM_DIV;
 	if (strcmp(str, "imul") == 0) return ASM_IMUL;
@@ -161,6 +163,12 @@ static PAC_TokenType check_keyword(const char* str) {
 	if (strcmp(str, "sahf") == 0) return ASM_SAHF;
     if (strcmp(str, "syscall") == 0) return ASM_SYSCALL;
 	if (strcmp(str, "inst.int") == 0) return ASM_INT;
+	if (strcmp(str, "insb") == 0) return ASM_INSB;
+	if (strcmp(str, "insw") == 0) return ASM_INSW;
+	if (strcmp(str, "insd") == 0) return ASM_INSD;
+	if (strcmp(str, "outsb") == 0) return ASM_OUTSB;
+	if (strcmp(str, "outsw") == 0) return ASM_OUTSW;
+	if (strcmp(str, "outsd") == 0) return ASM_OUTSD;
     if (strcmp(str, "lea") == 0) return ASM_LEA;
     if (strcmp(str, "load") == 0) return ASM_LOAD;
     if (strcmp(str, "store") == 0) return ASM_STORE;
@@ -687,7 +695,9 @@ const char* token_type_to_str(PAC_TokenType type) {
 		case ASM_UNPCKLPD: return "ASM_UNPCKLPD";
 		case ASM_UNPCKHPD: return "ASM_UNPCKHPD";
         case ASM_ADD: return "ASM_ADD";
+		case ASM_ADC: return "ASM_ADC";
         case ASM_SUB: return "ASM_SUB";
+		case ASM_SBB: return "ASM_SBB";
         case ASM_MUL: return "ASM_MUL";
         case ASM_DIV: return "ASM_DIV";
 		case ASM_IMUL: return "ASM_IMUL";
@@ -727,6 +737,12 @@ const char* token_type_to_str(PAC_TokenType type) {
 		case ASM_SAHF: return "ASM_SAHF";
         case ASM_SYSCALL: return "ASM_SYSCALL";
 		case ASM_INT: return "ASM_INT";
+		case ASM_INSB: return "ASM_INSB";
+		case ASM_INSW: return "ASM_INSW";
+		case ASM_INSD: return "ASM_INSD";
+		case ASM_OUTSB: return "ASM_OUTSB";
+		case ASM_OUTSW: return "ASM_OUTSW";
+		case ASM_OUTSD: return "ASM_OUTSD";
         case ASM_LEA: return "ASM_LEA";
         case ASM_LOAD: return "ASM_LOAD";
         case ASM_STORE: return "ASM_STORE";
@@ -950,7 +966,9 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
 		case ASM_UNPCKLPD: return "unpcklpd";
 		case ASM_UNPCKHPD: return "unpckhpd";
         case ASM_ADD: return "add";
+		case ASM_ADC: return "adc";
         case ASM_SUB: return "sub";
+		case ASM_SBB: return "sbb";
         case ASM_MUL: return "mul";
         case ASM_DIV: return "div";
 		case ASM_IMUL: return "imul";
@@ -990,6 +1008,12 @@ const char* token_type_to_ogstr(PAC_TokenType type) {
 		case ASM_SAHF: return "sahf";
         case ASM_SYSCALL: return "syscall";
 		case ASM_INT: return "int";
+		case ASM_INSB: return "insb";
+		case ASM_INSW: return "insw";
+		case ASM_INSD: return "insd";
+		case ASM_OUTSB: return "outsb";
+		case ASM_OUTSW: return "outsw";
+		case ASM_OUTSD: return "outsd";
         case ASM_LEA: return "lea";
         case ASM_LOAD: return "load";
         case ASM_STORE: return "store";

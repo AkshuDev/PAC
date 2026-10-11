@@ -5,10 +5,10 @@
 #define __PAC_MINOR_VERSION__ 1
 
 #define __PAC_VERSION__ "1.1.1"
-#define __PAC_LEXER_VERSION__ "1.1.0lex"
-#define __PAC_PARSER_VERSION__ "1.1.0par"
+#define __PAC_LEXER_VERSION__ "1.1.1lex"
+#define __PAC_PARSER_VERSION__ "1.1.1par"
 #define __PAC_ASSEMBLER_VERSION__ "1.1.0asm"
-#define __PAC_LINKER_VERSION__ "1.1.0lnk"
+#define __PAC_LINKER_VERSION__ "1.1.1lnk"
 #define __PAC_ENCODER_x86_64_VERSION__ "1.1.1enc-x86_64"
 #define __PAC_ENCODER_x86_VERSION__ "1.1.1enc-x86"
 #define __PAC_ENC_PVCPU_VERSION__ "1.1.1enc-pvcpu"

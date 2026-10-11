@@ -56,14 +56,18 @@
 
 ### Known Flaws
 - Potential double free incase of reallocation fail, at symbol list sorting block in encoder
+- A parser security upgrade got shadowed by a unhandled condition bug
+- Linker did not verify input files properly
 
 ## Version 1.1.1
 ### Upgrades
 - Fixed typos in documents
 - Fixed potential double free, at symbol list sorting block in encoder
+- Fixed unhandled condition bug in parser, which was shadowing a security upgrade
+- Added Linker input verification
 
 ### Additions
-- None
+- More supported x86/x64/x86 16-bit instructions
 
 ### Known Flaws
 - None

@@ -12,10 +12,7 @@
 
 	:external $time_ssleep
 
-	:global _start
-
-_start:
-	jmp $core
+	:global $core
 
 .func core
 	// print(msg_start, strlen(msg_start))

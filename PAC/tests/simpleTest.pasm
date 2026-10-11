@@ -9,6 +9,7 @@ main:
 	mov %rbx, -8+90-76
 	mov %rcx, 998 >> testMacro
 	mov %rdx, @sizeof(testMacro) + ++testMacro++ / 2 + 2 % 10
+
 	jmp _start
 
 :section .bss
